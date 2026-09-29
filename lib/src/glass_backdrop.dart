@@ -1,0 +1,227 @@
+import 'dart:async';
+import 'dart:typed_data';
+import 'dart:ui' as ui;
+
+import 'package:flutter/rendering.dart';
+import 'package:flutter/scheduler.dart';
+import 'package:flutter/widgets.dart';
+
+/// Marks the content that glass floats over, so glass can tell how bright it
+/// is (see [GlassBrightness]).
+///
+/// Wrap only the content, not the glass itself: glass finds the backdrop that
+/// lies under it, typically a sibling painted before it in a [Stack].
+class GlassBackdrop extends StatefulWidget {
+  const GlassBackdrop({super.key, required this.child});
+
+  final Widget child;
+
+  static final Set<GlassBackdropState> _mounted = <GlassBackdropState>{};
+
+  /// The most recently mounted backdrop that lies under [rect], in global
+  /// logical coordinates.
+  static GlassBackdropState? under(Rect rect) {
+    GlassBackdropState? found;
+    for (final GlassBackdropState backdrop in _mounted) {
+      final Rect? bounds = backdrop._bounds;
+      if (bounds != null && bounds.overlaps(rect)) {
+        found = backdrop;
+      }
+    }
+    return found;
+  }
+
+  @override
+  State<GlassBackdrop> createState() => GlassBackdropState();
+}
+
+class GlassBackdropState extends State<GlassBackdrop> {
+  final GlobalKey _boundary = GlobalKey();
+
+  @override
+  void initState() {
+    super.initState();
+    GlassBackdrop._mounted.add(this);
+  }
+
+  @override
+  void dispose() {
+    GlassBackdrop._mounted.remove(this);
+    super.dispose();
+  }
+
+  Rect? get _bounds {
+    final RenderObject? object = _boundary.currentContext?.findRenderObject();
+    if (object is! RenderBox || !object.attached || !object.hasSize) {
+      return null;
+    }
+    return MatrixUtils.transformRect(
+      object.getTransformTo(null),
+      Offset.zero & object.size,
+    );
+  }
+
+  /// Resolution of the snapshot the luminance is read from, relative to
+  /// logical pixels. Coarse is enough for an average.
+  static const double _ratio = 0.125;
+
+  /// Average luminance, 0 to 1, of the backdrop within [rect] (in global
+  /// logical coordinates), or null if it cannot be read right now.
+  Future<double?> luminance(Rect rect) async {
+    // Snapshot only a painted tree; with no frame pending it already is.
+    if (SchedulerBinding.instance.hasScheduledFrame) {
+      await SchedulerBinding.instance.endOfFrame;
+    }
+    final RenderObject? object = _boundary.currentContext?.findRenderObject();
+    if (object is! RenderRepaintBoundary || !object.attached) {
+      return null;
+    }
+    final ui.Image image = await object.toImage(pixelRatio: _ratio);
+    try {
+      final ByteData? data = await image.toByteData();
+      if (data == null) {
+        return null;
+      }
+      final Rect local = rect.shift(-object.localToGlobal(Offset.zero));
+      final int x0 = (local.left * _ratio).floor().clamp(0, image.width);
+      final int x1 = (local.right * _ratio).ceil().clamp(0, image.width);
+      final int y0 = (local.top * _ratio).floor().clamp(0, image.height);
+      final int y1 = (local.bottom * _ratio).ceil().clamp(0, image.height);
+      var sum = 0.0;
+      var count = 0;
+      for (var y = y0; y < y1; y++) {
+        for (var x = x0; x < x1; x++) {
+          final int i = (y * image.width + x) * 4;
+          sum +=
+              0.2126 * data.getUint8(i) +
+              0.7152 * data.getUint8(i + 1) +
+              0.0722 * data.getUint8(i + 2);
+          count++;
+        }
+      }
+      return count == 0 ? null : sum / count / 255;
+    } finally {
+      image.dispose();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return RepaintBoundary(key: _boundary, child: widget.child);
+  }
+}
+
+/// Picks light or dark glass for what is behind it, the way iOS bars do: it
+/// follows the system appearance, except that over very dark content light
+/// glass turns dark, and over very light content dark glass turns light.
+///
+/// [builder] gets 0 for light glass and 1 for dark, animating in between.
+/// Without a [GlassBackdrop] under it, it follows the system appearance.
+class GlassBrightness extends StatefulWidget {
+  const GlassBrightness({super.key, required this.builder, this.child});
+
+  final ValueWidgetBuilder<double> builder;
+  final Widget? child;
+
+  @override
+  State<GlassBrightness> createState() => _GlassBrightnessState();
+}
+
+class _GlassBrightnessState extends State<GlassBrightness>
+    with SingleTickerProviderStateMixin {
+  static const _interval = Duration(milliseconds: 250);
+
+  // Thresholds on average backdrop luminance, measured against iOS 26 tab
+  // bars: they only change appearance over nearly black or nearly white
+  // content. Each pair has a gap so that it does not flicker at the boundary.
+  static const double _enterDark = 0.10, _leaveDark = 0.18;
+  static const double _enterLight = 0.90, _leaveLight = 0.82;
+
+  late final AnimationController _dark = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 300),
+  );
+  Timer? _timer;
+  bool _sampling = false;
+  Brightness _system = Brightness.light;
+  Brightness? _override;
+
+  Brightness get _target => _override ?? _system;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _system = MediaQuery.platformBrightnessOf(context);
+    _override = null;
+    final bool first = _timer == null;
+    _timer ??= Timer.periodic(_interval, (_) => _sample());
+    _show(animate: !first);
+  }
+
+  void _show({bool animate = true}) {
+    final double to = _target == Brightness.dark ? 1 : 0;
+    if (animate) {
+      _dark.animateTo(to, curve: Curves.easeInOut);
+    } else {
+      _dark.value = to;
+    }
+  }
+
+  Future<void> _sample() async {
+    final RenderObject? box = context.findRenderObject();
+    if (_sampling || box is! RenderBox || !box.attached || !box.hasSize) {
+      return;
+    }
+    final Rect rect = MatrixUtils.transformRect(
+      box.getTransformTo(null),
+      Offset.zero & box.size,
+    );
+    final GlassBackdropState? backdrop = GlassBackdrop.under(rect);
+    if (backdrop == null) {
+      return;
+    }
+    _sampling = true;
+    try {
+      final double? luminance = await backdrop.luminance(rect);
+      if (!mounted || luminance == null) {
+        return;
+      }
+      final Brightness? previous = _override;
+      if (_system == Brightness.light) {
+        if (luminance < _enterDark) {
+          _override = Brightness.dark;
+        } else if (luminance > _leaveDark) {
+          _override = null;
+        }
+      } else {
+        if (luminance > _enterLight) {
+          _override = Brightness.light;
+        } else if (luminance < _leaveLight) {
+          _override = null;
+        }
+      }
+      if (_override != previous) {
+        _show();
+      }
+    } finally {
+      _sampling = false;
+    }
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _dark.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _dark,
+      builder: (BuildContext context, Widget? child) =>
+          widget.builder(context, _dark.value, child),
+      child: widget.child,
+    );
+  }
+}
