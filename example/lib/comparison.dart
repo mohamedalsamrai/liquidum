@@ -1,7 +1,9 @@
 // Comparison harness: Apple's native tab bar or Liquidum's, over the same
 // background, driven by the same scripted touches (see ios/RunnerTests).
 //
-// `<tmp>/comparison.txt` holds "<apple|liquidum> <background>".
+// `<tmp>/comparison.txt` holds "<apple|liquidum> <background> [flags]",
+// flags being any of `log` (write liquidum's per-frame state), `view=<name>`
+// (a GlassTabBarDebugView) and `noshare` (the lens takes its own capture).
 //
 // A marker in a clear band above the bar shows where the finger is, so each
 // recorded frame can be measured against the finger. Below it, a 12-bit code
@@ -36,11 +38,24 @@ Future<void> main() async {
   final List<String> config = file.existsSync()
       ? file.readAsStringSync().trim().split(' ')
       : <String>['liquidum', 'gray'];
-  if (config.length > 2 && config[2] == 'log') {
+  final Set<String> flags = config.skip(2).toSet();
+  if (flags.contains('log')) {
     _StateLog.start();
   }
+  final String? view = flags
+      .where((String f) => f.startsWith('view='))
+      .map((String f) => f.substring(5))
+      .firstOrNull;
   runApp(
-    ComparisonApp(apple: config[0] == 'apple', background: config[1]),
+    ComparisonApp(
+      apple: config[0] == 'apple',
+      background: config[1],
+      view: GlassTabBarDebugView.values.firstWhere(
+        (GlassTabBarDebugView v) => v.name == view,
+        orElse: () => GlassTabBarDebugView.none,
+      ),
+      shareBackdrop: !flags.contains('noshare'),
+    ),
   );
 }
 
@@ -92,10 +107,14 @@ class ComparisonApp extends StatefulWidget {
     super.key,
     required this.apple,
     required this.background,
+    this.view = GlassTabBarDebugView.none,
+    this.shareBackdrop = true,
   });
 
   final bool apple;
   final String background;
+  final GlassTabBarDebugView view;
+  final bool shareBackdrop;
 
   @override
   State<ComparisonApp> createState() => _ComparisonAppState();
@@ -202,6 +221,10 @@ class _ComparisonAppState extends State<ComparisonApp>
                 items: [for (final TabSpec t in tabs) t.glassItem],
                 selectedIndex: _selected,
                 onSelected: (int i) => setState(() => _selected = i),
+                debugView: widget.view,
+                debugShareBackdrop: widget.shareBackdrop,
+                // Above the marker band and the clock code.
+                debugInspector: const Rect.fromLTWH(0, -380, 398, 300),
               ),
             ),
         ],
@@ -275,6 +298,29 @@ class _Background extends CustomPainter {
           canvas.drawRect(
             Rect.fromLTWH(i * w / 44, 0, w / 44, h),
             Paint()..color = i.isEven ? _black : _white,
+          );
+        }
+      case 'hstripes':
+        for (var y = 0.0; y < h; y += 20) {
+          canvas.drawRect(
+            Rect.fromLTWH(0, y, w, 10),
+            Paint()..color = _black,
+          );
+        }
+      case 'grid':
+        // Thin lines every 8pt, and every 40pt a colored one, so that
+        // displaced lines can be told apart.
+        canvas.drawColor(_white, BlendMode.src);
+        for (var i = 0; i * 8.0 < w; i++) {
+          canvas.drawRect(
+            Rect.fromLTWH(i * 8.0, 0, 1, h),
+            Paint()..color = i % 5 == 0 ? const Color(0xFFE0003A) : _black,
+          );
+        }
+        for (var i = 0; i * 8.0 < h; i++) {
+          canvas.drawRect(
+            Rect.fromLTWH(0, i * 8.0, w, 1),
+            Paint()..color = i % 5 == 0 ? const Color(0xFF0060E0) : _black,
           );
         }
       case 'rampx':

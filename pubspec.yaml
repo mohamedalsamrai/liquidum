@@ -23,3 +23,4 @@ flutter:
   shaders:
     - shaders/glass.frag
     - shaders/field.frag
+    - shaders/backdrop.frag

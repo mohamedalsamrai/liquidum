@@ -42,6 +42,8 @@ void main() {
     expect(p.lensRect.width, moreOrLessEquals(127.89, epsilon: 0.05));
     expect(p.lensRect.height, moreOrLessEquals(72.49, epsilon: 0.05));
     expect(p.liftProgress, moreOrLessEquals(1, epsilon: 1e-3));
+    // Under the finger; UIKit's swollen platter carries its lens to 52.73.
+    expect(p.lensRect.center.dx, moreOrLessEquals(57.75, epsilon: 0.01));
   });
 
   test('the platter swells with an overshoot and settles back under', () {
@@ -77,7 +79,11 @@ void main() {
       p.pointerMove(Offset(x, 31));
       t += 1 / 120;
       p.tick(t);
-      expect(p.lensX, moreOrLessEquals(x, epsilon: 1e-3));
+      // As drawn, in the swollen platter.
+      expect(
+        p.toBar(Offset(p.lensX, 0)).dx,
+        moreOrLessEquals(x, epsilon: 1e-3),
+      );
     }
   });
 
@@ -92,10 +98,7 @@ void main() {
     // The platter stretches and drifts after the finger: 90pt moved, 32pt
     // of it past the end.
     const k = 2.77e-5 * 90 + 8.2e-5 * 32;
-    expect(
-      p.platterDrift.dx,
-      moreOrLessEquals(1.075 * k * 398, epsilon: 0.01),
-    );
+    expect(p.platterDrift.dx, moreOrLessEquals(1.075 * k * 398, epsilon: 0.01));
     expect(p.platterScaleX, moreOrLessEquals(1.0355 * (1 + k), epsilon: 1e-4));
     expect(p.platterScaleY, moreOrLessEquals(1.0355 / (1 + k), epsilon: 1e-4));
   });

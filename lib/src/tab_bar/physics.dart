@@ -332,8 +332,23 @@ class GlassTabBarPhysics {
 
   /// The lens's center along the bar, in platter coordinates (without its
   /// flex drift).
-  double get lensX => _anchor + _offset.value;
+  double get lensX => _lensAnchor + _offset.value;
   double get _lensVelocity => _anchorVelocity + _offset.velocity;
+
+  // Where the lens belongs, in platter coordinates. While pressed, the point
+  // of the platter under the finger (kept within the bar), so that the lens
+  // is drawn exactly under the finger however much the platter swells,
+  // stretches or drifts; UIKit places it at the finger's own x within the
+  // platter, 3.55% farther from the middle once swollen. [_anchor] keeps
+  // UIKit's place for the motion the flex responds to.
+  double get _lensAnchor {
+    final Offset? touch = _touch;
+    return touch == null ? _anchor : _clampToBar(_fromBarX(touch.dx));
+  }
+
+  // The inverse of [toBar] along the bar.
+  double _fromBarX(double x) =>
+      _size.width / 2 + (x - _size.width / 2 - platterDrift.dx) / platterScaleX;
 
   /// A finger came down at [position], in bar coordinates. [time] is when,
   /// in seconds on the clock given to [tick]; without it the touch counts
@@ -357,7 +372,7 @@ class GlassTabBarPhysics {
     if (_reported == null) {
       return _selected;
     }
-    _selected = nearestTab(_clampToBar(_reported!.dx));
+    _selected = nearestTab(_clampToBar(_fromBarX(_reported!.dx)));
     _reported = null;
     _pending.add(_TouchEvent(_Touch.up, time, null));
     return _selected;
@@ -374,18 +389,18 @@ class GlassTabBarPhysics {
   void _apply(_TouchEvent event, double t) {
     switch (event.kind) {
       case _Touch.down:
+        final double x = lensX, v = _lensVelocity;
         final Offset position = event.position!;
         _touch = position;
         _touchStart = position;
         _pressTime = t;
         _hangUntil = double.negativeInfinity;
-        final double x = lensX, v = _lensVelocity;
         _anchor = _clampToBar(position.dx);
         _anchorVelocity = 0;
         _history.clear();
         _offset
           ..configure(_catchUp.$1, _catchUp.$2)
-          ..value = x - _anchor
+          ..value = x - _lensAnchor
           ..velocity = v
           ..target = 0;
         _shadow.configure(_catchUp.$1, _catchUp.$2);
@@ -413,9 +428,9 @@ class GlassTabBarPhysics {
   }
 
   void _release() {
+    final double x = lensX, v = _lensVelocity;
     _touch = null;
     final bool catchingUp = _offset.value.abs() > 20;
-    final double x = lensX, v = _lensVelocity;
     _anchor = tabCenter(_selected);
     _anchorVelocity = 0;
     _history.clear();
@@ -485,10 +500,10 @@ class GlassTabBarPhysics {
     _advance(t, now);
     _now = now;
 
-    // The finger's speed along the bar, from where the anchor was over the
-    // last 50ms of frames: it falls to zero as soon as the finger rests.
+    // The finger's speed along the bar, from where the lens belonged over
+    // the last 50ms of frames: it falls to zero as soon as the finger rests.
     if (_touch != null) {
-      _history.addLast((now, _anchor));
+      _history.addLast((now, _lensAnchor));
       while (_history.length > 2 && now - _history.first.$1 > 0.05) {
         _history.removeFirst();
       }
