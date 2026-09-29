@@ -2,25 +2,26 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liquidum/liquidum.dart';
 import 'package:liquidum_example/glass_tab_bar.dart';
+import 'package:liquidum_example/tabs.dart';
 
 void main() {
-  const items = <GlassTabItem>[
-    GlassTabItem(
+  const items = <TabSpec>[
+    TabSpec(
       icon: CupertinoIcons.house_fill,
       label: 'Home',
       symbol: 'house.fill',
     ),
-    GlassTabItem(
+    TabSpec(
       icon: CupertinoIcons.square_grid_2x2_fill,
       label: 'New',
       symbol: 'square.grid.2x2.fill',
     ),
-    GlassTabItem(
+    TabSpec(
       icon: CupertinoIcons.dot_radiowaves_left_right,
       label: 'Radio',
       symbol: 'dot.radiowaves.left.and.right',
     ),
-    GlassTabItem(
+    TabSpec(
       icon: CupertinoIcons.music_albums_fill,
       label: 'Library',
       symbol: 'music.note.square.stack.fill',
@@ -38,7 +39,7 @@ void main() {
             width: 398,
             child: StatefulBuilder(
               builder: (BuildContext context, StateSetter setState) =>
-                  GlassTabBar(
+                  PreviousGlassTabBar(
                     items: items,
                     selectedIndex: selected,
                     onSelected: (int i) => setState(() => selected = i),
@@ -48,7 +49,7 @@ void main() {
         ),
       ),
     );
-    final Rect bar = tester.getRect(find.byType(GlassTabBar));
+    final Rect bar = tester.getRect(find.byType(PreviousGlassTabBar));
     expect(find.byType(Glass), findsOneWidget);
 
     final TestGesture finger = await tester.startGesture(
@@ -65,7 +66,7 @@ void main() {
     }
     final Rect lens = tester.getRect(find.byType(Glass).last);
     expect(lens.center.dx, moreOrLessEquals(bar.left + 250, epsilon: 0.5));
-    expect(lens.height, greaterThan(GlassTabBar.height));
+    expect(lens.height, greaterThan(PreviousGlassTabBar.height));
 
     await finger.up();
     await tester.pumpAndSettle();

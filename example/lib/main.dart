@@ -5,12 +5,13 @@ import 'package:liquidum/liquidum.dart';
 import 'glass_tab_bar.dart';
 import 'native_tab_bar.dart';
 import 'sf_symbol.dart';
+import 'tabs.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Glass.precache();
   await SfSymbol.precache(
-    _HomePageState._tabs.map((GlassTabItem item) => item.symbol),
+    tabs.map((TabSpec tab) => tab.symbol),
   );
   runApp(const ExampleApp());
 }
@@ -35,29 +36,6 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  static const _tabs = <GlassTabItem>[
-    GlassTabItem(
-      icon: CupertinoIcons.house_fill,
-      label: 'Home',
-      symbol: 'house.fill',
-    ),
-    GlassTabItem(
-      icon: CupertinoIcons.square_grid_2x2_fill,
-      label: 'New',
-      symbol: 'square.grid.2x2.fill',
-    ),
-    GlassTabItem(
-      icon: CupertinoIcons.dot_radiowaves_left_right,
-      label: 'Radio',
-      symbol: 'dot.radiowaves.left.and.right',
-    ),
-    GlassTabItem(
-      icon: CupertinoIcons.music_albums_fill,
-      label: 'Library',
-      symbol: 'music.note.square.stack.fill',
-    ),
-  ];
-
   int _selected = 0;
 
   /// Whether Apple's native tab bar is shown instead of Liquidum's.
@@ -70,7 +48,7 @@ class _HomePageState extends State<HomePage> {
     return CupertinoPageScaffold(
       child: Stack(
         children: <Widget>[
-          GlassBackdrop(child: _Feed(title: _tabs[_selected].label)),
+          GlassBackdrop(child: _Feed(title: tabs[_selected].label)),
           if (_native)
             Positioned(
               left: 0,
@@ -78,7 +56,7 @@ class _HomePageState extends State<HomePage> {
               bottom: 0,
               height: NativeTabBar.height,
               child: NativeTabBar(
-                items: _tabs,
+                items: tabs,
                 selectedIndex: _selected,
                 onSelected: _select,
               ),
@@ -88,8 +66,8 @@ class _HomePageState extends State<HomePage> {
               left: 21,
               right: 21,
               bottom: 21,
-              child: GlassTabBar(
-                items: _tabs,
+              child: PreviousGlassTabBar(
+                items: tabs,
                 selectedIndex: _selected,
                 onSelected: _select,
               ),

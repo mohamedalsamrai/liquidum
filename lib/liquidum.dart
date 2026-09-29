@@ -4,3 +4,7 @@ library;
 export 'src/glass.dart';
 export 'src/glass_backdrop.dart';
 export 'src/glass_material.dart';
+export 'src/tab_bar/field.dart';
+export 'src/tab_bar/physics.dart';
+export 'src/tab_bar/spring.dart';
+export 'src/tab_bar/tab_bar.dart';

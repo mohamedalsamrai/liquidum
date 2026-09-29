@@ -3,10 +3,10 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
-import 'glass_tab_bar.dart';
+import 'tabs.dart';
 
 /// Apple's own iOS tab bar (`UITabBarController`), embedded as a platform view
-/// for comparison with [GlassTabBar]. Place it flush with the bottom of the
+/// for comparison with Liquidum's `GlassTabBar`. Place it flush with the bottom of the
 /// screen; the native bar floats in its own position within it.
 class NativeTabBar extends StatefulWidget {
   const NativeTabBar({
@@ -19,7 +19,7 @@ class NativeTabBar extends StatefulWidget {
   /// Room for the bar, its bottom margin, and the lens rising above it.
   static const double height = 110;
 
-  final List<GlassTabItem> items;
+  final List<TabSpec> items;
   final int selectedIndex;
   final ValueChanged<int> onSelected;
 
@@ -60,7 +60,7 @@ class _NativeTabBarState extends State<NativeTabBar> {
       creationParams: <String, Object>{
         'selected': widget.selectedIndex,
         'items': <Map<String, String>>[
-          for (final GlassTabItem item in widget.items)
+          for (final TabSpec item in widget.items)
             <String, String>{'label': item.label, 'symbol': item.symbol},
         ],
       },

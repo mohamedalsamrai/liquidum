@@ -9,12 +9,13 @@ class SfSymbol extends StatelessWidget {
     this.name, {
     super.key,
     required this.fallback,
-    required this.color,
+    this.color,
   });
 
   final String name;
   final IconData fallback;
-  final Color color;
+  /// Defaults to the ambient [IconTheme]'s color.
+  final Color? color;
 
   static const _channel = MethodChannel('liquidum/sf_symbols');
 
@@ -56,6 +57,7 @@ class SfSymbol extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final Color color = this.color ?? IconTheme.of(context).color!;
     return FutureBuilder<_Rendered?>(
       future: _load(name),
       builder: (BuildContext context, AsyncSnapshot<_Rendered?> snapshot) {

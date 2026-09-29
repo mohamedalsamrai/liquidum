@@ -1,0 +1,261 @@
+import 'package:flutter/widgets.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:liquidum/liquidum.dart';
+
+// The iOS 26.5 simulator's tab bar: 398×62pt, four tabs. Expected values are
+// UIKit's, logged every frame from its lens and flex state.
+const Size bar = Size(398, 62);
+
+GlassTabBarPhysics makePhysics({int selected = 0}) =>
+    GlassTabBarPhysics(count: 4, selectedIndex: selected)..layout(bar, 4);
+
+/// Runs [physics] at 120Hz from [from] for [seconds]; returns the end time.
+double run(GlassTabBarPhysics physics, double from, double seconds) {
+  var t = from;
+  final int frames = (seconds * 120).round();
+  for (var i = 0; i < frames; i++) {
+    t += 1 / 120;
+    physics.tick(t);
+  }
+  return t;
+}
+
+void main() {
+  test('tab layout matches UITabBar', () {
+    final GlassTabBarPhysics p = makePhysics();
+    expect(p.pillWidth, 107.5);
+    expect(p.pillHeight, 54);
+    expect(p.tabCenter(0), moreOrLessEquals(57.75));
+    expect(p.tabCenter(3), moreOrLessEquals(340.25));
+    expect(p.tabCenter(1), moreOrLessEquals(151.92, epsilon: 0.01));
+  });
+
+  test('pressing lifts the pill into a lens the native size', () {
+    final GlassTabBarPhysics p = makePhysics();
+    p.tick(0);
+    expect(p.lensRect.size, const Size(107.5, 54));
+    p.pointerDown(const Offset(57.75, 31));
+    run(p, 0, 1.2);
+    expect(p.platterScale, moreOrLessEquals(1.0355, epsilon: 1e-4));
+    // UIKit, settled: 123.5×70pt bounds in a platter scaled 1.0355, drawn
+    // 127.89×72.49pt.
+    expect(p.lensRect.width, moreOrLessEquals(127.89, epsilon: 0.05));
+    expect(p.lensRect.height, moreOrLessEquals(72.49, epsilon: 0.05));
+    expect(p.liftProgress, moreOrLessEquals(1, epsilon: 1e-3));
+  });
+
+  test('the platter swells with an overshoot and settles back under', () {
+    final GlassTabBarPhysics p = makePhysics();
+    p.tick(0);
+    p.pointerDown(const Offset(200, 31));
+    var t = 0.0, peak = 0.0;
+    for (var i = 0; i < 60; i++) {
+      t += 1 / 120;
+      p.tick(t);
+      peak = peak > p.platterScale ? peak : p.platterScale;
+    }
+    // UIKit peaks at 1.0384 about 0.2s in.
+    expect(peak, moreOrLessEquals(1.0384, epsilon: 0.0006));
+    t = run(p, t, 0.5);
+    p.pointerUp();
+    var low = 2.0;
+    for (var i = 0; i < 60; i++) {
+      t += 1 / 120;
+      p.tick(t);
+      low = low < p.platterScale ? low : p.platterScale;
+    }
+    // And dips about 9% of the swell below rest on release.
+    expect(low, moreOrLessEquals(1 - 0.0355 * 0.094, epsilon: 0.0008));
+  });
+
+  test('the lens follows the finger one to one once it has caught up', () {
+    final GlassTabBarPhysics p = makePhysics();
+    p.tick(0);
+    p.pointerDown(const Offset(60, 31));
+    var t = run(p, 0, 1.5);
+    for (var x = 60.0; x <= 250; x += 3) {
+      p.pointerMove(Offset(x, 31));
+      t += 1 / 120;
+      p.tick(t);
+      expect(p.lensX, moreOrLessEquals(x, epsilon: 1e-3));
+    }
+  });
+
+  test('the lens stops where the resting pill meets the platter edge', () {
+    final GlassTabBarPhysics p = makePhysics(selected: 3);
+    p.tick(0);
+    p.pointerDown(const Offset(340, 31));
+    var t = run(p, 0, 1.5);
+    p.pointerMove(const Offset(430, 31));
+    t = run(p, t, 1.5);
+    expect(p.lensX, moreOrLessEquals(398 - 53.75, epsilon: 1e-3));
+    // The platter stretches and drifts after the finger: 90pt moved, 32pt
+    // of it past the end.
+    const k = 2.77e-5 * 90 + 8.2e-5 * 32;
+    expect(
+      p.platterDrift.dx,
+      moreOrLessEquals(1.075 * k * 398, epsilon: 0.01),
+    );
+    expect(p.platterScaleX, moreOrLessEquals(1.0355 * (1 + k), epsilon: 1e-4));
+    expect(p.platterScaleY, moreOrLessEquals(1.0355 / (1 + k), epsilon: 1e-4));
+  });
+
+  test('a tap selects the tapped tab and stays clear for the hang time', () {
+    final GlassTabBarPhysics p = makePhysics();
+    p.tick(0);
+    p.pointerDown(const Offset(246, 31));
+    var t = run(p, 0, 0.05);
+    expect(p.pointerUp(), 2);
+    t = run(p, t, 0.15);
+    // Within the hang time the lens is still clear.
+    expect(p.clear, greaterThan(0.9));
+    t = run(p, t, 1.6);
+    expect(p.clear, lessThan(0.01));
+    expect(p.lensX, moreOrLessEquals(p.tabCenter(2), epsilon: 0.05));
+    expect(p.lensInPlatter.width, moreOrLessEquals(107.5, epsilon: 0.05));
+    expect(p.lensInPlatter.height, moreOrLessEquals(54, epsilon: 0.05));
+    expect(p.isActive, isFalse);
+  });
+
+  test('releasing a drag picks the nearest tab and drops the lens', () {
+    final GlassTabBarPhysics p = makePhysics();
+    p.tick(0);
+    p.pointerDown(const Offset(57.75, 31));
+    var t = run(p, 0, 0.5);
+    p.pointerMove(const Offset(180, 31));
+    t = run(p, t, 0.3);
+    expect(p.pointerUp(), 1);
+    t = run(p, t, 2.5);
+    final Rect lens = p.lensRect;
+    expect(lens.center.dx, moreOrLessEquals(p.tabCenter(1), epsilon: 0.05));
+    expect(lens.width, moreOrLessEquals(107.5, epsilon: 0.05));
+    expect(lens.height, moreOrLessEquals(54, epsilon: 0.05));
+    expect(p.platterScale, moreOrLessEquals(1, epsilon: 1e-4));
+    expect(p.isActive, isFalse);
+  });
+
+  test('pressing an end tab kicks the lens narrow and tall', () {
+    // The swelling platter carries the Home lens outward; UIKit's flex
+    // answers with x 0.964, y 1.059 at first.
+    final GlassTabBarPhysics p = makePhysics();
+    p.tick(0);
+    p.pointerDown(const Offset(57.75, 31));
+    var t = 0.0, lowest = 1.0;
+    for (var i = 0; i < 24; i++) {
+      t += 1 / 120;
+      p.tick(t);
+      lowest = lowest < p.flexScale.width ? lowest : p.flexScale.width;
+    }
+    expect(lowest, lessThan(0.995));
+  });
+
+  test('moving right flattens the lens, stopping makes it tall', () {
+    final GlassTabBarPhysics p = makePhysics();
+    p.tick(0);
+    p.pointerDown(const Offset(57.75, 31));
+    var t = run(p, 0, 1.2);
+    final double restHeight = p.lensRect.height;
+    // 800pt/s for 0.35s, sampled at 120Hz.
+    var x = 57.75;
+    var minHeight = double.infinity;
+    for (var i = 0; i < 42; i++) {
+      x += 800 / 120;
+      p.pointerMove(Offset(x, 31));
+      t += 1 / 120;
+      p.tick(t);
+      minHeight = minHeight < p.lensRect.height ? minHeight : p.lensRect.height;
+    }
+    expect(minHeight, lessThan(restHeight - 10));
+    var maxHeight = 0.0;
+    for (var i = 0; i < 60; i++) {
+      t += 1 / 120;
+      p.tick(t);
+      maxHeight = maxHeight > p.lensRect.height ? maxHeight : p.lensRect.height;
+    }
+    expect(maxHeight, greaterThan(restHeight + 5));
+  });
+
+  test('springs step the same at any frame rate', () {
+    GlassSpring make() =>
+        GlassSpring(response: 0.3, dampingRatio: 0.6)..target = 1;
+    final GlassSpring a = make(), b = make();
+    for (var i = 0; i < 12; i++) {
+      a.step(1 / 120);
+    }
+    for (var i = 0; i < 3; i++) {
+      b.step(1 / 30);
+    }
+    expect(a.value, moreOrLessEquals(b.value, epsilon: 1e-9));
+    expect(a.velocity, moreOrLessEquals(b.velocity, epsilon: 1e-9));
+    // UIKit's lift spring is critically damped with a 0.25s response.
+    final lift = GlassSpring.physical(
+      mass: 1,
+      stiffness: 631.654682,
+      damping: 50.265482,
+    );
+    expect(lift.response, moreOrLessEquals(0.25, epsilon: 1e-6));
+    expect(lift.dampingRatio, moreOrLessEquals(1, epsilon: 1e-5));
+  });
+
+  test('capsule distances', () {
+    final shape = GlassShape(const Rect.fromLTWH(0, 0, 100, 40));
+    expect(shape.radius, 20);
+    expect(shape.distance(const Offset(50, 20)), -20);
+    expect(shape.distance(const Offset(50, -5)), moreOrLessEquals(5));
+    expect(shape.distance(const Offset(-5, 20)), moreOrLessEquals(5));
+    expect(
+      shape.distance(const Offset(20, 20) + const Offset(-18, -24)),
+      moreOrLessEquals(10),
+    );
+    expect(shape.normal(const Offset(50, 0)), const Offset(0, -1));
+    final Offset oval = shape.normal(const Offset(80, 0), ovalization: 0.5);
+    expect(oval.dx, greaterThan(0));
+    expect(oval.distance, moreOrLessEquals(1));
+  });
+
+  testWidgets('the bar selects the tab the finger lets go over', (
+    WidgetTester tester,
+  ) async {
+    var selected = 0;
+    await tester.pumpWidget(
+      MediaQuery(
+        data: const MediaQueryData(),
+        child: Directionality(
+          textDirection: TextDirection.ltr,
+          child: Center(
+            child: SizedBox(
+              width: 398,
+              child: StatefulBuilder(
+                builder: (BuildContext context, StateSetter setState) =>
+                    GlassTabBar(
+                      items: const <GlassTabItem>[
+                        GlassTabItem(icon: SizedBox(), label: 'Home'),
+                        GlassTabItem(icon: SizedBox(), label: 'New'),
+                        GlassTabItem(icon: SizedBox(), label: 'Radio'),
+                        GlassTabItem(icon: SizedBox(), label: 'Library'),
+                      ],
+                      selectedIndex: selected,
+                      onSelected: (int i) => setState(() => selected = i),
+                    ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    final Rect rect = tester.getRect(find.byType(GlassTabBar));
+    expect(rect.size, const Size(398, 62));
+    final TestGesture finger = await tester.startGesture(
+      rect.topLeft + const Offset(57.75, 31),
+    );
+    await tester.pump(const Duration(milliseconds: 300));
+    for (var x = 60.0; x <= 250; x += 10) {
+      await finger.moveTo(rect.topLeft + Offset(x, 31));
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    await finger.up();
+    await tester.pumpAndSettle();
+    expect(selected, 2);
+    expect(tester.takeException(), isNull);
+  });
+}

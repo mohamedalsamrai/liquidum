@@ -8,29 +8,18 @@ import 'package:flutter/physics.dart';
 import 'package:liquidum/liquidum.dart';
 
 import 'sf_symbol.dart';
+import 'tabs.dart';
 
-class GlassTabItem {
-  const GlassTabItem({
-    required this.icon,
-    required this.label,
-    required this.symbol,
-  });
-
-  final IconData icon;
-  final String label;
-
-  /// SF Symbol name, for the native bar this one is compared against.
-  final String symbol;
-}
-
-/// An iOS 26 style tab bar: a glass capsule, a selection pill, the items, and
-/// a clear glass lens that lifts out of the pill while the bar is pressed.
+/// The earlier, widget-built iOS 26 style tab bar, kept for the demo until
+/// Liquidum's own `GlassTabBar` draws real glass: a glass capsule, a
+/// selection pill, the items, and a clear glass lens that lifts out of the
+/// pill while the bar is pressed.
 ///
 /// Press anywhere on the bar and slide to move the lens between tabs; release
 /// to select the tab under it. Metrics and colors are measured from the native
 /// tab bar in the iOS 26.5 simulator.
-class GlassTabBar extends StatefulWidget {
-  const GlassTabBar({
+class PreviousGlassTabBar extends StatefulWidget {
+  const PreviousGlassTabBar({
     super.key,
     required this.items,
     required this.selectedIndex,
@@ -39,18 +28,18 @@ class GlassTabBar extends StatefulWidget {
 
   static const double height = 62;
 
-  final List<GlassTabItem> items;
+  final List<TabSpec> items;
   final int selectedIndex;
   final ValueChanged<int> onSelected;
 
   @override
-  State<GlassTabBar> createState() => _GlassTabBarState();
+  State<PreviousGlassTabBar> createState() => _PreviousGlassTabBarState();
 }
 
-class _GlassTabBarState extends State<GlassTabBar>
+class _PreviousGlassTabBarState extends State<PreviousGlassTabBar>
     with TickerProviderStateMixin {
   static const double _inset = 4;
-  static const double _lensHeight = GlassTabBar.height + 8;
+  static const double _lensHeight = PreviousGlassTabBar.height + 8;
 
   // Snaps to the chosen tab with a small bounce.
   static final SpringDescription _settle = SpringDescription.withDampingRatio(
@@ -205,7 +194,7 @@ class _GlassTabBarState extends State<GlassTabBar>
   }
 
   @override
-  void didUpdateWidget(GlassTabBar oldWidget) {
+  void didUpdateWidget(PreviousGlassTabBar oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!_pressed && oldWidget.selectedIndex != widget.selectedIndex) {
       _springTo(_x, _center(widget.selectedIndex), _settle);
@@ -226,7 +215,7 @@ class _GlassTabBarState extends State<GlassTabBar>
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: GlassTabBar.height,
+      height: PreviousGlassTabBar.height,
       child: GlassBrightness(
         builder: (BuildContext context, double dark, Widget? child) =>
             _build(_Palette.lerp(_Palette.light, _Palette.dark, dark)),
@@ -268,7 +257,7 @@ class _GlassTabBarState extends State<GlassTabBar>
   Widget _buildLayers(_Palette palette) {
     final double lift = _lift.value.clamp(0.0, 1.0);
     final double x = _position;
-    final double pillHeight = GlassTabBar.height - 2 * _inset;
+    final double pillHeight = PreviousGlassTabBar.height - 2 * _inset;
 
     // The lens stretches along its motion and thins a little as it does.
     final double speed = math.max(
@@ -281,7 +270,7 @@ class _GlassTabBarState extends State<GlassTabBar>
         lerpDouble(pillHeight, _lensHeight, _lift.value.clamp(0.0, 1.2))! *
         (1 - stretch * 0.5);
     final Rect lens = Rect.fromCenter(
-      center: Offset(x, GlassTabBar.height / 2),
+      center: Offset(x, PreviousGlassTabBar.height / 2),
       width: lensWidth,
       height: lensHeight,
     );
@@ -362,7 +351,7 @@ class _GlassTabBarState extends State<GlassTabBar>
 class _Tab extends StatelessWidget {
   const _Tab({required this.item, required this.color});
 
-  final GlassTabItem item;
+  final TabSpec item;
   final Color color;
 
   // Item layout of the iOS 26 tab bar, read from UITabBar: the symbol's

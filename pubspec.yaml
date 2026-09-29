@@ -22,3 +22,4 @@ dev_dependencies:
 flutter:
   shaders:
     - shaders/glass.frag
+    - shaders/field.frag
