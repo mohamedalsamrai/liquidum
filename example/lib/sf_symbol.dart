@@ -5,15 +5,11 @@ import 'package:flutter/widgets.dart';
 /// tinted by Flutter. Place it centered: like UIKit, it centers its alignment
 /// rect there. Shows [fallback] where UIKit is not available.
 class SfSymbol extends StatelessWidget {
-  const SfSymbol(
-    this.name, {
-    super.key,
-    required this.fallback,
-    this.color,
-  });
+  const SfSymbol(this.name, {super.key, required this.fallback, this.color});
 
   final String name;
   final IconData fallback;
+
   /// Defaults to the ambient [IconTheme]'s color.
   final Color? color;
 

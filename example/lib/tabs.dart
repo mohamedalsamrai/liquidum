@@ -5,7 +5,11 @@ import 'sf_symbol.dart';
 
 /// A tab of the example apps, with what each bar needs to show it.
 class TabSpec {
-  const TabSpec({required this.icon, required this.label, required this.symbol});
+  const TabSpec({
+    required this.icon,
+    required this.label,
+    required this.symbol,
+  });
 
   /// Stand-in where SF Symbols are not available.
   final IconData icon;
@@ -15,8 +19,10 @@ class TabSpec {
   final String symbol;
 
   /// The tab for Liquidum's [GlassTabBar], drawn with UIKit's own symbol.
-  GlassTabItem get glassItem =>
-      GlassTabItem(icon: SfSymbol(symbol, fallback: icon), label: label);
+  GlassTabItem get glassItem => GlassTabItem(
+    icon: SfSymbol(symbol, fallback: icon),
+    label: label,
+  );
 }
 
 const tabs = <TabSpec>[

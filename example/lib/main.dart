@@ -2,17 +2,14 @@ import 'package:flutter/cupertino.dart';
 
 import 'package:liquidum/liquidum.dart';
 
-import 'glass_tab_bar.dart';
 import 'native_tab_bar.dart';
 import 'sf_symbol.dart';
 import 'tabs.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Glass.precache();
-  await SfSymbol.precache(
-    tabs.map((TabSpec tab) => tab.symbol),
-  );
+  await GlassTabBar.precache();
+  await SfSymbol.precache(tabs.map((TabSpec tab) => tab.symbol));
   runApp(const ExampleApp());
 }
 
@@ -66,8 +63,10 @@ class _HomePageState extends State<HomePage> {
               left: 21,
               right: 21,
               bottom: 21,
-              child: PreviousGlassTabBar(
-                items: tabs,
+              child: GlassTabBar(
+                items: <GlassTabItem>[
+                  for (final TabSpec tab in tabs) tab.glassItem,
+                ],
                 selectedIndex: _selected,
                 onSelected: _select,
               ),

@@ -3,7 +3,10 @@
 //
 // `<tmp>/comparison.txt` holds "<apple|liquidum> <background> [flags]",
 // flags being any of `log` (write liquidum's per-frame state), `view=<name>`
-// (a GlassTabBarDebugView) and `noshare` (the lens takes its own capture).
+// (a GlassTabBarDebugView), `noshare` (the lens takes its own capture),
+// `hold=<x>` (hold a press at x in the bar, for still comparisons), `bare`
+// (no tab content), `optics=<mask>` (GlassTabBarOptics stages) and
+// `lift=<progress>` (the optics at a fixed lift).
 //
 // A marker in a clear band above the bar shows where the finger is, so each
 // recorded frame can be measured against the finger. Below it, a 12-bit code
@@ -46,9 +49,25 @@ Future<void> main() async {
       .where((String f) => f.startsWith('view='))
       .map((String f) => f.substring(5))
       .firstOrNull;
+  final double? hold = flags
+      .where((String f) => f.startsWith('hold='))
+      .map((String f) => double.parse(f.substring(5)))
+      .firstOrNull;
   runApp(
     ComparisonApp(
       apple: config[0] == 'apple',
+      hold: hold,
+      bare: flags.contains('bare'),
+      optics:
+          flags
+              .where((String f) => f.startsWith('optics='))
+              .map((String f) => int.parse(f.substring(7)))
+              .firstOrNull ??
+          GlassTabBarOptics.all,
+      lift: flags
+          .where((String f) => f.startsWith('lift='))
+          .map((String f) => double.parse(f.substring(5)))
+          .firstOrNull,
       background: config[1],
       view: GlassTabBarDebugView.values.firstWhere(
         (GlassTabBarDebugView v) => v.name == view,
@@ -107,11 +126,19 @@ class ComparisonApp extends StatefulWidget {
     super.key,
     required this.apple,
     required this.background,
+    this.hold,
+    this.bare = false,
+    this.optics = GlassTabBarOptics.all,
+    this.lift,
     this.view = GlassTabBarDebugView.none,
     this.shareBackdrop = true,
   });
 
   final bool apple;
+  final double? hold;
+  final bool bare;
+  final int optics;
+  final double? lift;
   final String background;
   final GlassTabBarDebugView view;
   final bool shareBackdrop;
@@ -223,6 +250,12 @@ class _ComparisonAppState extends State<ComparisonApp>
                 onSelected: (int i) => setState(() => _selected = i),
                 debugView: widget.view,
                 debugShareBackdrop: widget.shareBackdrop,
+                debugHold: widget.hold == null
+                    ? null
+                    : Offset(widget.hold!, 31),
+                debugHideContent: widget.bare,
+                debugOptics: widget.optics,
+                debugLift: widget.lift,
                 // Above the marker band and the clock code.
                 debugInspector: const Rect.fromLTWH(0, -380, 398, 300),
               ),
@@ -302,10 +335,7 @@ class _Background extends CustomPainter {
         }
       case 'hstripes':
         for (var y = 0.0; y < h; y += 20) {
-          canvas.drawRect(
-            Rect.fromLTWH(0, y, w, 10),
-            Paint()..color = _black,
-          );
+          canvas.drawRect(Rect.fromLTWH(0, y, w, 10), Paint()..color = _black);
         }
       case 'grid':
         // Thin lines every 8pt, and every 40pt a colored one, so that
@@ -349,10 +379,51 @@ class _Background extends CustomPainter {
             );
           }
         }
+      case 'saw':
+        // Position code: red rises over every 32pt in x, green over
+        // every 32pt in y.
+        canvas.drawRect(
+          Offset.zero & size,
+          Paint()
+            ..shader = ui.Gradient.linear(
+              Offset.zero,
+              const Offset(32, 0),
+              const <Color>[Color(0xFF000000), Color(0xFFFF0000)],
+              null,
+              TileMode.repeated,
+            ),
+        );
+        canvas.drawRect(
+          Offset.zero & size,
+          Paint()
+            ..blendMode = BlendMode.plus
+            ..shader = ui.Gradient.linear(
+              Offset.zero,
+              const Offset(0, 32),
+              const <Color>[Color(0xFF000000), Color(0xFF00FF00)],
+              null,
+              TileMode.repeated,
+            ),
+        );
+      case 'vstripe8':
+        canvas.drawColor(_white, BlendMode.src);
+        for (var x = 0.0; x < w; x += 8) {
+          canvas.drawRect(Rect.fromLTWH(x, 0, 4, h), Paint()..color = _black);
+        }
+      case 'hstripe8':
+        canvas.drawColor(_white, BlendMode.src);
+        for (var y = 0.0; y < h; y += 8) {
+          canvas.drawRect(Rect.fromLTWH(0, y, w, 4), Paint()..color = _black);
+        }
       case 'dark':
         canvas.drawColor(const Color(0xFF15171C), BlendMode.src);
       case 'white':
         canvas.drawColor(_white, BlendMode.src);
+      case final String flat when flat.startsWith('flat-'):
+        canvas.drawColor(
+          Color(0xFF000000 | int.parse(flat.substring(5), radix: 16)),
+          BlendMode.src,
+        );
       default:
         // A mid gray: glass edges, lens and shadow all show against it.
         canvas.drawColor(const Color(0xFF7F7F7F), BlendMode.src);

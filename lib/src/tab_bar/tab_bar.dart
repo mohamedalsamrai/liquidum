@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/rendering.dart';
@@ -41,6 +42,27 @@ enum GlassTabBarDebugView {
   sampling,
 }
 
+/// The optical stages of the glass, as bits of [GlassTabBar.debugOptics].
+abstract final class GlassTabBarOptics {
+  /// The lens's warp: samples pushed outward near its edge.
+  static const int warp = 1;
+
+  /// The lens's inner refraction, and its material's tone.
+  static const int inner = 2;
+
+  /// The lens's chromatic dispersion.
+  static const int dispersion = 4;
+
+  /// The platter's material (refraction, frost, color); without it, the
+  /// backdrop is seen bare.
+  static const int platter = 8;
+
+  /// The resting selection's tint.
+  static const int rest = 16;
+
+  static const int all = 31;
+}
+
 /// An iOS 26 tab bar: a glass platter holding the tabs, and a lens that
 /// selects one. Press and slide to carry the lens between tabs; release to
 /// select the tab under it.
@@ -53,6 +75,10 @@ class GlassTabBar extends StatefulWidget {
     this.debugView = GlassTabBarDebugView.none,
     this.debugShareBackdrop = true,
     this.debugInspector,
+    this.debugHold,
+    this.debugHideContent = false,
+    this.debugOptics = GlassTabBarOptics.all,
+    this.debugLift,
   });
 
   /// Height of the bar, as on iOS 26.
@@ -71,6 +97,23 @@ class GlassTabBar extends StatefulWidget {
   /// Where [GlassTabBarDebugView.sampling] draws its inspector, in the bar's
   /// coordinates. Defaults to a panel above the bar.
   final Rect? debugInspector;
+
+  /// Holds a press at this point, in the bar's coordinates, from the first
+  /// frame on: the lens stays lifted there without a real touch, for still
+  /// comparisons.
+  final Offset? debugHold;
+
+  /// Draws no tab content, so the glass's optics can be looked at alone.
+  final bool debugHideContent;
+
+  /// The optical stages drawn (a [GlassTabBarOptics] mask), to compare them
+  /// one at a time.
+  final int debugOptics;
+
+  /// Draws the glass's optics at this lift progress (0 to 1) instead of the
+  /// lens's, to compare the transition between resting and lifted at fixed
+  /// points.
+  final double? debugLift;
 
   static final ShaderProgram _field = ShaderProgram('field.frag');
   static final ShaderProgram _backdrop = ShaderProgram('backdrop.frag');
@@ -166,6 +209,15 @@ class _GlassTabBarState extends State<GlassTabBar>
         _frame.notify();
       }
     });
+    final Offset? hold = widget.debugHold;
+    if (hold != null) {
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _physics.pointerDown(hold);
+          _wake();
+        }
+      });
+    }
   }
 
   @override
@@ -191,6 +243,9 @@ class _GlassTabBarState extends State<GlassTabBar>
   @override
   Widget build(BuildContext context) {
     final List<GlassTabItem> items = widget.items;
+    const hidden = Color(0x00000000);
+    final Color normal = widget.debugHideContent ? hidden : _normal;
+    final Color selected = widget.debugHideContent ? hidden : _selected;
     return SizedBox(
       height: GlassTabBar.height,
       child: _TabBarLayout(
@@ -200,6 +255,8 @@ class _GlassTabBarState extends State<GlassTabBar>
         debugView: widget.debugView,
         shareBackdrop: widget.debugShareBackdrop,
         inspector: widget.debugInspector,
+        optics: widget.debugOptics,
+        lift: widget.debugLift,
         devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
         children: <Widget>[
           for (var i = 0; i < items.length; i++)
@@ -209,12 +266,12 @@ class _GlassTabBarState extends State<GlassTabBar>
               label: items[i].label,
               onTap: () => widget.onSelected(i),
               child: ExcludeSemantics(
-                child: _TabView(item: items[i], color: _normal),
+                child: _TabView(item: items[i], color: normal),
               ),
             ),
           for (var i = 0; i < items.length; i++)
             ExcludeSemantics(
-              child: _TabView(item: items[i], color: _selected),
+              child: _TabView(item: items[i], color: selected),
             ),
         ],
       ),
@@ -291,6 +348,8 @@ class _TabBarLayout extends MultiChildRenderObjectWidget {
     required this.debugView,
     required this.shareBackdrop,
     required this.inspector,
+    required this.optics,
+    required this.lift,
     required this.devicePixelRatio,
     required super.children,
   });
@@ -301,6 +360,8 @@ class _TabBarLayout extends MultiChildRenderObjectWidget {
   final GlassTabBarDebugView debugView;
   final bool shareBackdrop;
   final Rect? inspector;
+  final int optics;
+  final double? lift;
   final double devicePixelRatio;
 
   @override
@@ -312,6 +373,8 @@ class _TabBarLayout extends MultiChildRenderObjectWidget {
       debugView: debugView,
       shareBackdrop: shareBackdrop,
       inspector: inspector,
+      optics: optics,
+      lift: lift,
       devicePixelRatio: devicePixelRatio,
     );
   }
@@ -326,6 +389,8 @@ class _TabBarLayout extends MultiChildRenderObjectWidget {
       ..debugView = debugView
       ..shareBackdrop = shareBackdrop
       ..inspector = inspector
+      ..optics = optics
+      ..lift = lift
       ..devicePixelRatio = devicePixelRatio;
   }
 }
@@ -352,6 +417,8 @@ class RenderGlassTabBar extends RenderBox
     required this._debugView,
     required this._shareBackdrop,
     required this._inspector,
+    this._optics = GlassTabBarOptics.all,
+    this._lift,
     required this._devicePixelRatio,
   });
 
@@ -383,6 +450,26 @@ class RenderGlassTabBar extends RenderBox
   set inspector(Rect? value) {
     if (value != _inspector) {
       _inspector = value;
+      markNeedsPaint();
+    }
+  }
+
+  /// The optical stages drawn: a [GlassTabBarOptics] mask.
+  int get optics => _optics;
+  int _optics;
+  set optics(int value) {
+    if (value != _optics) {
+      _optics = value;
+      markNeedsPaint();
+    }
+  }
+
+  /// The lift progress the optics are drawn at, when not the lens's own.
+  double? get lift => _lift;
+  double? _lift;
+  set lift(double? value) {
+    if (value != _lift) {
+      _lift = value;
       markNeedsPaint();
     }
   }
@@ -556,6 +643,14 @@ class RenderGlassTabBar extends RenderBox
       ),
     );
 
+    // The glass's optics are in its own points: the lens is drawn scaled by
+    // the platter and by its flex, the platter by its swell and stretch.
+    final double platterScale = math.sqrt(
+      _physics.platterScaleX * _physics.platterScaleY,
+    );
+    final Size flex = _physics.flexScale;
+    final double lensScale = platterScale * math.sqrt(flex.width * flex.height);
+
     ui.ImageFilter passFilter(int pass) {
       final _BackdropUniforms u = _passes[pass]
         ..pass.set(
@@ -567,10 +662,10 @@ class RenderGlassTabBar extends RenderBox
         ..platter.setRect(platterPixels)
         ..lens.setRect(lensPixels)
         ..optics.set(
-          _physics.liftProgress,
-          _refractionAtRim * space.pointSize,
-          _refractionBevel * space.pointSize,
-          0,
+          _lift ?? _physics.liftProgress,
+          lensScale,
+          platterScale,
+          _optics.toDouble(),
         )
         ..touch.set(finger.dx, finger.dy, touch == null ? 0 : 1, 0)
         ..inspector.set(
@@ -663,11 +758,7 @@ class RenderGlassTabBar extends RenderBox
 
   static void _paintNothing(PaintingContext context, Offset offset) {}
 
-  // How far the lens reaches past its rim and over how deep a bevel, in
-  // points: UIKit's lifted lens displacement (9) and its SDF glass effect
-  // height (11.2). Placeholders until the optics are fitted.
-  static const double _refractionAtRim = 9;
-  static const double _refractionBevel = 11.2;
+  // UIKit's gradientOvalization for the glass's distance field.
   static const double _ovalization = 0.5;
   static const double _inspectorZoom = 2;
 
