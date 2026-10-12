@@ -21,6 +21,10 @@
 //   fading out as the lens lifts. The material sees that through an inner
 //   refraction a few points deep, disperses it near the edge (red and blue
 //   pulled apart), and fades in over it at four times the lift progress.
+// - The tabs are lifted into the lens: the selected-style tabs (an atlas the
+//   bar renders), each grown 16% about its center at full lift, clipped to
+//   the lens, pulled inward near its edge by two displacement maps (17.5pt
+//   at full lift, 11.2pt and 14pt high), and dispersed with the material.
 
 #include <flutter/runtime_effect.glsl>
 
@@ -32,8 +36,13 @@ uniform vec4 uOptics;      // lift progress, lens scale, platter scale, stages (
 uniform vec4 uTouch;       // finger.xy, pressed, unused
 uniform vec4 uInspector;   // inspector on screen: origin.xy, size.xy
 uniform vec4 uWindow;      // capture window it shows: origin.xy, size.xy
+uniform vec4 uContent;     // the bar's origin in capture pixels.xy, the content atlas's size in points.zw
+uniform vec4 uTabs;        // first tab's center x, spacing, count, atlas slot pitch (points)
+uniform vec4 uPlatterXf;   // platter transform: center.xy, drift.xy (points)
+uniform vec4 uPlatterS;    // platter scale.xy, unused, atlas slot width (points)
 
 uniform sampler2D uCapture;
+uniform sampler2D uContentAtlas;  // the tabs in the selected style, one per slot
 
 out vec4 fragColor;
 
@@ -72,6 +81,15 @@ const vec3 kFace = vec3(0.8627, 0.1294, 0.727);
 const float kRestBlur = 2.22;
 const mat3 kRest = mat3(1.185, -0.015, -0.015, -0.05, 1.15, -0.05, -0.005, -0.005, 1.195);
 const float kRestOffset = -0.2;
+// Lifted content (UIKit's contentWrapperDisplacement): the selected tabs, seen
+// in the lens, are lensed by two displacement maps of this amount at full
+// lift (one of height 11.2, then one of height 14 in the material), each
+// pulling inward near the edge.
+// UIKit also scales each selected tab by 1.16 about its center at full lift.
+const float kContentLens = 17.5;
+const float kContentLensHeight = 11.2;
+const float kContentMaterialHeight = 14.0;
+const float kContentGrowth = 0.16;
 // The lens's material is faded in by UIKit's opacityPair filter, at four
 // times the lift progress.
 const float kMaterialFade = 4.0;
@@ -84,6 +102,7 @@ const float kInnerStage = 2.0;
 const float kDispersionStage = 4.0;
 const float kPlatterStage = 8.0;
 const float kRestStage = 16.0;
+const float kContentStage = 32.0;
 
 bool stage(float bit) {
   return mod(floor(uOptics.w / bit), 2.0) > 0.5;
@@ -244,6 +263,65 @@ vec3 base(vec2 q, float lift, int taps) {
   return w;
 }
 
+// ---- Lifted content.
+
+// The tabs in the selected style at x (capture pixels), as laid out in the
+// platter, each scaled about its center by the lift (premultiplied).
+vec4 content(vec2 x, float lift) {
+  vec2 b = (x - uContent.xy) / uPass.z;
+  vec2 u = uPlatterXf.xy + (b - uPlatterXf.xy - uPlatterXf.zw) / uPlatterS.xy;
+  float first = uTabs.x, spacing = uTabs.y, count = uTabs.z, pitch = uTabs.w;
+  float width = uPlatterS.w;
+  float nearest = spacing > 0.0 ? floor((u.x - first) / spacing + 0.5) : 0.0;
+  vec4 sum = vec4(0.0);
+  for (int j = -1; j <= 1; j++) {
+    float i = nearest + float(j);
+    if (i < 0.0 || i >= count) {
+      continue;
+    }
+    vec2 center = vec2(first + i * spacing, uContent.w * 0.5);
+    float grow = stage(kContentStage) ? 1.0 + kContentGrowth * lift : 1.0;
+    vec2 v = center + (u - center) / grow;
+    float local = v.x - (center.x - width * 0.5);
+    if (local < 0.0 || local > width || v.y < 0.0 || v.y > uContent.w) {
+      continue;
+    }
+    vec4 t = texture(uContentAtlas, vec2(i * pitch + local, v.y) / uContent.zw);
+    sum = t + sum * (1.0 - t.a);
+  }
+  return sum;
+}
+
+// The content as the lens shows it directly: clipped to the lens and lensed
+// once (UIKit's ClearGlassView).
+vec4 contentLensed(vec2 q, float lift) {
+  if (!stage(kContentStage)) {
+    return capsule(q, uLens) < 0.0 ? content(q, lift) : vec4(0.0);
+  }
+  float k = uPass.z * uOptics.y;
+  float depth = max(-capsule(q, uLens), 0.0);
+  vec2 s = q - outward(q, uLens, uPass.w) * kContentLens * k * lift *
+                   sag(depth, kContentLensHeight * k);
+  return capsule(s, uLens) < 0.0 ? content(s, lift) : vec4(0.0);
+}
+
+// The content as the lens's material shows it: lensed once more
+// (ContentLensingView).
+vec4 contentInMaterial(vec2 p, float lift) {
+  if (!stage(kContentStage)) {
+    return contentLensed(p, lift);
+  }
+  float k = uPass.z * uOptics.y;
+  float depth = max(-capsule(p, uLens), 0.0);
+  vec2 r = p - outward(p, uLens, uPass.w) * kContentLens * k * lift *
+                   sag(depth, kContentMaterialHeight * k);
+  return contentLensed(r, lift);
+}
+
+vec3 over(vec4 top, vec3 under) {
+  return top.rgb + under * (1.0 - top.a);
+}
+
 // ---- Diagnostics.
 
 float coverage(float d, float px) {
@@ -305,12 +383,15 @@ void main() {
     // The material fades in quickly as the lens lifts (UIKit's opacityPair),
     // over the base: the resting selection over the warped backdrop.
     float fade = clamp(kMaterialFade * lift, 0.0, 1.0);
-    vec3 c = fade < 1.0 ? base(p, lift, 32) : vec3(0.0);
+    // Below the material: the base with the content over it, lensed once.
+    vec3 c = fade < 1.0 ? over(contentLensed(p, lift), base(p, lift, 32)) : vec3(0.0);
     if (fade > 0.0) {
-      // The material: the base seen through the inner refraction, then
-      // dispersed near the edge. A tap past the lens's outline reads the
-      // unwarped backdrop, as UIKit's warp is clipped to the outline.
-      vec3 glass = base(innerSource(p), lift, 32) * tone;
+      // The material: the base seen through the inner refraction, the
+      // content (lensed again) over it, all dispersed near the edge. A tap
+      // past the lens's outline reads the unwarped backdrop, as UIKit's warp
+      // is clipped to the outline.
+      vec3 glass = over(contentInMaterial(p, lift),
+                        base(innerSource(p), lift, 32) * tone);
       float spread = clamp(1.0 - depth / (kAberrationDepth * k), 0.0, 1.0);
       if (spread > 0.0 && stage(kDispersionStage)) {
         vec2 v = kAberration * ((p - uLens.xy) / uLens.zw) * k;
@@ -321,9 +402,10 @@ void main() {
           vec3 w = vec3(max(t, 0.0) * 0.5, (1.0 - abs(t)) / 3.0, max(-t, 0.0) * 0.5);
           vec2 at = clamp(p + v * t, texels.xy, texels.zw);
           vec3 s = i == 3 ? glass
-                          : capsule(at, uLens) < 0.0
-                                ? base(innerSource(at), lift, 16) * tone
-                                : below(at, vec2(1.0, 0.0), vec2(0.0, 1.0), 16);
+                          : over(contentInMaterial(at, lift),
+                                 capsule(at, uLens) < 0.0
+                                     ? base(innerSource(at), lift, 16) * tone
+                                     : below(at, vec2(1.0, 0.0), vec2(0.0, 1.0), 16));
           dispersed += w * s;
         }
         glass = mix(glass, dispersed, spread);

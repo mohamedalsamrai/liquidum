@@ -60,7 +60,10 @@ abstract final class GlassTabBarOptics {
   /// The resting selection's tint.
   static const int rest = 16;
 
-  static const int all = 31;
+  /// The lifted content: the selected tab grown and lensed by the lens.
+  static const int content = 32;
+
+  static const int all = 63;
 }
 
 /// An iOS 26 tab bar: a glass platter holding the tabs, and a lens that
@@ -405,7 +408,9 @@ class _TabParentData extends ContainerBoxParentData<RenderBox> {}
 /// first and takes the capture: everything behind the bar, before any of its
 /// glass. The lens's pass comes after the tabs and reads that same capture
 /// (a shared [BackdropKey]), so it can reach content far outside itself but
-/// never sees the bar's glass, the tabs, or itself.
+/// never sees the bar's glass, the tabs, or itself. The tabs under the lens
+/// are not painted here but lifted into it: the lens's shader draws them
+/// from an atlas of the tabs in the selected style, grown and lensed.
 class RenderGlassTabBar extends RenderBox
     with
         ContainerRenderObjectMixin<RenderBox, _TabParentData>,
@@ -523,17 +528,37 @@ class RenderGlassTabBar extends RenderBox
   @override
   void attach(PipelineOwner owner) {
     super.attach(owner);
-    _frame.addListener(markNeedsPaint);
+    _frame.addListener(_onFrame);
   }
 
   @override
   void detach() {
-    _frame.removeListener(markNeedsPaint);
+    _frame.removeListener(_onFrame);
     super.detach();
+  }
+
+  // A new animation frame repaints the glass, not the tabs' content.
+  bool _repaintingFrame = false;
+  void _onFrame() {
+    _repaintingFrame = true;
+    markNeedsPaint();
+    _repaintingFrame = false;
+  }
+
+  @override
+  void markNeedsPaint() {
+    // Anything else (a tab's content changing, a new layout, a setting) may
+    // change what the lens shows of the tabs.
+    if (!_repaintingFrame) {
+      _contentDirty = true;
+    }
+    super.markNeedsPaint();
   }
 
   @override
   void dispose() {
+    _contentAtlas?.dispose();
+    _noContent?.dispose();
     _fieldShader?.dispose();
     for (final _BackdropUniforms u in _passes) {
       u.shader.dispose();
@@ -555,6 +580,7 @@ class RenderGlassTabBar extends RenderBox
 
   @override
   void performLayout() {
+    _contentDirty = true;
     size = constraints.constrain(
       Size(constraints.maxWidth, GlassTabBar.height),
     );
@@ -651,6 +677,13 @@ class RenderGlassTabBar extends RenderBox
     final Size flex = _physics.flexScale;
     final double lensScale = platterScale * math.sqrt(flex.width * flex.height);
 
+    // The tabs in the selected style, which the lens draws itself.
+    final ui.Image atlas = _ensureContentAtlas();
+    final Offset barOrigin = space.point(Offset.zero);
+    final Offset platterCenter = size.center(Offset.zero);
+    final Offset drift = _physics.platterDrift;
+    final int count = _tabCount;
+
     ui.ImageFilter passFilter(int pass) {
       final _BackdropUniforms u = _passes[pass]
         ..pass.set(
@@ -674,7 +707,32 @@ class RenderGlassTabBar extends RenderBox
           inspectorPixels.width,
           inspectorPixels.height,
         )
-        ..window.set(window.left, window.top, window.width, window.height);
+        ..window.set(window.left, window.top, window.width, window.height)
+        ..content.set(
+          barOrigin.dx,
+          barOrigin.dy,
+          count * _atlasPitch,
+          size.height,
+        )
+        ..tabs.set(
+          _physics.tabCenter(0),
+          count > 1 ? _physics.tabCenter(1) - _physics.tabCenter(0) : 0,
+          count.toDouble(),
+          _atlasPitch,
+        )
+        ..platterTransform.set(
+          platterCenter.dx,
+          platterCenter.dy,
+          drift.dx,
+          drift.dy,
+        )
+        ..platterScale.set(
+          _physics.platterScaleX,
+          _physics.platterScaleY,
+          0,
+          _atlasSlot,
+        );
+      u.shader.setImageSampler(1, atlas);
       return ui.ImageFilter.shader(u.shader);
     }
 
@@ -702,7 +760,8 @@ class RenderGlassTabBar extends RenderBox
           _paintTabs(context, offset, inside: false),
     );
 
-    // Pass 2, the lens: the same capture, and the tabs under it on top.
+    // Pass 2, the lens: the same capture, with the tabs under it lifted into
+    // it (drawn by its shader from the content atlas).
     final BackdropKey lensCapture = _shareBackdrop
         ? _sharedCapture
         : _lensOwnCapture;
@@ -715,15 +774,7 @@ class RenderGlassTabBar extends RenderBox
             (_lensPass.layer ??= BackdropFilterLayer())
               ..filter = passFilter(1)
               ..backdropKey = lensCapture;
-        context.pushLayer(layer, (PaintingContext context, Offset offset) {
-          context.pushTransform(
-            needsCompositing,
-            offset,
-            _physics.platterTransform,
-            (PaintingContext context, Offset offset) =>
-                _paintTabs(context, offset, inside: true),
-          );
-        }, offset);
+        context.pushLayer(layer, _paintNothing, offset);
       },
       oldLayer: _lensClip.layer,
     );
@@ -809,6 +860,60 @@ class RenderGlassTabBar extends RenderBox
         ..drawLine(t - const Offset(10, 0), t + const Offset(10, 0), line)
         ..drawLine(t - const Offset(0, 10), t + const Offset(0, 10), line);
     }
+  }
+
+  // -------------------------------------------------------- the lifted content
+
+  // The selected-style tabs, one per slot of an image, for the lens's shader
+  // to grow and lens each about its own center (as UIKit scales its
+  // selected tab buttons and lenses them through the lens). Rendered again
+  // only when the tabs or their layout change, not every animation frame.
+  ui.Image? _contentAtlas;
+  ui.Image? _noContent;
+  bool _contentDirty = true;
+
+  // Room around each tab for labels wider than the pill.
+  static const double _atlasMargin = 12;
+  double get _atlasSlot => _physics.pillWidth + 2 * _atlasMargin;
+  double get _atlasPitch => _atlasSlot + 2;
+
+  ui.Image _ensureContentAtlas() {
+    final int count = _tabCount;
+    if (count == 0 || size.isEmpty) {
+      return _noContent ??= _emptyImage();
+    }
+    if (_contentDirty || _contentAtlas == null) {
+      _contentDirty = false;
+      final Rect bounds = Rect.fromLTWH(0, 0, count * _atlasPitch, size.height);
+      final layer = OffsetLayer();
+      final context = _AtlasContext(layer, bounds);
+      var i = 0;
+      RenderBox? child = firstChild;
+      while (child != null) {
+        if (i >= count) {
+          context.paintChild(
+            child,
+            Offset((i - count) * _atlasPitch + _atlasMargin, 0),
+          );
+        }
+        child = childAfter(child);
+        i++;
+      }
+      context.finish();
+      _contentAtlas?.dispose();
+      _contentAtlas = layer.toImageSync(bounds, pixelRatio: _devicePixelRatio);
+      layer.dispose();
+    }
+    return _contentAtlas!;
+  }
+
+  static ui.Image _emptyImage() {
+    final recorder = ui.PictureRecorder();
+    Canvas(recorder);
+    final ui.Picture picture = recorder.endRecording();
+    final ui.Image image = picture.toImageSync(1, 1);
+    picture.dispose();
+    return image;
   }
 
   // ------------------------------------------------------------ the tab items
@@ -949,7 +1054,11 @@ class _BackdropUniforms {
       optics = shader.getUniformVec4('uOptics'),
       touch = shader.getUniformVec4('uTouch'),
       inspector = shader.getUniformVec4('uInspector'),
-      window = shader.getUniformVec4('uWindow');
+      window = shader.getUniformVec4('uWindow'),
+      content = shader.getUniformVec4('uContent'),
+      tabs = shader.getUniformVec4('uTabs'),
+      platterTransform = shader.getUniformVec4('uPlatterXf'),
+      platterScale = shader.getUniformVec4('uPlatterS');
 
   final ui.FragmentShader shader;
   final ui.UniformVec4Slot pass;
@@ -959,6 +1068,17 @@ class _BackdropUniforms {
   final ui.UniformVec4Slot touch;
   final ui.UniformVec4Slot inspector;
   final ui.UniformVec4Slot window;
+  final ui.UniformVec4Slot content;
+  final ui.UniformVec4Slot tabs;
+  final ui.UniformVec4Slot platterTransform;
+  final ui.UniformVec4Slot platterScale;
+}
+
+/// Paints the tabs into a layer of their own, for the content atlas.
+class _AtlasContext extends PaintingContext {
+  _AtlasContext(super.containerLayer, super.estimatedBounds);
+
+  void finish() => stopRecordingIfNeeded();
 }
 
 extension on ui.UniformVec4Slot {
