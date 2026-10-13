@@ -9,6 +9,7 @@ It looks and moves like Apple's own, and it takes a few lines to use.
 ![Renderer](https://img.shields.io/badge/renderer-Impeller-7257A8)
 ![Platforms](https://img.shields.io/badge/platforms-iOS%20%7C%20Android-lightgrey)
 ![Status](https://img.shields.io/badge/status-0.0.1%20preview-orange)
+[![License](https://img.shields.io/badge/license-BUSL--1.1-blue)](LICENSE)
 
 <img src="doc/images/hero.png" alt="Liquidum's glass tab bar over colorful content: light, dark, and with a custom gradient and dark glass" width="860">
 
@@ -338,3 +339,17 @@ Judge motion in profile or release mode: debug builds are much slower.
   - light that follows the device's tilt,
   - morphing into a search field,
   - the accessibility settings (Reduce Transparency, Increase Contrast).
+
+## License
+
+Liquidum's source is open to read, under the
+[Business Source License 1.1](LICENSE). It is not an open-source license:
+
+- **Non-commercial use is free, in production too.** That covers personal,
+  educational and research projects, and apps that earn no revenue.
+- **Commercial use needs a commercial license.** That means an app that is
+  sold, earns money through subscriptions, in-app purchases or ads, or is
+  made by or for a company. [Contact the author](https://github.com/mohamedalsamrai).
+- **Each version becomes open source later.** On 2030-10-13, or four years
+  after that version was released if that comes first, it changes to the
+  Apache License 2.0.
