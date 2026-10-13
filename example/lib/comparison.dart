@@ -6,7 +6,9 @@
 // (a GlassTabBarDebugView), `noshare` (the lens takes its own capture),
 // `hold=<x>` (hold a press at x in the bar, for still comparisons), `bare`
 // (no tab content), `optics=<mask>` (GlassTabBarOptics stages) and
-// `lift=<progress>` (the optics at a fixed lift).
+// `lift=<progress>` (the optics at a fixed lift), `tint=<rrggbb>` and
+// `utint=<rrggbb>` (selected and normal item colors) and `badge=<i>:<text>`
+// (a badge on tab i).
 //
 // The bar and background are laid out as on the reference screen (the
 // iPhone 17 Pro Max the bars were compared on): on any other screen the bar
@@ -89,9 +91,26 @@ Future<void> main() async {
         orElse: () => GlassTabBarDebugView.none,
       ),
       shareBackdrop: !flags.contains('noshare'),
+      tint: _color(flags, 'tint='),
+      unselectedTint: _color(flags, 'utint='),
+      badges: <String?>[
+        for (var i = 0; i < tabs.length; i++)
+          flags
+              .where((String f) => f.startsWith('badge=$i:'))
+              .map((String f) => f.substring('badge=$i:'.length))
+              .firstOrNull,
+      ],
     ),
   );
 }
+
+Color? _color(Set<String> flags, String prefix) => flags
+    .where((String f) => f.startsWith(prefix))
+    .map(
+      (String f) =>
+          Color(0xFF000000 | int.parse(f.substring(prefix.length), radix: 16)),
+    )
+    .firstOrNull;
 
 /// Writes the appearance's inputs, as they change, to `<tmp>/liqadapt.txt`,
 /// with the background changes (the `adaptlog` flag).
@@ -187,6 +206,9 @@ class ComparisonApp extends StatefulWidget {
     this.lift,
     this.view = GlassTabBarDebugView.none,
     this.shareBackdrop = true,
+    this.tint,
+    this.unselectedTint,
+    this.badges = const <String?>[],
   });
 
   final bool apple;
@@ -200,6 +222,9 @@ class ComparisonApp extends StatefulWidget {
   final String background;
   final GlassTabBarDebugView view;
   final bool shareBackdrop;
+  final Color? tint;
+  final Color? unselectedTint;
+  final List<String?> badges;
 
   @override
   State<ComparisonApp> createState() => _ComparisonAppState();
@@ -349,6 +374,9 @@ class _ComparisonAppState extends State<ComparisonApp>
               items: tabs,
               selectedIndex: _selected,
               onSelected: (int i) => setState(() => _selected = i),
+              tint: widget.tint,
+              unselectedTint: widget.unselectedTint,
+              badges: widget.badges,
             ),
           )
         else if (!widget.noBar)
@@ -357,7 +385,16 @@ class _ComparisonAppState extends State<ComparisonApp>
             width: referenceScreen.width - 2 * barMargin,
             bottom: barMargin,
             child: GlassTabBar(
-              items: [for (final TabSpec t in tabs) t.glassItem],
+              items: <GlassTabItem>[
+                for (var i = 0; i < tabs.length; i++)
+                  GlassTabItem(
+                    icon: tabs[i].glassItem.icon,
+                    label: tabs[i].label,
+                    badge: i < widget.badges.length ? widget.badges[i] : null,
+                  ),
+              ],
+              // UIKit ignores its unselected tint; so does the comparison.
+              selectedColor: widget.tint,
               selectedIndex: _selected,
               onSelected: (int i) => setState(() => _selected = i),
               debugView: widget.view,

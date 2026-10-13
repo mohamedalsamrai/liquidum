@@ -93,8 +93,30 @@ class GlassAppearance {
     _pending.add((null, luma));
   }
 
+  /// Whether the appearance follows the backdrop. When false, it keeps the
+  /// [system]'s, and only the glass's colors follow the backdrop's luma.
+  set adaptive(bool value) {
+    if (value == _adaptive) {
+      return;
+    }
+    _adaptive = value;
+    if (!_sampled) {
+      _dark = _system == Brightness.dark;
+      _snap();
+    } else {
+      _decide();
+      _aim();
+    }
+  }
+
+  bool _adaptive = true;
+
   void _decide() {
     final bool darkMode = _system == Brightness.dark;
+    if (!_adaptive) {
+      _dark = darkMode;
+      return;
+    }
     final double toDark = darkMode ? _toDarkInDarkMode : _toDark;
     final double toLight = darkMode ? _toLightInDarkMode : _toLight;
     if (_dark && _luma > toLight) {
@@ -143,13 +165,12 @@ class GlassAppearance {
   static const List<double> _pillLight = <double>[1.2, 1.1294, -0.2];
   static const List<double> _pillDark = <double>[1.116, 0.958, 0.135];
 
-  // Symbols and labels, through vibrant matrices over the glass below them:
-  // normal ones keep its chroma at a luma weight plus a lift; selected ones
-  // are half of it plus a blue.
+  // Normal symbols and labels, through a vibrant matrix over the glass
+  // below them: its chroma at a luma weight plus a lift. (Selected ones are
+  // half of it plus the tint, less 0.5 in the light appearance; the tab bar
+  // sets that with the tint.)
   static const List<double> _symbolLight = <double>[0.1, 0];
   static const List<double> _symbolDark = <double>[0.05, 0.95];
-  static const List<double> _selectedLight = <double>[-0.5, 0.033, 0.5];
-  static const List<double> _selectedDark = <double>[0, 0.569, 1.0];
 
   static GlassSpring _glass() =>
       GlassSpring(response: 0.5, dampingRatio: 1, tolerance: 1e-4);
@@ -260,11 +281,5 @@ class GlassAppearance {
   (double, double) get symbol {
     final List<double> s = _dark ? _symbolDark : _symbolLight;
     return (s[0], s[1]);
-  }
-
-  /// Selected symbols' blue, added to half of what is below them.
-  (double, double, double) get selected {
-    final List<double> s = _dark ? _selectedDark : _selectedLight;
-    return (s[0], s[1], s[2]);
   }
 }

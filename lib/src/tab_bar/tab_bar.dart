@@ -9,20 +9,10 @@ import 'package:flutter/widgets.dart';
 import '../glass_backdrop.dart';
 import '../shader_program.dart';
 import 'appearance.dart';
+import 'item.dart';
 import 'physics.dart';
-
-/// A tab in a [GlassTabBar].
-@immutable
-class GlassTabItem {
-  const GlassTabItem({required this.icon, required this.label});
-
-  /// Drawn centered in the tab's symbol area. It should take its color from
-  /// the ambient [IconTheme], which the bar sets for normal and selected
-  /// tabs (as [Icon] does).
-  final Widget icon;
-
-  final String label;
-}
+import 'style.dart';
+import 'tab_content.dart';
 
 /// What [GlassTabBar] draws for its glass while it is being built up.
 enum GlassTabBarDebugView {
@@ -81,12 +71,27 @@ abstract final class GlassTabBarOptics {
 /// An iOS 26 tab bar: a glass platter holding the tabs, and a lens that
 /// selects one. Press and slide to carry the lens between tabs; release to
 /// select the tab under it.
+///
+/// The bar is 62pt high and as wide as it is allowed to be; UIKit floats it
+/// 21pt from the sides and bottom of the screen. It adapts to what is
+/// behind it when that is wrapped in a [GlassBackdrop]. [GlassTabScaffold]
+/// does all of this, and gives each tab its page.
+///
+/// In a right-to-left [Directionality], the first tab is on the right, as in
+/// UIKit.
 class GlassTabBar extends StatefulWidget {
   const GlassTabBar({
     super.key,
     required this.items,
     required this.selectedIndex,
     required this.onSelected,
+    this.onReselected,
+    this.selectedColor,
+    this.unselectedColor,
+    this.badgeColor,
+    this.brightness,
+    this.adaptive = true,
+    this.labelStyle,
     this.debugView = GlassTabBarDebugView.none,
     this.debugShareBackdrop = true,
     this.debugInspector,
@@ -100,8 +105,59 @@ class GlassTabBar extends StatefulWidget {
   static const double height = 62;
 
   final List<GlassTabItem> items;
+
+  /// The selected tab, by its index in [items].
   final int selectedIndex;
+
+  /// Called with a tab's index when the finger lets go over another tab
+  /// than the selected one. The bar shows it selected only once
+  /// [selectedIndex] says so, and otherwise goes back.
   final ValueChanged<int> onSelected;
+
+  /// Called with the selected tab's index when the finger lets go over it
+  /// again, for example to scroll its page to the top.
+  final ValueChanged<int>? onReselected;
+
+  /// The selected tab's icon and label color, as `UITabBar.tintColor`.
+  /// Defaults to the system blue.
+  ///
+  /// As UIKit does, the bar mixes it with the glass under the tab: it shows
+  /// half of that glass plus this color, less half a unit in the light
+  /// appearance. Over the resting selection that comes out close to the
+  /// color itself. Dynamic colors (such as `CupertinoColors.systemPink`)
+  /// resolve for the bar's own appearance.
+  final Color? selectedColor;
+
+  /// The other tabs' icon and label color. By default (null) they take
+  /// UIKit's adaptive colors from the glass under them, which UIKit's iOS 26
+  /// bar always uses (it ignores `unselectedItemTintColor`). When set, they
+  /// are drawn in this color as it is.
+  final Color? unselectedColor;
+
+  /// Badges' color. Defaults to the system red.
+  final Color? badgeColor;
+
+  /// The appearance the bar starts from, as UIKit's
+  /// `overrideUserInterfaceStyle`. Defaults to the platform's.
+  final Brightness? brightness;
+
+  /// Whether the bar turns dark over dark content and light over light
+  /// content, as UIKit's does (it needs a [GlassBackdrop] under it). When
+  /// false, it keeps [brightness].
+  final bool adaptive;
+
+  /// Merged into the labels' style (UIKit's: 10pt, semibold when selected
+  /// and medium otherwise), for example to set a font family. Its color is
+  /// ignored.
+  final TextStyle? labelStyle;
+
+  GlassTabBarStyle get _style => GlassTabBarStyle(
+    selectedColor: selectedColor,
+    unselectedColor: unselectedColor,
+    badgeColor: badgeColor,
+    labelStyle: labelStyle,
+  );
+
   final GlassTabBarDebugView debugView;
 
   /// Whether the lens reads the same backdrop capture as the bar, taken
@@ -133,7 +189,9 @@ class GlassTabBar extends StatefulWidget {
   static final ShaderProgram _field = ShaderProgram('field.frag');
   static final ShaderProgram _backdrop = ShaderProgram('backdrop.frag');
 
-  /// Loads the bar's shaders ahead of time, so the first frame has them.
+  /// Loads the bar's shaders ahead of time, so the bar shows from the first
+  /// frame. Optional: otherwise it loads them itself, and appears once they
+  /// are in.
   static Future<void> precache() =>
       Future.wait(<Future<void>>[_field.load(), _backdrop.load()]);
 
@@ -145,8 +203,18 @@ class _GlassTabBarState extends State<GlassTabBar>
     with SingleTickerProviderStateMixin {
   late final GlassTabBarPhysics _physics = GlassTabBarPhysics(
     count: widget.items.length,
-    selectedIndex: widget.selectedIndex,
+    selectedIndex: _slot(widget.selectedIndex),
   );
+
+  // Tabs are laid out in slots from the left: in a right-to-left
+  // Directionality, the first tab takes the last slot. A slot and an index
+  // map to each other the same way.
+  bool _rtl = false;
+  int _slot(int index) => _rtl ? widget.items.length - 1 - index : index;
+
+  // Whether the tabs were last built for the dark appearance: their colors
+  // resolve for it, and the shader's selected tint goes with them.
+  bool _contentDark = false;
   late final Ticker _ticker = createTicker(_tick);
   final _Frame _frame = _Frame();
   int? _pointer;
@@ -174,6 +242,9 @@ class _GlassTabBarState extends State<GlassTabBar>
     final double now = _frameTime;
     if (!(_physics.tick(now) | _appearance.tick(now))) {
       _ticker.stop();
+    }
+    if (_appearance.isDark != _contentDark) {
+      setState(() => _contentDark = _appearance.isDark);
     }
     _frame.notify();
   }
@@ -239,15 +310,18 @@ class _GlassTabBarState extends State<GlassTabBar>
           return;
         }
         _pointer = null;
-        final int index = _physics.pointerUp(time: _timeOf(event));
-        if (index != widget.selectedIndex) {
+        final int index = _slot(_physics.pointerUp(time: _timeOf(event)));
+        if (index == widget.selectedIndex) {
+          widget.onReselected?.call(index);
+        } else {
           widget.onSelected(index);
           // If the choice is not taken up, go back to the selected tab.
           SchedulerBinding.instance.addPostFrameCallback((_) {
+            final int selected = _slot(widget.selectedIndex);
             if (mounted &&
                 _pointer == null &&
-                _physics.selectedIndex != widget.selectedIndex) {
-              _physics.select(widget.selectedIndex);
+                _physics.selectedIndex != selected) {
+              _physics.select(selected);
               _wake();
             }
           });
@@ -294,17 +368,30 @@ class _GlassTabBarState extends State<GlassTabBar>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _appearance.system = MediaQuery.platformBrightnessOf(context);
+    final bool rtl = Directionality.maybeOf(context) == TextDirection.rtl;
+    if (rtl != _rtl) {
+      _rtl = rtl;
+      _physics.select(_slot(widget.selectedIndex));
+    }
+    _configureAppearance();
     _wake();
+  }
+
+  void _configureAppearance() {
+    _appearance
+      ..adaptive = widget.adaptive
+      ..system = widget.brightness ?? MediaQuery.platformBrightnessOf(context);
   }
 
   @override
   void didUpdateWidget(GlassTabBar oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.selectedIndex != _physics.selectedIndex) {
-      _physics.select(widget.selectedIndex);
-      _wake();
+    _configureAppearance();
+    final int selected = _slot(widget.selectedIndex);
+    if (selected != _physics.selectedIndex) {
+      _physics.select(selected);
     }
+    _wake();
   }
 
   @override
@@ -315,16 +402,25 @@ class _GlassTabBarState extends State<GlassTabBar>
     super.dispose();
   }
 
-  // Colors of the iOS 26 tab bar in light mode.
-  static const Color _normal = Color(0xFF191919);
-  static const Color _selected = Color(0xFF007EF5);
-
   @override
   Widget build(BuildContext context) {
-    final List<GlassTabItem> items = widget.items;
-    const hidden = Color(0x00000000);
-    final Color normal = widget.debugHideContent ? hidden : _normal;
-    final Color selected = widget.debugHideContent ? hidden : _selected;
+    // The tabs in slot order.
+    final List<GlassTabItem> items = <GlassTabItem>[
+      for (var slot = 0; slot < widget.items.length; slot++)
+        widget.items[_slot(slot)],
+    ];
+    final GlassTabBarStyle style = widget._style;
+    _contentDark = _appearance.isDark;
+    Widget layer(GlassTabItem item, TabLayer layer) => widget.debugHideContent
+        ? const SizedBox()
+        : ExcludeSemantics(
+            child: TabContent(
+              item: item,
+              layer: layer,
+              style: style,
+              dark: _contentDark,
+            ),
+          );
     return SizedBox(
       height: GlassTabBar.height,
       child: _TabBarLayout(
@@ -338,21 +434,21 @@ class _GlassTabBarState extends State<GlassTabBar>
         optics: widget.debugOptics,
         lift: widget.debugLift,
         devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
+        contentDark: _contentDark,
+        hasOriginal: anyOriginal(items, style),
+        // One child per tab and layer: each layer's tabs in slot order.
         children: <Widget>[
-          for (var i = 0; i < items.length; i++)
+          for (var slot = 0; slot < items.length; slot++)
             Semantics(
               button: true,
-              selected: i == widget.selectedIndex,
-              label: items[i].label,
-              onTap: () => widget.onSelected(i),
-              child: ExcludeSemantics(
-                child: _TabView(item: items[i], color: normal),
-              ),
+              selected: _slot(slot) == widget.selectedIndex,
+              label: items[slot].label,
+              value: items[slot].badge,
+              onTap: () => widget.onSelected(_slot(slot)),
+              child: layer(items[slot], TabLayer.values[0]),
             ),
-          for (var i = 0; i < items.length; i++)
-            ExcludeSemantics(
-              child: _TabView(item: items[i], color: selected),
-            ),
+          for (final TabLayer l in TabLayer.values.skip(1))
+            for (final GlassTabItem item in items) layer(item, l),
         ],
       ),
     );
@@ -361,63 +457,6 @@ class _GlassTabBarState extends State<GlassTabBar>
 
 class _Frame extends ChangeNotifier {
   void notify() => notifyListeners();
-}
-
-/// One tab's symbol and label, laid out as UITabBar does on iOS 26: the
-/// symbol's alignment rect centered 24pt below the top of the bar, and the
-/// label in a 12pt line from 39pt (38.7 here, for Flutter's line metrics),
-/// semibold 10pt with SF's small-size tracking, which Flutter's text engine
-/// does not apply by itself.
-class _TabView extends StatelessWidget {
-  const _TabView({required this.item, required this.color});
-
-  final GlassTabItem item;
-  final Color color;
-
-  static const double _symbolCenter = 24;
-  static const double _labelTop = 38.7;
-  static const double _labelHeight = 12;
-
-  @override
-  Widget build(BuildContext context) {
-    return Stack(
-      clipBehavior: Clip.none,
-      children: <Widget>[
-        Positioned(
-          left: 0,
-          right: 0,
-          top: 0,
-          height: _symbolCenter * 2,
-          child: Center(
-            child: IconTheme.merge(
-              data: IconThemeData(color: color, size: 26),
-              child: item.icon,
-            ),
-          ),
-        ),
-        Positioned(
-          left: -20,
-          right: -20,
-          top: _labelTop,
-          height: _labelHeight,
-          child: Center(
-            child: Text(
-              item.label,
-              maxLines: 1,
-              softWrap: false,
-              style: TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w600,
-                letterSpacing: 0.1,
-                height: 1.2,
-                color: color,
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
 }
 
 class _TabBarLayout extends MultiChildRenderObjectWidget {
@@ -432,6 +471,8 @@ class _TabBarLayout extends MultiChildRenderObjectWidget {
     required this.optics,
     required this.lift,
     required this.devicePixelRatio,
+    required this.contentDark,
+    required this.hasOriginal,
     required super.children,
   });
 
@@ -445,6 +486,8 @@ class _TabBarLayout extends MultiChildRenderObjectWidget {
   final int optics;
   final double? lift;
   final double devicePixelRatio;
+  final bool contentDark;
+  final bool hasOriginal;
 
   @override
   RenderGlassTabBar createRenderObject(BuildContext context) {
@@ -459,6 +502,8 @@ class _TabBarLayout extends MultiChildRenderObjectWidget {
       optics: optics,
       lift: lift,
       devicePixelRatio: devicePixelRatio,
+      contentDark: contentDark,
+      hasOriginal: hasOriginal,
     );
   }
 
@@ -474,15 +519,17 @@ class _TabBarLayout extends MultiChildRenderObjectWidget {
       ..inspector = inspector
       ..optics = optics
       ..lift = lift
-      ..devicePixelRatio = devicePixelRatio;
+      ..devicePixelRatio = devicePixelRatio
+      ..contentDark = contentDark
+      ..hasOriginal = hasOriginal;
   }
 }
 
 class _TabParentData extends ContainerBoxParentData<RenderBox> {}
 
-/// Lays out a [GlassTabBar]'s tabs (each twice: normal, then in the
-/// selected color), takes its touches, and paints the glass and the tabs
-/// where [GlassTabBarPhysics] puts them.
+/// Lays out a [GlassTabBar]'s tabs (each four times: a child for each
+/// [TabLayer]), takes its touches, and paints the glass and the tabs where
+/// [GlassTabBarPhysics] puts them.
 ///
 /// The glass is two passes over one backdrop capture. The bar's pass comes
 /// first and takes the capture: everything behind the bar, before any of its
@@ -506,6 +553,8 @@ class RenderGlassTabBar extends RenderBox
     this._optics = GlassTabBarOptics.all,
     this._lift,
     required this._devicePixelRatio,
+    this._contentDark = false,
+    this._hasOriginal = false,
   });
 
   final GlassTabBarPhysics _physics;
@@ -566,6 +615,28 @@ class RenderGlassTabBar extends RenderBox
   set devicePixelRatio(double value) {
     if (value != _devicePixelRatio) {
       _devicePixelRatio = value;
+      markNeedsPaint();
+    }
+  }
+
+  /// Whether the tabs are drawn for the dark appearance: the selected tint
+  /// is mixed in as UIKit's dark matrix does.
+  bool get contentDark => _contentDark;
+  bool _contentDark;
+  set contentDark(bool value) {
+    if (value != _contentDark) {
+      _contentDark = value;
+      markNeedsPaint();
+    }
+  }
+
+  /// Whether any tab has content drawn as it is (badges, original-color
+  /// icons, a set unselected color): the shader reads it only then.
+  bool get hasOriginal => _hasOriginal;
+  bool _hasOriginal;
+  set hasOriginal(bool value) {
+    if (value != _hasOriginal) {
+      _hasOriginal = value;
       markNeedsPaint();
     }
   }
@@ -659,7 +730,7 @@ class RenderGlassTabBar extends RenderBox
     _glowClip.layer = null;
   }
 
-  int get _tabCount => childCount ~/ 2;
+  int get _tabCount => childCount ~/ tabLayerCount;
 
   @override
   void performLayout() {
@@ -705,6 +776,12 @@ class RenderGlassTabBar extends RenderBox
       return;
     }
     final ui.FragmentProgram? program = GlassTabBar._backdrop.program;
+    if (_drawsGlass && program == null) {
+      // The shaders are loading (GlassTabBar.precache): nothing for a frame
+      // or two, rather than the flat fallback.
+      _clearGlassLayers();
+      return;
+    }
     if (!_drawsGlass || program == null) {
       _clearGlassLayers();
       _paintField(context.canvas, offset);
@@ -790,7 +867,6 @@ class RenderGlassTabBar extends RenderBox
     final (double, double, double) lensRim = appearance.lensRim;
     final (double, double, double) pill = appearance.pill;
     final (double, double) symbol = appearance.symbol;
-    final (double, double, double) selected = appearance.selected;
 
     ui.ImageFilter passFilter(int pass) {
       final _BackdropUniforms u = _passes[pass]
@@ -852,7 +928,10 @@ class RenderGlassTabBar extends RenderBox
         ..rim.set(platterRim.$1, platterRim.$2, platterRim.$3, shadow)
         ..lensRim.set(lensRim.$1, lensRim.$2, lensRim.$3, symbol.$2)
         ..pill.set(pill.$1, pill.$2, pill.$3, symbol.$1)
-        ..selected.set(selected.$1, selected.$2, selected.$3, 0);
+        // UIKit's selected matrix: half of the glass below plus the tint
+        // (held in the atlas's color), less half a unit in the light
+        // appearance.
+        ..selected.set(_contentDark ? 0 : -0.5, 0, 0, _hasOriginal ? 1 : 0);
       u.shader.setImageSampler(1, atlas);
       return ui.ImageFilter.shader(u.shader);
     }
@@ -1051,12 +1130,12 @@ class RenderGlassTabBar extends RenderBox
     }
     if (_contentDirty || _contentAtlas == null) {
       _contentDirty = false;
-      // Two rows: the tabs in the selected style, then the normal ones.
+      // A row for each layer (TabLayer.row), a slot in it for each tab.
       final Rect bounds = Rect.fromLTWH(
         0,
         0,
         count * _atlasPitch,
-        2 * size.height,
+        tabLayerCount * size.height,
       );
       final layer = OffsetLayer();
       final context = _AtlasContext(layer, bounds);
@@ -1065,9 +1144,10 @@ class RenderGlassTabBar extends RenderBox
       while (child != null) {
         context.paintChild(
           child,
-          i >= count
-              ? Offset((i - count) * _atlasPitch + _atlasMargin, 0)
-              : Offset(i * _atlasPitch + _atlasMargin, size.height),
+          Offset(
+            (i % count) * _atlasPitch + _atlasMargin,
+            TabLayer.values[i ~/ count].row * size.height,
+          ),
         );
         child = childAfter(child);
         i++;
@@ -1091,8 +1171,8 @@ class RenderGlassTabBar extends RenderBox
 
   // ------------------------------------------------------------ the tab items
 
-  // The tabs, inside the platter: normal outside the lens, in the selected
-  // color within it.
+  // The tabs, inside the platter: normal outside the lens, selected within
+  // it.
   void _paintTabs(PaintingContext context, Offset offset, {bool? inside}) {
     final Rect lens = _physics.lensInPlatter.shift(offset);
     final RRect lensShape = RRect.fromRectAndRadius(
@@ -1109,14 +1189,14 @@ class RenderGlassTabBar extends RenderBox
       context.canvas
         ..save()
         ..clipPath(outside);
-      _paintChildren(context, offset, 0, count);
+      _paintChildren(context, offset, count, selected: false);
       context.canvas.restore();
     }
     if (inside != false) {
       context.canvas
         ..save()
         ..clipRRect(lensShape);
-      _paintChildren(context, offset, count, 2 * count);
+      _paintChildren(context, offset, count, selected: true);
       context.canvas.restore();
     }
   }
@@ -1124,13 +1204,13 @@ class RenderGlassTabBar extends RenderBox
   void _paintChildren(
     PaintingContext context,
     Offset offset,
-    int from,
-    int to,
-  ) {
+    int count, {
+    required bool selected,
+  }) {
     var i = 0;
     RenderBox? child = firstChild;
     while (child != null) {
-      if (i >= from && i < to) {
+      if (TabLayer.values[i ~/ count].selected == selected) {
         context.paintChild(
           child,
           (child.parentData! as _TabParentData).offset + offset,

@@ -14,6 +14,9 @@ class NativeTabBar extends StatefulWidget {
     required this.items,
     required this.selectedIndex,
     required this.onSelected,
+    this.tint,
+    this.unselectedTint,
+    this.badges = const <String?>[],
   });
 
   /// Room for the bar, its bottom margin, and the lens rising above it.
@@ -26,6 +29,13 @@ class NativeTabBar extends StatefulWidget {
   final List<TabSpec> items;
   final int selectedIndex;
   final ValueChanged<int> onSelected;
+
+  /// The bar's `tintColor` (selected items) and `unselectedItemTintColor`.
+  final Color? tint;
+  final Color? unselectedTint;
+
+  /// Each item's `badgeValue`, by index.
+  final List<String?> badges;
 
   @override
   State<NativeTabBar> createState() => _NativeTabBarState();
@@ -63,6 +73,10 @@ class _NativeTabBarState extends State<NativeTabBar> {
       viewType: 'liquidum/native_tab_bar',
       creationParams: <String, Object>{
         'selected': widget.selectedIndex,
+        if (widget.tint case final Color tint) 'tint': tint.toARGB32(),
+        if (widget.unselectedTint case final Color tint)
+          'unselectedTint': tint.toARGB32(),
+        'badges': <String>[for (final String? b in widget.badges) b ?? ''],
         'items': <Map<String, String>>[
           for (final TabSpec item in widget.items)
             <String, String>{'label': item.label, 'symbol': item.symbol},

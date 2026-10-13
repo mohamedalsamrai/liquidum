@@ -120,6 +120,23 @@ final class NativeTabBar: NSObject, FlutterPlatformView, UITabBarControllerDeleg
         title: item["label"], image: UIImage(systemName: item["symbol"] ?? ""), tag: index)
       return page
     }
+    // Optional colors and badges, to compare customized bars.
+    func color(_ key: String) -> UIColor? {
+      guard let argb = arguments[key] as? Int else { return nil }
+      return UIColor(
+        red: CGFloat(argb >> 16 & 0xff) / 255, green: CGFloat(argb >> 8 & 0xff) / 255,
+        blue: CGFloat(argb & 0xff) / 255, alpha: CGFloat(argb >> 24 & 0xff) / 255)
+    }
+    if let tint = color("tint") {
+      controller.tabBar.tintColor = tint
+    }
+    if let tint = color("unselectedTint") {
+      controller.tabBar.unselectedItemTintColor = tint
+    }
+    for (index, badge) in (arguments["badges"] as? [String] ?? []).enumerated()
+    where !badge.isEmpty && index < controller.viewControllers?.count ?? 0 {
+      controller.viewControllers?[index].tabBarItem.badgeValue = badge
+    }
     controller.selectedIndex = arguments["selected"] as? Int ?? 0
     controller.delegate = self
     controller.view.backgroundColor = .clear

@@ -1,0 +1,28 @@
+Tab customization, 2026-10-13. UIKit = iOS 26.5 simulator, iPhone 17 Pro Max.
+Images: UIKit above, Liquidum below; tint #FF3366, badges "5" and "99+".
+
+UIKit's behaviour (read from its views and pixels over white, #808080, black):
+  tintColor: selected symbols and labels = 0.5 * glass below + tint - 0.5
+    (light appearance), + tint (dark). Checked with the default blue
+    (light 0,136,255 / dark 0,145,255), #FF3366 and #33CC66: within 1 level.
+  unselectedItemTintColor and UITabBarAppearance's normal colors: ignored by
+    the floating iOS 26 bar (normal items stay adaptive).
+  badges: drawn as they are (light 255,56,60 / dark 255,66,69, by the bar's
+    appearance), 20.33pt high, at least as wide, 4pt beside the text, white
+    SF 12 medium, 6pt below the bar's top, 5pt over the symbol's trailing
+    edge (leading edge right to left); in both content views, so the lens
+    lifts them with the selected tab.
+  images in their original rendering mode: drawn as they are.
+  labels: selected semibold, normal medium (Liquidum had semibold for both).
+  right to left: tab order mirrored.
+
+Liquidum vs UIKit:
+  selected interior color: (245,41,92) / (218,14,65) / (255,77,128) on
+    white / gray / black: identical to UIKit.
+  badge position: within 0.33pt; "99+" 1pt narrower (Flutter's text is
+    narrower and a little lighter than UIKit's).
+  normal labels, medium vs semibold, mean error over New/Radio: 3.5/2.6 vs
+    4.6/4.8 levels (white).
+  whole bar at rest, default colors: mean 1.2-1.3 levels; tinted with
+    badges: 1.9-2.2 (glyph edges).
+  lifted at the first tab (4-lifted-tint-badge): mean 3.1, p95 10 levels.

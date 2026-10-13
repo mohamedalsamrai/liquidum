@@ -53,10 +53,10 @@ uniform vec4 uFace;        // platter face: luma black and white points, fill al
 uniform vec4 uRim;         // platter rim matrix: chroma gain, luma weight, lift; platter shadow strength
 uniform vec4 uLensRim;     // lens rim matrix: chroma gain, luma weight, lift; symbols' lift
 uniform vec4 uPill;        // resting selection matrix: chroma gain, luma weight, lift; symbols' luma weight
-uniform vec4 uSelected;    // selected symbols: the blue added to half of what is below them
+uniform vec4 uSelected;    // selected symbols: offset added to half of what is below them and the tint; content drawn as it is (flag)
 
 uniform sampler2D uCapture;
-uniform sampler2D uContentAtlas;  // the tabs in the selected style, one per slot
+uniform sampler2D uContentAtlas;  // the tabs' content: a row per layer, a slot per tab
 
 out vec4 fragColor;
 
@@ -400,17 +400,21 @@ vec3 base(vec2 q, float lift, int taps) {
 
 // ---- Lifted content.
 
-// The tabs' symbols and labels at x (capture pixels), as laid out in the
-// platter, each grown about its center by `grow`: their coverage, from the
-// atlas's row of selected tabs (0) or of normal ones (1). UIKit renders them
-// as templates through vibrant color matrices, so only the shapes count.
-float glyphs(vec2 x, float grow, float row) {
+// The tabs' content at x (capture pixels), as laid out in the platter,
+// each tab grown about its center by `grow`: the selected tabs (row 0) or
+// the normal ones (row 1). Returns the template content (symbols and
+// labels; for the selected tabs, colored with their tint), premultiplied;
+// `original` gets the content drawn as it is (badges, images in their own
+// colors), from the atlas's rows 2 and 3. UIKit renders templates through
+// vibrant color matrices, so of those only the shapes and tints count.
+vec4 glyphs(vec2 x, float grow, float row, out vec4 original) {
   vec2 b = (x - uContent.xy) / uPass.z;
   vec2 u = uPlatterXf.xy + (b - uPlatterXf.xy - uPlatterXf.zw) / uPlatterS.xy;
   float first = uTabs.x, spacing = uTabs.y, count = uTabs.z, pitch = uTabs.w;
   float width = uPlatterS.w, height = uPlatterS.z;
   float nearest = spacing > 0.0 ? floor((u.x - first) / spacing + 0.5) : 0.0;
-  float sum = 0.0;
+  vec4 sum = vec4(0.0);
+  original = vec4(0.0);
   for (int j = -1; j <= 1; j++) {
     float i = nearest + float(j);
     if (i < 0.0 || i >= count) {
@@ -422,54 +426,65 @@ float glyphs(vec2 x, float grow, float row) {
     if (local < 0.0 || local > width || v.y < 0.0 || v.y > height) {
       continue;
     }
-    float a = texture(uContentAtlas,
-                      texel(vec2(i * pitch + local, v.y + row * height), uContent.zw)).a;
-    sum = a + sum * (1.0 - a);
+    vec2 at = vec2(i * pitch + local, v.y + row * height);
+    vec4 t = texture(uContentAtlas, texel(at, uContent.zw));
+    sum = t + sum * (1.0 - t.a);
+    if (uSelected.w > 0.5) {
+      vec4 o = texture(uContentAtlas, texel(at + vec2(0.0, 2.0 * height), uContent.zw));
+      original = o + original * (1.0 - o.a);
+    }
   }
   return sum;
 }
 
-// The selected tabs, each grown by the lift.
-float content(vec2 x, float lift) {
-  return glyphs(x, stage(kContentStage) ? 1.0 + kContentGrowth * lift : 1.0, 0.0);
+// Selected content over what is below it: template content of coverage
+// t.a becomes half of what is below plus its tint, plus uSelected.x (UIKit's
+// selected vibrant matrix); the rest goes over it as it is.
+vec3 selectedOver(vec4 t, vec4 original, vec3 under) {
+  vec3 tint = t.a > 0.0 ? t.rgb / t.a : vec3(0.0);
+  vec3 c = mix(under, clamp(0.5 * under + tint + uSelected.x, 0.0, 1.0), t.a);
+  return c * (1.0 - original.a) + original.rgb;
 }
 
-// The content as the lens shows it directly: clipped to the lens and lensed
-// once (UIKit's ClearGlassView).
-float contentLensed(vec2 q, float lift) {
-  if (!stage(kContentStage)) {
-    return capsule(q, uLens) < 0.0 ? content(q, lift) : 0.0;
+// Normal content over what is below it: template content of coverage t.a
+// keeps the chroma below at a luma weight plus a lift; the rest goes over
+// it as it is.
+vec3 symbolsOver(vec4 t, vec4 original, vec3 under) {
+  vec3 c = mix(under, vibrant(under, vec3(1.0, uPill.w, uLensRim.w)), t.a);
+  return c * (1.0 - original.a) + original.rgb;
+}
+
+// The selected tabs at x, each grown by the lift, over what is below them.
+vec3 content(vec2 x, float lift, vec3 under) {
+  vec4 original;
+  vec4 t = glyphs(x, stage(kContentStage) ? 1.0 + kContentGrowth * lift : 1.0, 0.0, original);
+  return selectedOver(t, original, under);
+}
+
+// The content as the lens shows it directly, over `under`: clipped to the
+// lens and lensed once (UIKit's ClearGlassView).
+vec3 contentLensed(vec2 q, float lift, vec3 under) {
+  vec2 s = q;
+  if (stage(kContentStage)) {
+    float k = uPass.z * uOptics.y;
+    float depth = max(-capsule(q, uLens), 0.0);
+    s = q - outward(q, uLens, uPass.w) * kContentLens * k * lift *
+                sag(depth, kContentLensHeight * k);
   }
-  float k = uPass.z * uOptics.y;
-  float depth = max(-capsule(q, uLens), 0.0);
-  vec2 s = q - outward(q, uLens, uPass.w) * kContentLens * k * lift *
-                   sag(depth, kContentLensHeight * k);
-  return capsule(s, uLens) < 0.0 ? content(s, lift) : 0.0;
+  return capsule(s, uLens) < 0.0 ? content(s, lift, under) : under;
 }
 
-// The content as the lens's material shows it: lensed once more
-// (ContentLensingView).
-float contentInMaterial(vec2 p, float lift) {
+// The content as the lens's material shows it, over `under`: lensed once
+// more (ContentLensingView).
+vec3 contentInMaterial(vec2 p, float lift, vec3 under) {
   if (!stage(kContentStage)) {
-    return contentLensed(p, lift);
+    return contentLensed(p, lift, under);
   }
   float k = uPass.z * uOptics.y;
   float depth = max(-capsule(p, uLens), 0.0);
   vec2 r = p - outward(p, uLens, uPass.w) * kContentLens * k * lift *
                    sag(depth, kContentMaterialHeight * k);
-  return contentLensed(r, lift);
-}
-
-// Selected symbols of coverage a over what is below them: half of it plus
-// a blue (the selected vibrant matrix).
-vec3 selectedOver(float a, vec3 under) {
-  return mix(under, clamp(0.5 * under + uSelected.rgb, 0.0, 1.0), a);
-}
-
-// Normal symbols of coverage a over what is below them: its chroma at a
-// luma weight plus a lift.
-vec3 symbolsOver(float a, vec3 under) {
-  return mix(under, vibrant(under, vec3(1.0, uPill.w, uLensRim.w)), a);
+  return contentLensed(r, lift, under);
 }
 
 
@@ -519,7 +534,9 @@ void main() {
         c = rim(c, p, uPlatter, kp, kPlatterRimCurvature, uRim.xyz, 1.0);
       }
       // The normal tabs (under the lens, the lens covers them).
-      c = symbolsOver(glyphs(p, 1.0, 1.0), c);
+      vec4 original;
+      vec4 normal = glyphs(p, 1.0, 1.0, original);
+      c = symbolsOver(normal, original, c);
       if (stage(kPressStage)) {
         c = wash(c, kWash * uTouch.w);
       }
@@ -572,14 +589,13 @@ void main() {
     // The material fades in quickly as the lens lifts (UIKit's opacityPair),
     // over the base: the resting selection over the warped backdrop.
     // Below the material: the base with the content over it, lensed once.
-    vec3 c = fade < 1.0 ? selectedOver(contentLensed(p, lift), base(p, lift, 32)) : vec3(0.0);
+    vec3 c = fade < 1.0 ? contentLensed(p, lift, base(p, lift, 32)) : vec3(0.0);
     if (fade > 0.0) {
       // The material: the base seen through the inner refraction, the
       // content (lensed again) over it, all dispersed near the edge. A tap
       // past the lens's outline reads the unwarped backdrop, as UIKit's warp
       // is clipped to the outline.
-      vec3 glass = selectedOver(contentInMaterial(p, lift),
-                        base(innerSource(p), lift, 32) * tone);
+      vec3 glass = contentInMaterial(p, lift, base(innerSource(p), lift, 32) * tone);
       float spread = clamp(1.0 - depth / (kAberrationDepth * k), 0.0, 1.0);
       if (spread > 0.0 && stage(kDispersionStage)) {
         vec2 v = kAberration * ((p - uLens.xy) / uLens.zw) * k;
@@ -590,10 +606,10 @@ void main() {
           vec3 w = vec3(max(t, 0.0) * 0.5, (1.0 - abs(t)) / 3.0, max(-t, 0.0) * 0.5);
           vec2 at = clamp(p + v * t, texels.xy, texels.zw);
           vec3 s = i == 3 ? glass
-                          : selectedOver(contentInMaterial(at, lift),
-                                 capsule(at, uLens) < 0.0
-                                     ? base(innerSource(at), lift, 16) * tone
-                                     : below(at, vec2(1.0, 0.0), vec2(0.0, 1.0), 16));
+                          : contentInMaterial(at, lift,
+                                capsule(at, uLens) < 0.0
+                                    ? base(innerSource(at), lift, 16) * tone
+                                    : below(at, vec2(1.0, 0.0), vec2(0.0, 1.0), 16));
           dispersed += w * s;
         }
         glass = mix(glass, dispersed, spread);
