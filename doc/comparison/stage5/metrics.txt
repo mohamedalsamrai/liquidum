@@ -1,0 +1,40 @@
+Stage 5 (lighting), 2026-10-13. UIKit = iOS 26.5 simulator, iPhone 17 Pro Max.
+Each part of UIKit's lighting was read from its layers, rebuilt alone from the
+archived filters over plain backgrounds, fitted, then compared with the real bar.
+
+Rim highlight (CASDFKeyFillHighlightEffect; platter curvature 0.7, lens 0.8)
+  model: alpha = |n . (0.707, 0.707)| * (1 - curvature * depth/1pt), within 1pt
+  fit over 10x renders: mean error 1.4 levels; at the real 1pt rim, the rim's
+  sum per angle within 1-4% of UIKit's, mean pixel error 3.5 levels (platter).
+  compositing (vibrant color matrix): mix(below, M below, alpha), M = 1.5 chroma
+  + luma weight + lift (platter 0.1, 0.9; lens 0.4374, 1.125); within 1 level.
+
+Shadows (glassBackground), outside the glass:
+  below * (1 - strength * erfc-edge of the outline moved down)
+  platter: offset 8pt, sigma 16.4pt (0.685 * radius 24); fit 0.27 levels
+  lens:    offset 7pt, sigma 5.49pt (0.685 * radius 8), strength 0.1086; fit 0.31 levels
+  strength = opacity * (0.093 + 0.966 * fill); linear in both (checked at 5 values)
+  the platter's fill adapts to the backdrop's luma: 0.3 up to 0.385, -0.224 per
+  unit above, 0.05 over L > 0.935 (sweep over 16 flat backgrounds)
+  the shadow multiplies every channel alike (saturation input has no effect)
+
+Press: wash (white layer, vibrant matrix: chroma x1.2, +0.05, at 0.8448) and
+glow (white disk 93pt, shadow-blurred sigma 46.5pt, 0.2845), over the platter
+and its tabs, under the lens; the lens's 0.97 tone applies after them.
+  wash: platter 205 -> 216 on gray (model 215.8), (23,25,28) -> (33,36,39) on dark
+  glow near the finger: 217.6 vs 217.4 (gray), (41.9,44.9,47.9) vs (42.5,44.8,48.2) (dark)
+  lens interior over flat grays, 0.97 x (platter + wash + glow): 241.3/240.6,
+  228.5/228.6, 197.4/197.1, 247.4/246.9 (model/UIKit)
+  springs: press up 0.181s/0.865, down 0.499s/1.0, spread 0.53s/0.96
+  (max error 0.01); same-gesture comparison of press, glow size and opacity
+  within the run-to-run timing of the two tests.
+
+Liquidum vs UIKit, white background (the platter face matches there):
+  rest: shadows above/below/beside the platter, rims, pill: all within 1 level
+  lifted: platter, its shadow, the lens's shadow and interior: within 1 level
+  remaining: a band 3-14pt inside the lens's top edge, darker in UIKit by up
+  to 3.2% (9 levels on white, 3-4 on gray); cause not found (4-lens-top-band).
+
+Not Stage 5 (Stage 6): the platter's face color matrix adapts to the backdrop
+(e.g. 205 vs 236 on gray), the light/dark appearance switch below L ~0.2, the
+icons' vibrant colors. On gray and blocks these dominate the differences.

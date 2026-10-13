@@ -25,6 +25,12 @@
 //   bar renders), each grown 16% about its center at full lift, clipped to
 //   the lens, pulled inward near its edge by two displacement maps (17.5pt
 //   at full lift, 11.2pt and 14pt high), and dispersed with the material.
+// - The lighting belongs to the glass too: a rim lit from up-left and
+//   down-right on the platter and on the lens, a shadow under each (the
+//   platter's lighter over brighter backdrops), and, while pressed, a wash
+//   and a fingertip glow over the platter and its tabs (the bar draws the
+//   glow). The lens sees all of the platter's lighting below it, through
+//   its optics and under its tone; only its own rim lies over it.
 
 #include <flutter/runtime_effect.glsl>
 
@@ -33,13 +39,14 @@ uniform vec4 uPass;        // pass (0 bar, 1 lens, 2 inspector), diagnostic, pix
 uniform vec4 uPlatter;     // platter: center.xy, half size.xy
 uniform vec4 uLens;        // lens as drawn: center.xy, half size.xy
 uniform vec4 uOptics;      // lift progress, lens scale, platter scale, stages (debug: bit mask)
-uniform vec4 uTouch;       // finger.xy, pressed, unused
+uniform vec4 uTouch;       // finger.xy, pressed, press amount (the wash)
 uniform vec4 uInspector;   // inspector on screen: origin.xy, size.xy
 uniform vec4 uWindow;      // capture window it shows: origin.xy, size.xy
 uniform vec4 uContent;     // the bar's origin in capture pixels.xy, the content atlas's size as rendered in points.zw
 uniform vec4 uTabs;        // first tab's center x, spacing, count, atlas slot pitch (points)
 uniform vec4 uPlatterXf;   // platter transform: center.xy, drift.xy (points)
 uniform vec4 uPlatterS;    // platter scale.xy, bar height, atlas slot width (points)
+uniform vec4 uGlow;        // fingertip glow: center.xy, 1 / (2 variance) (pixels), peak alpha
 
 uniform sampler2D uCapture;
 uniform sampler2D uContentAtlas;  // the tabs in the selected style, one per slot
@@ -94,6 +101,37 @@ const float kContentGrowth = 0.16;
 // times the lift progress.
 const float kMaterialFade = 4.0;
 
+// ---- Lighting, UIKit's light appearance.
+
+// Rim (CASDFKeyFillHighlightEffect): a key light from up-left and a fill
+// from down-right at equal amounts light a 1pt band inside the edge by
+// |n.l|, fading toward its inner side by the effect's curvature (platter
+// 0.7, lens 0.8); measured alpha = |n.l| (1 - curvature u), u the depth
+// over the band, within 1-4% of UIKit's rim at every angle. Its vibrant
+// color matrix pushes what is below toward 1.5x its chroma plus a weight of
+// its luma and a lift: (luma weight, lift).
+const vec2 kLight = vec2(0.70710678, 0.70710678);
+const float kRimHeight = 1.0;
+const float kPlatterRimCurvature = 0.7;
+const float kLensRimCurvature = 0.8;
+const vec2 kPlatterRim = vec2(0.1, 0.9);
+const vec2 kLensRim = vec2(0.4374, 1.125);
+// Shadows (glassBackground): outside the glass, what is below is multiplied
+// by 1 - strength * (a gaussian edge of the outline moved down); the edge's
+// sigma is 0.685 of the filter's shadow radius. (offset, sigma, center) in
+// points. The strength is opacity * (0.093 + 0.966 fill): the lens's fill
+// is black; the platter's adapts to the backdrop's luma (shadowFill). Both
+// fit UIKit's within 0.3 levels; the platter's stops where its SDF does.
+const vec3 kPlatterShadow = vec3(8.0, 16.4, 0.85);
+const float kPlatterShadowOpacity = 0.46875;
+const float kPlatterShadowReach = 39.06;
+const vec3 kLensShadow = vec3(7.0, 5.49, 0.05);
+const float kLensShadowStrength = 0.1086;
+const float kLensShadowReach = 9.21;
+// The press wash (a white layer over the platter through a vibrant color
+// matrix): chroma x1.2 and a 0.05 lift, at 0.8448 when fully pressed.
+const float kWash = 0.8448;
+
 const vec3 kLuma = vec3(0.2126, 0.7152, 0.0722);
 
 // Stages, for comparing them one at a time (GlassTabBar's debugOptics).
@@ -103,6 +141,9 @@ const float kDispersionStage = 4.0;
 const float kPlatterStage = 8.0;
 const float kRestStage = 16.0;
 const float kContentStage = 32.0;
+const float kRimStage = 64.0;
+const float kShadowStage = 128.0;
+const float kPressStage = 256.0;
 
 bool stage(float bit) {
   return mod(floor(uOptics.w / bit), 2.0) > 0.5;
@@ -201,17 +242,114 @@ vec3 platter(vec2 p, int taps, float extra) {
   return face(mix(light, frost(q, heavy, taps), deep));
 }
 
+// ---- Lighting.
+
+// The lit rim over color c at p, for glass shaped `shape` scaled by k pixels
+// per point: c pushed toward the rim's vibrant color by the rim's alpha.
+vec3 rim(vec3 c, vec2 p, vec4 shape, float k, float curvature, vec2 matrix, float amount) {
+  float depth = max(-capsule(p, shape), 0.0) / k;
+  if (amount <= 0.0 || depth >= kRimHeight + 0.5 / k) {
+    return c;
+  }
+  float u = min(depth / kRimHeight, 1.0);
+  float alpha = abs(dot(outward(p, shape, 0.0), kLight)) * (1.0 - curvature * u);
+  // The band ends within half a pixel.
+  alpha *= clamp((kRimHeight - depth) * k * 2.0 + 0.5, 0.0, 1.0);
+  float l = dot(c, kLuma);
+  vec3 lit = clamp(1.5 * (c - l) + matrix.x * l + matrix.y, 0.0, 1.0);
+  return mix(c, lit, alpha * amount);
+}
+
+// erfc(x) / 2 for a gaussian edge: Abramowitz and Stegun 7.1.26.
+float gaussEdge(float z) {
+  float x = abs(z) * 0.70710678;
+  float t = 1.0 / (1.0 + 0.3275911 * x);
+  float e = t * (0.254829592 + t * (-0.284496736 + t * (1.421413741 +
+            t * (-1.453152027 + t * 1.061405429)))) * exp(-x * x);
+  return z >= 0.0 ? 0.5 * e : 1.0 - 0.5 * e;
+}
+
+// How much a glass shaped `shape` (scaled by k) shades p outside it.
+float shade(vec2 p, vec4 shape, float k, vec3 shadow, float reach) {
+  float d = capsule(p - vec2(0.0, shadow.x * k), shape) / k;
+  if (d >= reach) {
+    return 0.0;
+  }
+  return gaussEdge((d - shadow.z) / shadow.y);
+}
+
+// The platter shadow's fill opacity over a backdrop of luma l (UIKit, light
+// appearance, over flat backdrops): 0.3 up to 0.385, less over brighter
+// ones, and 0.05 over nearly white ones.
+float shadowFill(float l) {
+  return l > 0.935 ? 0.05 : 0.3 - 0.224 * max(l - 0.385, 0.0);
+}
+
+// The platter shadow's strength over this backdrop.
+float backdropLuma();
+float platterShadowStrength() {
+  return kPlatterShadowOpacity * (0.093 + 0.966 * shadowFill(backdropLuma()));
+}
+
+// The backdrop's luma under the platter: its capture averaged over a grid.
+float backdropLuma() {
+  float sum = 0.0;
+  for (int i = 0; i < 8; i++) {
+    for (int j = 0; j < 2; j++) {
+      vec2 f = vec2((float(i) + 0.5) / 8.0, (float(j) + 0.5) / 2.0) * 2.0 - 1.0;
+      sum += dot(capture(uPlatter.xy + f * uPlatter.zw), kLuma);
+    }
+  }
+  return sum / 16.0;
+}
+
+// The press wash over color c, which UIKit clips to white.
+vec3 wash(vec3 c, float amount) {
+  float l = dot(c, kLuma);
+  return clamp(c + amount * (0.2 * (c - l) + 0.05), 0.0, 1.0);
+}
+
+// The fingertip glow's alpha at p: a blurred disk, as a gaussian of the same
+// peak and volume (within 2 levels while the finger is down).
+float glowAt(vec2 p) {
+  vec2 d = p - uGlow.xy;
+  return uGlow.w > 0.0 ? uGlow.w * exp(-dot(d, d) * uGlow.z) : 0.0;
+}
+
+// The platter shadow's strength over this backdrop, once per pixel.
+float gPlatterShadow = 0.0;
+
+// The platter as what is above it sees it: its glass, lit rim, and the
+// press's wash and glow over them.
+vec3 litPlatter(vec2 p, int taps, float extra) {
+  vec3 c = platter(p, taps, extra);
+  if (stage(kRimStage)) {
+    c = rim(c, p, uPlatter, uPass.z * uOptics.z, kPlatterRimCurvature, kPlatterRim, 1.0);
+  }
+  if (stage(kPressStage)) {
+    c = wash(c, kWash * uTouch.w);
+    c += glowAt(p) * (1.0 - c);
+  }
+  return c;
+}
+
 // What the lens sees below it, over a pixel's footprint there (the
 // mapping's columns j1, j2 for one pixel across and down): the bare
 // backdrop is averaged over the footprint, which the lens compresses many
 // times near its rim, as UIKit's resampling, stage after stage, smooths it.
+// Past the platter, the backdrop lies under the platter's shadow.
 vec3 below(vec2 p, vec2 j1, vec2 j2, int taps) {
   if (stage(kPlatterStage) && capsule(p, uPlatter) < 0.0) {
-    return platter(p, taps, 0.0);
+    return litPlatter(p, taps, 0.0);
   }
   vec2 a = 0.5 * j1, b = 0.5 * j2;
-  return 0.25 * (capture(p - a - b) + capture(p + a - b) + capture(p - a + b) +
-                 capture(p + a + b));
+  vec3 c = 0.25 * (capture(p - a - b) + capture(p + a - b) + capture(p - a + b) +
+                   capture(p + a + b));
+  if (gPlatterShadow > 0.0) {
+    c *= 1.0 - gPlatterShadow * shade(p, uPlatter, uPass.z * uOptics.z,
+                                      kPlatterShadow, kPlatterShadowReach);
+  }
+  return c;
 }
 
 // The lens's bounds as UIKit's backdrop captures them: whole pixels, read at
@@ -266,7 +404,7 @@ vec3 base(vec2 q, float lift, int taps) {
   if (lift < 1.0 && stage(kRestStage)) {
     float k = uPass.z * uOptics.z;
     vec3 behind = stage(kPlatterStage) && capsule(s, uPlatter) < 0.0
-                      ? platter(s, 32, kRestBlur)
+                      ? litPlatter(s, 32, kRestBlur)
                       : frost(s, kRestBlur * k, 32);
     vec3 rest = clamp(kRest * behind + kRestOffset, 0.0, 1.0);
     w = mix(rest, w, lift);
@@ -333,6 +471,7 @@ vec3 over(vec4 top, vec3 under) {
   return top.rgb + under * (1.0 - top.a);
 }
 
+
 // ---- Diagnostics.
 
 float coverage(float d, float px) {
@@ -362,38 +501,73 @@ void main() {
   float lift = uOptics.x;
 
   if (pass < 0.5) {
-    // ---- Bar pass: the platter's glass.
+    // ---- Bar pass: the platter's glass, and the backdrop around it under
+    // the shadows.
     float d = capsule(p, uPlatter);
     float a = coverage(d, 1.0);
-    if (a <= 0.0) {
+    bool shadows = stage(kShadowStage) && !diagnostic;
+    if (a <= 0.0 && !shadows) {
       fragColor = vec4(0.0);
       return;
     }
-    vec3 c = stage(kPlatterStage) ? platter(p, 64, 0.0) : capture(p);
-    if (diagnostic) {
-      c = mix(c, vec3(1.0, 0.0, 1.0), 0.45 * hatch(p, px));
-      // Centered 0.75pt inside the edge, as the canvas's check line is.
-      c = mix(c, vec3(1.0, 0.85, 0.0), line(d + 0.75 * px, 1.5 * px));
+    float kp = px * uOptics.z;
+    vec3 c = vec3(0.0);
+    if (a > 0.0) {
+      c = stage(kPlatterStage) ? platter(p, 64, 0.0) : capture(p);
+      if (stage(kRimStage)) {
+        c = rim(c, p, uPlatter, kp, kPlatterRimCurvature, kPlatterRim, 1.0);
+      }
+      if (stage(kPressStage)) {
+        c = wash(c, kWash * uTouch.w);
+      }
+      if (diagnostic) {
+        c = mix(c, vec3(1.0, 0.0, 1.0), 0.45 * hatch(p, px));
+        // Centered 0.75pt inside the edge, as the canvas's check line is.
+        c = mix(c, vec3(1.0, 0.85, 0.0), line(d + 0.75 * px, 1.5 * px));
+      }
     }
-    fragColor = premul(c, a);
+    if (!shadows) {
+      fragColor = premul(c, a);
+      return;
+    }
+    float shaded = 0.0;
+    if (a < 1.0) {
+      float s = shade(p, uPlatter, kp, kPlatterShadow, kPlatterShadowReach);
+      shaded = s > 0.0 ? platterShadowStrength() * s : 0.0;
+    }
+    if (a <= 0.0 && shaded <= 0.0) {
+      fragColor = vec4(0.0);
+      return;
+    }
+    vec3 outside = a < 1.0 ? capture(p) * (1.0 - shaded) : vec3(0.0);
+    fragColor = vec4(mix(outside, c, a), 1.0);
     return;
   }
 
   if (pass < 1.5) {
-    // ---- Lens pass: the resting selection fading into the clear lens.
+    // ---- Lens pass: the resting selection fading into the clear lens, and
+    // around it the lens's shadow, over all that is below it (the platter,
+    // its tabs, and the press's wash and glow).
     float d = capsule(p, uLens);
     float a = coverage(d, 1.0);
+    float k = px * uOptics.y;
+    float fade = clamp(kMaterialFade * lift, 0.0, 1.0);
+    float shadow = 0.0;
+    if (a < 1.0 && fade > 0.0 && stage(kShadowStage) && !diagnostic) {
+      shadow = kLensShadowStrength * fade * shade(p, uLens, k, kLensShadow, kLensShadowReach);
+    }
     if (a <= 0.0) {
-      fragColor = vec4(0.0);
+      fragColor = vec4(0.0, 0.0, 0.0, shadow);
       return;
     }
-    float k = px * uOptics.y;
     float depth = max(-d, 0.0);
     vec2 sg = lensSource(p, lift);
+    if (stage(kShadowStage)) {
+      gPlatterShadow = platterShadowStrength();
+    }
     float tone = stage(kInnerStage) ? kLensTone : 1.0;
     // The material fades in quickly as the lens lifts (UIKit's opacityPair),
     // over the base: the resting selection over the warped backdrop.
-    float fade = clamp(kMaterialFade * lift, 0.0, 1.0);
     // Below the material: the base with the content over it, lensed once.
     vec3 c = fade < 1.0 ? over(contentLensed(p, lift), base(p, lift, 32)) : vec3(0.0);
     if (fade > 0.0) {
@@ -423,6 +597,9 @@ void main() {
       }
       c = mix(c, glass, fade);
     }
+    if (stage(kRimStage)) {
+      c = rim(c, p, uLens, k, kLensRimCurvature, kLensRim, fade);
+    }
     if (diagnostic) {
       // Pixels showing content from outside the lens.
       float outside = step(0.0, capsule(sg, uLens));
@@ -437,7 +614,7 @@ void main() {
         c = mix(c, vec3(0.1, 1.0, 0.2), mark);
       }
     }
-    fragColor = premul(c, a);
+    fragColor = vec4(c * a, a + (1.0 - a) * shadow);
     return;
   }
 

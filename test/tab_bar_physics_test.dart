@@ -261,4 +261,50 @@ void main() {
     expect(selected, 2);
     expect(tester.takeException(), isNull);
   });
+
+  test('a press washes and glows as UIKit does, under the finger', () {
+    final GlassTabBarPhysics p = makePhysics();
+    p.tick(0);
+    expect(p.press, 0);
+    p.pointerDown(const Offset(57.75, 31));
+    // UIKit: up within 0.18s (0.51 at 50ms, 0.95 at 100ms).
+    run(p, 0, 0.1);
+    expect(p.press, moreOrLessEquals(0.93, epsilon: 0.04));
+    var t = run(p, 0.1, 0.5);
+    expect(p.press, moreOrLessEquals(1, epsilon: 1e-3));
+    expect(p.glowCenter, const Offset(57.75, 31));
+    // 93pt in the swollen platter, at 0.2845.
+    expect(p.glowSize, moreOrLessEquals(96.3, epsilon: 0.05));
+    expect(p.glowAlpha, moreOrLessEquals(0.2845, epsilon: 1e-3));
+
+    // Leaving the tab spreads it to twice the size, at half the opacity.
+    for (var x = 57.75; x <= 250; x += 2) {
+      p.pointerMove(Offset(x, 31));
+      t = run(p, t, 1 / 60);
+    }
+    t = run(p, t, 1.0);
+    expect(p.glowSize, moreOrLessEquals(193.6, epsilon: 0.5));
+    expect(p.glowAlpha, moreOrLessEquals(0.1422, epsilon: 1e-3));
+
+    // Let go: it stays where the finger left, spreads to four times and
+    // fades over about half a second.
+    p.pointerUp();
+    t = run(p, t, 0.15);
+    expect(p.press, inExclusiveRange(0.3, 0.8));
+    run(p, t, 1.2);
+    expect(p.press, moreOrLessEquals(0, epsilon: 1e-3));
+    expect(p.glowCenter!.dx, 249.75);
+    expect(p.glowSize, moreOrLessEquals(372, epsilon: 1));
+  });
+
+  test('a press that stays on its tab keeps the glow small', () {
+    final GlassTabBarPhysics p = makePhysics();
+    p.tick(0);
+    p.pointerDown(const Offset(57.75, 31));
+    var t = run(p, 0, 0.3);
+    p.pointerMove(const Offset(90, 31));
+    t = run(p, t, 1);
+    // (The platter stretches a little toward the finger.)
+    expect(p.glowSize, moreOrLessEquals(96.3, epsilon: 0.2));
+  });
 }

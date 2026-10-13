@@ -265,12 +265,34 @@ class GlassTabBarPhysics {
     tolerance: 1e-3,
   );
 
-  final GlassSpring _glow = GlassSpring.physical(
-    mass: 1,
-    stiffness: 631.654682,
-    damping: 50.265482,
+  // The press (UIKit's GlowContainerView, whose wash and fingertip glow
+  // fade in and out together): up within 0.18s of a touch, down over half a
+  // second after it. The glow is a white disk 93pt across under the finger,
+  // blurred by 46.5pt, at 0.2845 opacity; it spreads to twice its size, at
+  // half the opacity, once the lens leaves the tab the finger came down on,
+  // and to four times as it fades after the touch. All in the platter's
+  // points. UIKit's glow sits where its swollen platter carries the finger's
+  // point, up to 5pt off the finger; this one stays under the finger.
+  // Fitted to UIKit's glow over a press, drag and release.
+  static const (double, double) _pressRise = (0.181, 0.865);
+  static const (double, double) _pressFall = (0.499, 1.0);
+  static const (double, double) _spreading = (0.53, 0.96);
+  static const double glowDiameter = 93;
+  static const double glowBlur = 46.5;
+  static const double glowOpacity = 0.2845;
+  final GlassSpring _press = GlassSpring(
+    response: 0.181,
+    dampingRatio: 0.865,
     tolerance: 1e-3,
   );
+  final GlassSpring _spread = GlassSpring(
+    response: 0.53,
+    dampingRatio: 0.96,
+    tolerance: 1e-3,
+  );
+  Offset? _glowCenter;
+  int _startTab = 0;
+  bool _leftStartTab = false;
 
   List<GlassSpring> get _springs => <GlassSpring>[
     _scale,
@@ -284,7 +306,8 @@ class GlassTabBarPhysics {
     _flexX,
     _flexY,
     _flexShift,
-    _glow,
+    _press,
+    _spread,
   ];
 
   // ------------------------------------------------------------------ touch
@@ -394,6 +417,10 @@ class GlassTabBarPhysics {
         _touch = position;
         _touchStart = position;
         _pressTime = t;
+        _glowCenter = position;
+        _startTab = nearestTab(_clampToBar(position.dx));
+        _leftStartTab = false;
+        _spread.snap(0);
         _hangUntil = double.negativeInfinity;
         _anchor = _clampToBar(position.dx);
         _anchorVelocity = 0;
@@ -410,6 +437,7 @@ class GlassTabBarPhysics {
           return;
         }
         _touch = event.position;
+        _glowCenter = event.position;
         final double anchor = _clampToBar(event.position!.dx);
         if (anchor != _anchor) {
           _shadow.configure(_trail.$1, _trail.$2);
@@ -580,7 +608,16 @@ class GlassTabBarPhysics {
     _growth
       ..configure(gr, gz)
       ..target = _lift.target;
-    _glow.target = down ? 1 : 0;
+    final (double pr, double pz) = down ? _pressRise : _pressFall;
+    _press
+      ..configure(pr, pz)
+      ..target = down ? 1 : 0;
+    // The glow spreads once UIKit's (trailing) lens has left the tab the
+    // finger came down on.
+    _leftStartTab |= down && nearestTab(_shadow.value) != _startTab;
+    _spread
+      ..configure(_spreading.$1, _spreading.$2)
+      ..target = down ? (_leftStartTab ? 1 : 0) : 3;
 
     final double m = _flex.value.clamp(-_flexLimit, _flexLimit);
     _flex.target = 0;
@@ -747,8 +784,19 @@ class GlassTabBarPhysics {
   /// Log of the flex's x scale, for compatibility with earlier callers.
   double get stretch => math.log(math.max(_flexX.value, 1e-3));
 
-  /// Fingertip glow, 0 to 1.
-  double get glow => _glow.value.clamp(0.0, 1.0);
+  /// How pressed the bar is, 0 to 1: its wash and fingertip glow follow.
+  double get press => _press.value.clamp(0.0, 1.0);
+
+  /// The fingertip glow's center in bar coordinates: the finger, and where
+  /// it left once lifted (null before any touch).
+  Offset? get glowCenter => _glowCenter;
+
+  /// The glow's diameter and blur (gaussian sigma) on screen, and its
+  /// opacity.
+  double get glowSize => glowDiameter * (1 + _spread.value) * platterScaleX;
+  double get glowSigma => glowBlur * platterScaleX;
+  double get glowAlpha =>
+      glowOpacity * press * (1 - _spread.value.clamp(0.0, 1.0) / 2);
 
   /// The lens in platter coordinates: its bounds (the pill grown by the
   /// lift) with its flex scale, drifted by the flex.

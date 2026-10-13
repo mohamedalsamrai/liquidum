@@ -63,7 +63,16 @@ abstract final class GlassTabBarOptics {
   /// The lifted content: the selected tab grown and lensed by the lens.
   static const int content = 32;
 
-  static const int all = 63;
+  /// The lit rims of the platter and the lens.
+  static const int rim = 64;
+
+  /// The shadows of the platter and the lens.
+  static const int shadow = 128;
+
+  /// The press: the wash over the platter and the fingertip glow.
+  static const int press = 256;
+
+  static const int all = 511;
 }
 
 /// An iOS 26 tab bar: a glass platter holding the tabs, and a lens that
@@ -574,6 +583,8 @@ class RenderGlassTabBar extends RenderBox
     _lensPass.layer = null;
     _inspectorClip.layer = null;
     _inspectorPass.layer = null;
+    _washLayer.layer = null;
+    _glowClip.layer = null;
   }
 
   int get _tabCount => childCount ~/ 2;
@@ -684,6 +695,21 @@ class RenderGlassTabBar extends RenderBox
     final Offset drift = _physics.platterDrift;
     final int count = _tabCount;
 
+    // The fingertip glow, for the lens's view of it: a gaussian of the
+    // blurred disk's peak and volume.
+    final Offset? glowCenter = _physics.glowCenter;
+    final double glowAlpha = _optics & GlassTabBarOptics.press != 0
+        ? _physics.glowAlpha
+        : 0;
+    final double glowRadius = space.pointSize * _physics.glowSize / 2;
+    final double glowSigma = space.pointSize * _physics.glowSigma;
+    final double glowPeak =
+        1 - math.exp(-glowRadius * glowRadius / (2 * glowSigma * glowSigma));
+    final double glowVariance = glowRadius * glowRadius / (2 * glowPeak);
+    final Offset glowPixels = glowCenter == null
+        ? Offset.zero
+        : space.point(glowCenter);
+
     ui.ImageFilter passFilter(int pass) {
       final _BackdropUniforms u = _passes[pass]
         ..pass.set(
@@ -700,7 +726,7 @@ class RenderGlassTabBar extends RenderBox
           platterScale,
           _optics.toDouble(),
         )
-        ..touch.set(finger.dx, finger.dy, touch == null ? 0 : 1, 0)
+        ..touch.set(finger.dx, finger.dy, touch == null ? 0 : 1, _physics.press)
         ..inspector.set(
           inspectorPixels.left,
           inspectorPixels.top,
@@ -733,16 +759,24 @@ class RenderGlassTabBar extends RenderBox
           _physics.platterScaleY,
           size.height,
           _atlasSlot,
+        )
+        ..glow.set(
+          glowPixels.dx,
+          glowPixels.dy,
+          1 / (2 * glowVariance),
+          glowCenter == null ? 0 : glowAlpha * glowPeak,
         );
       u.shader.setImageSampler(1, atlas);
       return ui.ImageFilter.shader(u.shader);
     }
 
-    // Pass 1, the bar: takes the capture, before any glass.
+    // Pass 1, the bar: takes the capture, before any glass. Its shadows
+    // reach past the platter.
+    final bool shadows = _optics & GlassTabBarOptics.shadow != 0 && !diagnostic;
     _barClip.layer = context.pushClipRect(
       needsCompositing,
       offset,
-      platter.inflate(2),
+      platter.inflate(shadows ? _shadowMargin : 2),
       (PaintingContext context, Offset offset) {
         final BackdropFilterLayer layer =
             (_barPass.layer ??= BackdropFilterLayer())
@@ -753,14 +787,35 @@ class RenderGlassTabBar extends RenderBox
       oldLayer: _barClip.layer,
     );
 
-    // The tabs outside the lens.
-    context.pushTransform(
-      needsCompositing,
-      offset,
-      _physics.platterTransform,
-      (PaintingContext context, Offset offset) =>
-          _paintTabs(context, offset, inside: false),
-    );
+    // The tabs outside the lens, under the press's wash.
+    final double wash = _optics & GlassTabBarOptics.press != 0
+        ? _washAmount * _physics.press
+        : 0;
+    void paintTabs(PaintingContext context, Offset offset) {
+      context.pushTransform(
+        needsCompositing,
+        offset,
+        _physics.platterTransform,
+        (PaintingContext context, Offset offset) =>
+            _paintTabs(context, offset, inside: false),
+      );
+    }
+
+    if (wash > 0) {
+      _washLayer.layer = context.pushColorFilter(
+        offset,
+        _washFilter(wash),
+        paintTabs,
+        oldLayer: _washLayer.layer,
+      );
+    } else {
+      _washLayer.layer = null;
+      paintTabs(context, offset);
+    }
+
+    // The fingertip glow, over the platter and its tabs: under the lens,
+    // whose shader sees it through its optics.
+    _paintGlow(context, offset, platter);
 
     // Pass 2, the lens: the same capture, with the tabs under it lifted into
     // it (drawn by its shader from the content atlas).
@@ -770,7 +825,7 @@ class RenderGlassTabBar extends RenderBox
     _lensClip.layer = context.pushClipRect(
       needsCompositing,
       offset,
-      lens.inflate(2),
+      lens.inflate(shadows ? _lensShadowMargin : 2),
       (PaintingContext context, Offset offset) {
         final BackdropFilterLayer layer =
             (_lensPass.layer ??= BackdropFilterLayer())
@@ -810,6 +865,70 @@ class RenderGlassTabBar extends RenderBox
   }
 
   static void _paintNothing(PaintingContext context, Offset offset) {}
+
+  // How far the platter's shadow reaches past it: 39pt past its outline
+  // moved 8pt down.
+  static const double _shadowMargin = 48;
+
+  // How far the lens's shadow reaches past it: its outline moved 7pt down,
+  // and 9.2pt past that.
+  static const double _lensShadowMargin = 18;
+
+  // The press's wash (UIKit's white layer over the platter through a vibrant
+  // color matrix): chroma x1.2 and a 0.05 lift, at 0.8448 when pressed. The
+  // glass shaders apply it to the platter and the lens; this filter, to the
+  // tabs over them.
+  static const double _washAmount = 0.8448;
+  final LayerHandle<ColorFilterLayer> _washLayer =
+      LayerHandle<ColorFilterLayer>();
+
+  static ColorFilter _washFilter(double w) {
+    const double r = 0.2126, g = 0.7152, b = 0.0722;
+    final double k = 1 + 0.2 * w, m = -0.2 * w, lift = 0.05 * w * 255;
+    return ColorFilter.matrix(<double>[
+      k + m * r, m * g, m * b, 0, lift, //
+      m * r, k + m * g, m * b, 0, lift,
+      m * r, m * g, k + m * b, 0, lift,
+      0, 0, 0, 1, 0,
+    ]);
+  }
+
+  // UIKit's LittleGlowView: a white disk under the finger, blurred, clipped
+  // to the platter.
+  void _paintGlow(PaintingContext context, Offset offset, Rect platter) {
+    final Offset? center = _physics.glowCenter;
+    final double alpha = _physics.glowAlpha;
+    if (_optics & GlassTabBarOptics.press == 0 ||
+        center == null ||
+        alpha < 1 / 512) {
+      _glowClip.layer = null;
+      return;
+    }
+    _glowClip.layer = context.pushClipRRect(
+      needsCompositing,
+      offset,
+      platter,
+      RRect.fromRectAndRadius(
+        platter,
+        Radius.circular(platter.shortestSide / 2),
+      ),
+      (PaintingContext context, Offset offset) {
+        context.canvas.drawCircle(
+          offset + center,
+          _physics.glowSize / 2,
+          Paint()
+            ..color = Color.fromRGBO(255, 255, 255, alpha)
+            ..maskFilter = MaskFilter.blur(
+              BlurStyle.normal,
+              _physics.glowSigma,
+            ),
+        );
+      },
+      oldLayer: _glowClip.layer,
+    );
+  }
+
+  final LayerHandle<ClipRRectLayer> _glowClip = LayerHandle<ClipRRectLayer>();
 
   // UIKit's gradientOvalization for the glass's distance field.
   static const double _ovalization = 0.5;
@@ -1060,7 +1179,8 @@ class _BackdropUniforms {
       content = shader.getUniformVec4('uContent'),
       tabs = shader.getUniformVec4('uTabs'),
       platterTransform = shader.getUniformVec4('uPlatterXf'),
-      platterScale = shader.getUniformVec4('uPlatterS');
+      platterScale = shader.getUniformVec4('uPlatterS'),
+      glow = shader.getUniformVec4('uGlow');
 
   final ui.FragmentShader shader;
   final ui.UniformVec4Slot pass;
@@ -1074,6 +1194,7 @@ class _BackdropUniforms {
   final ui.UniformVec4Slot tabs;
   final ui.UniformVec4Slot platterTransform;
   final ui.UniformVec4Slot platterScale;
+  final ui.UniformVec4Slot glow;
 }
 
 /// Paints the tabs into a layer of their own, for the content atlas.

@@ -1,7 +1,7 @@
 // Comparison harness: Apple's native tab bar or Liquidum's, over the same
 // background, driven by the same scripted touches (see ios/RunnerTests).
 //
-// `<tmp>/comparison.txt` holds "<apple|liquidum> <background> [flags]",
+// `<tmp>/comparison.txt` holds "<apple|liquidum|none> <background> [flags]",
 // flags being any of `log` (write liquidum's per-frame state), `view=<name>`
 // (a GlassTabBarDebugView), `noshare` (the lens takes its own capture),
 // `hold=<x>` (hold a press at x in the bar, for still comparisons), `bare`
@@ -66,6 +66,7 @@ Future<void> main() async {
   runApp(
     ComparisonApp(
       apple: config[0] == 'apple',
+      noBar: config[0] == 'none',
       hold: hold,
       bare: flags.contains('bare'),
       optics:
@@ -121,7 +122,8 @@ abstract final class _StateLog {
         'sx=${f(p.flexScale.width)}/${f(p.flexScale.width)} '
         'sy=${f(p.flexScale.height)}/${f(p.flexScale.height)} '
         'dx=${f(p.flexDrift)}/${f(p.flexDrift)} dy=0/0 ty=0/0 '
-        'm=${f(p.flex)} tr=0,0',
+        'm=${f(p.flex)} tr=0,0 '
+        'press=${f(p.press)} glow=${p.glowCenter == null ? '-' : '${f(p.glowCenter!.dx + _bar.dx)},${f(p.glowSize)},${f(p.glowAlpha)}'}',
       );
     };
     Timer.periodic(const Duration(seconds: 1), (_) {
@@ -138,6 +140,7 @@ class ComparisonApp extends StatefulWidget {
   const ComparisonApp({
     super.key,
     required this.apple,
+    this.noBar = false,
     required this.background,
     this.hold,
     this.bare = false,
@@ -148,6 +151,9 @@ class ComparisonApp extends StatefulWidget {
   });
 
   final bool apple;
+
+  /// No bar at all, for native experiments over the bare background.
+  final bool noBar;
   final double? hold;
   final bool bare;
   final int optics;
@@ -263,7 +269,7 @@ class _ComparisonAppState extends State<ComparisonApp>
               onSelected: (int i) => setState(() => _selected = i),
             ),
           )
-        else
+        else if (!widget.noBar)
           Positioned(
             left: origin.dx + barMargin,
             width: referenceScreen.width - 2 * barMargin,
