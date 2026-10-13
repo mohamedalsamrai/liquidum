@@ -200,6 +200,37 @@ void main() {
     expect(lift.dampingRatio, moreOrLessEquals(1, epsilon: 1e-5));
   });
 
+  test('tabs are sized as UIKit sizes them', () {
+    // UIKit, iOS 26.5: bar widths for up to three tabs, and the tab buttons'
+    // widths and spacing.
+    expect(GlassTabBarPhysics.naturalWidth(1, 30), 102);
+    expect(GlassTabBarPhysics.naturalWidth(2, 30), 188);
+    expect(GlassTabBarPhysics.naturalWidth(3, 30), 274);
+    expect(
+      GlassTabBarPhysics.naturalWidth(3, 88.33),
+      moreOrLessEquals(374, epsilon: 0.01),
+    );
+    expect(GlassTabBarPhysics.naturalWidth(4, 30), isNull);
+    for (final (int count, double width, double pill, double spacing)
+        in <(int, double, double, double)>[
+          (3, 274, 94, 86),
+          (3, 238, 82, 74),
+          (4, 398, 107.5, 94.17),
+          (4, 360, 98, 84.67),
+          (5, 398, 84.6, 76.35),
+          (5, 360, 77, 68.75),
+        ]) {
+      final p = GlassTabBarPhysics(count: count, selectedIndex: 0)
+        ..layout(Size(width, 62), count);
+      expect(p.pillWidth, moreOrLessEquals(pill, epsilon: 0.01));
+      expect(p.tabCenter(0), moreOrLessEquals(4 + pill / 2, epsilon: 0.01));
+      expect(
+        p.tabCenter(1) - p.tabCenter(0),
+        moreOrLessEquals(spacing, epsilon: 0.01),
+      );
+    }
+  });
+
   test('capsule distances', () {
     final shape = GlassShape(const Rect.fromLTWH(0, 0, 100, 40));
     expect(shape.radius, 20);

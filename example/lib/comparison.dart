@@ -8,7 +8,7 @@
 // (no tab content), `optics=<mask>` (GlassTabBarOptics stages) and
 // `lift=<progress>` (the optics at a fixed lift), `tint=<rrggbb>` and
 // `utint=<rrggbb>` (selected and normal item colors) and `badge=<i>:<text>`
-// (a badge on tab i), `glass=`, `indicator=` and `lens=<rrggbbaa>` (glass
+// (a badge on tab i), `count=<n>` (n tabs, up to five), `glass=`, `indicator=` and `lens=<rrggbbaa>` (glass
 // tints).
 //
 // The bar and background are laid out as on the reference screen (the
@@ -70,6 +70,10 @@ Future<void> main() async {
       .where((String f) => f.startsWith('hold='))
       .map((String f) => double.parse(f.substring(5)))
       .firstOrNull;
+  _count = flags
+      .where((String f) => f.startsWith('count='))
+      .map((String f) => int.parse(f.substring(6)))
+      .firstOrNull;
   runApp(
     ComparisonApp(
       apple: config[0] == 'apple',
@@ -107,6 +111,20 @@ Future<void> main() async {
     ),
   );
 }
+
+// How many tabs to show (the `count=<n>` flag, up to five: the fifth is a
+// search tab).
+int? _count;
+List<TabSpec> get _tabs => _count == null
+    ? tabs
+    : <TabSpec>[
+        ...tabs,
+        const TabSpec(
+          icon: CupertinoIcons.search,
+          label: 'Search',
+          symbol: 'magnifyingglass',
+        ),
+      ].take(_count!).toList();
 
 Color? _rgba(Set<String> flags, String prefix) =>
     flags.where((String f) => f.startsWith(prefix)).map((String f) {
@@ -387,7 +405,7 @@ class _ComparisonAppState extends State<ComparisonApp>
             bottom: 0,
             height: NativeTabBar.height,
             child: NativeTabBar(
-              items: tabs,
+              items: _tabs,
               selectedIndex: _selected,
               onSelected: (int i) => setState(() => _selected = i),
               tint: widget.tint,
@@ -400,30 +418,35 @@ class _ComparisonAppState extends State<ComparisonApp>
             left: origin.dx + barMargin,
             width: referenceScreen.width - 2 * barMargin,
             bottom: barMargin,
-            child: GlassTabBar(
-              items: <GlassTabItem>[
-                for (var i = 0; i < tabs.length; i++)
-                  GlassTabItem(
-                    icon: tabs[i].glassItem.icon,
-                    label: tabs[i].label,
-                    badge: i < widget.badges.length ? widget.badges[i] : null,
-                  ),
-              ],
-              // UIKit ignores its unselected tint; so does the comparison.
-              selectedColor: widget.tint,
-              glassColor: widget.glass,
-              indicatorColor: widget.indicator,
-              lensColor: widget.lens,
-              selectedIndex: _selected,
-              onSelected: (int i) => setState(() => _selected = i),
-              debugView: widget.view,
-              debugShareBackdrop: widget.shareBackdrop,
-              debugHold: widget.hold == null ? null : Offset(widget.hold!, 31),
-              debugHideContent: widget.bare,
-              debugOptics: widget.optics,
-              debugLift: widget.lift,
-              // Above the marker band and the clock code.
-              debugInspector: const Rect.fromLTWH(0, -380, 398, 300),
+            // Centered: with up to three tabs the bar hugs them.
+            child: Center(
+              child: GlassTabBar(
+                items: <GlassTabItem>[
+                  for (var i = 0; i < _tabs.length; i++)
+                    GlassTabItem(
+                      icon: _tabs[i].glassItem.icon,
+                      label: _tabs[i].label,
+                      badge: i < widget.badges.length ? widget.badges[i] : null,
+                    ),
+                ],
+                // UIKit ignores its unselected tint; so does the comparison.
+                selectedColor: widget.tint,
+                glassColor: widget.glass,
+                indicatorColor: widget.indicator,
+                lensColor: widget.lens,
+                selectedIndex: _selected,
+                onSelected: (int i) => setState(() => _selected = i),
+                debugView: widget.view,
+                debugShareBackdrop: widget.shareBackdrop,
+                debugHold: widget.hold == null
+                    ? null
+                    : Offset(widget.hold!, 31),
+                debugHideContent: widget.bare,
+                debugOptics: widget.optics,
+                debugLift: widget.lift,
+                // Above the marker band and the clock code.
+                debugInspector: const Rect.fromLTWH(0, -380, 398, 300),
+              ),
             ),
           ),
       ],

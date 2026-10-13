@@ -53,12 +53,17 @@ uniform vec4 uFace;        // platter face: luma black and white points, fill al
 uniform vec4 uRim;         // platter rim matrix: chroma gain, luma weight, lift; platter shadow strength
 uniform vec4 uLensRim;     // lens rim matrix: chroma gain, luma weight, lift; symbols' lift
 uniform vec4 uPill;        // resting selection matrix: chroma gain, luma weight, lift; symbols' luma weight
-uniform vec4 uGlassTint;   // the platter's tint (UIGlassEffect.tintColor): over white glass .rgb, alpha
-uniform vec4 uGlassTintD;  // over black glass .rgb
-uniform vec4 uRestTint;    // the resting selection's tint, the same way
-uniform vec4 uRestTintD;
-uniform vec4 uLensTint;    // the lifted lens's tint, the same way
-uniform vec4 uLensTintD;
+// Tints (UIGlassEffect.tintColor) of the platter (0-4), the resting
+// selection (5-9) and the lifted lens (10-14), each: at a gradient's start,
+// over white glass (.rgb) with its alpha, and over black glass; the same at
+// its end; the gradient's axis in capture pixels, start.xy and end.xy (a
+// single color: the same twice, no axis). [1].w: painted as it is rather
+// than tinted (GlassFill.paint). One array: Metal gives each
+// uniform a buffer, and has 31.
+uniform vec4 uTints[15];
+#define GLASS_TINT uTints[0], uTints[1], uTints[2], uTints[3], uTints[4]
+#define REST_TINT uTints[5], uTints[6], uTints[7], uTints[8], uTints[9]
+#define LENS_TINT uTints[10], uTints[11], uTints[12], uTints[13], uTints[14]
 uniform vec4 uSelected;    // selected symbols: offset added to half of what is below them and the tint; content drawn as it is (flag)
 
 uniform sampler2D uCapture;
@@ -240,15 +245,24 @@ vec3 face(vec3 c) {
   return clamp(kPlatterTone * mix(f, vec3(uFace.w), uFace.z), 0.0, 1.0);
 }
 
-// UIKit's tinted glass: a color matrix over the glass c taking its luma to
-// a color between the tint over black glass and over white glass, mixed in
-// at the tint's alpha (bright.a).
-vec3 tint(vec3 c, vec4 bright, vec4 dark) {
-  if (bright.a <= 0.0) {
+// UIKit's tinted glass at p: a color matrix over the glass c taking its
+// luma to a color between the tint over black glass and over white glass,
+// mixed in at the tint's alpha. A gradient's tint goes from its start's to
+// its end's along its axis. A painted one is its color over c, at its alpha.
+vec3 tint(vec3 c, vec2 p, vec4 bright1, vec4 dark1, vec4 bright2, vec4 dark2, vec4 axis) {
+  if (bright1.a <= 0.0 && bright2.a <= 0.0) {
     return c;
   }
+  vec2 v = axis.zw - axis.xy;
+  float span = dot(v, v);
+  float t = span > 0.0 ? clamp(dot(p - axis.xy, v) / span, 0.0, 1.0) : 0.0;
+  vec4 bright = mix(bright1, bright2, t);
+  if (dark1.w > 0.5) {
+    return mix(c, bright.rgb, bright.a);
+  }
+  vec3 dark = mix(dark1.rgb, dark2.rgb, t);
   float l = dot(c, kLuma);
-  return mix(c, clamp(dark.rgb + (bright.rgb - dark.rgb) * l, 0.0, 1.0), bright.a);
+  return mix(c, clamp(dark + (bright.rgb - dark) * l, 0.0, 1.0), bright.a);
 }
 
 // A vibrant color matrix (chroma gain, luma weight, lift) applied to c.
@@ -268,7 +282,9 @@ vec3 platter(vec2 p, int taps, float extra) {
   float sharp = sqrt(kFrostSharp * kFrostSharp + extra * extra) * k;
   float heavy = sqrt(kFrostDeep * kFrostDeep + extra * extra) * k;
   vec3 light = frost(q, sharp, extra > 0.0 ? taps : 8);
-  return tint(face(mix(light, frost(q, heavy, taps), deep)), uGlassTint, uGlassTintD);
+  vec3 frosted = mix(light, frost(q, heavy, taps), deep);
+  // A painted color goes over the frosted backdrop in place of the face.
+  return tint(uTints[1].w > 0.5 ? frosted : face(frosted), p, GLASS_TINT);
 }
 
 // ---- Lighting.
@@ -409,7 +425,9 @@ vec3 base(vec2 q, float lift, int taps) {
     vec3 behind = stage(kPlatterStage) && capsule(s, uPlatter) < 0.0
                       ? litPlatter(s, 32, kRestBlur)
                       : frost(s, kRestBlur * k, 32);
-    vec3 rest = tint(vibrant(behind, uPill.xyz), uRestTint, uRestTintD);
+    // A painted color goes over the glass behind, in place of the
+    // selection's own matrix.
+    vec3 rest = tint(uTints[6].w > 0.5 ? behind : vibrant(behind, uPill.xyz), q, REST_TINT);
     w = mix(rest, w, lift);
   }
   return w;
@@ -420,7 +438,8 @@ vec3 base(vec2 q, float lift, int taps) {
 // The tabs' content at x (capture pixels), as laid out in the platter,
 // each tab grown about its center by `grow`: the selected tabs (row 0) or
 // the normal ones (row 1). Returns the template content (symbols and
-// labels; for the selected tabs, colored with their tint), premultiplied;
+// labels; for the selected tabs, colored with the tab's tint from the strip
+// under the rows), premultiplied;
 // `original` gets the content drawn as it is (badges, images in their own
 // colors), from the atlas's rows 2 and 3. UIKit renders templates through
 // vibrant color matrices, so of those only the shapes and tints count.
@@ -445,6 +464,12 @@ vec4 glyphs(vec2 x, float grow, float row, out vec4 original) {
     }
     vec2 at = vec2(i * pitch + local, v.y + row * height);
     vec4 t = texture(uContentAtlas, texel(at, uContent.zw));
+    if (row < 0.5 && t.a > 0.0) {
+      // A template is only a shape: the selected ones take the tab's tint,
+      // from the strip under the atlas's rows.
+      t.rgb = t.a * texture(uContentAtlas,
+                            texel(vec2((i + 0.5) * pitch, 4.0 * height + 0.5), uContent.zw)).rgb;
+    }
     sum = t + sum * (1.0 - t.a);
     if (uSelected.w > 0.5) {
       vec4 o = texture(uContentAtlas, texel(at + vec2(0.0, 2.0 * height), uContent.zw));
@@ -612,7 +637,7 @@ void main() {
       // content (lensed again) over it, all dispersed near the edge. A tap
       // past the lens's outline reads the unwarped backdrop, as UIKit's warp
       // is clipped to the outline.
-      vec3 glass = contentInMaterial(p, lift, tint(base(innerSource(p), lift, 32) * tone, uLensTint, uLensTintD));
+      vec3 glass = contentInMaterial(p, lift, tint(base(innerSource(p), lift, 32) * tone, p, LENS_TINT));
       float spread = clamp(1.0 - depth / (kAberrationDepth * k), 0.0, 1.0);
       if (spread > 0.0 && stage(kDispersionStage)) {
         vec2 v = kAberration * ((p - uLens.xy) / uLens.zw) * k;
@@ -625,7 +650,7 @@ void main() {
           vec3 s = i == 3 ? glass
                           : contentInMaterial(at, lift,
                                 capsule(at, uLens) < 0.0
-                                    ? tint(base(innerSource(at), lift, 16) * tone, uLensTint, uLensTintD)
+                                    ? tint(base(innerSource(at), lift, 16) * tone, at, LENS_TINT)
                                     : below(at, vec2(1.0, 0.0), vec2(0.0, 1.0), 16));
           dispersed += w * s;
         }

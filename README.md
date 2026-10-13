@@ -29,6 +29,8 @@ void main() => runApp(
 The scaffold handles the rest the way an iOS app does:
 
 - The bar floats over the pages, and its glass adapts to what is under it.
+  With up to three tabs it is only as wide as they need and centered; with
+  more it spans the screen, as in UIKit.
 - Each tab keeps its page and that page's state.
 - Each tab has its own navigator, so `Navigator.push` stays inside the tab.
 - Tapping the selected tab again returns to its first page.
@@ -49,6 +51,7 @@ Everything else is optional:
 | `glassColor` | tints the bar's glass |
 | `indicatorColor` | tints the glass under the selected tab at rest |
 | `lensColor` | tints the lens while the bar is pressed or dragged |
+| `glass`, `indicator`, `lens` | the same three, decorated like a `BoxDecoration`: `GlassDecoration(color:, gradient: LinearGradient(…), shadows: […], innerShadows: […])`; `fill: GlassFill.paint` paints the color as it is over the blur (as a design tool does) instead of tinting the glass the iOS way |
 | `brightness`, `adaptive` | force light or dark; whether the bar adapts to the pages |
 | `labelStyle` | for example a font family |
 | `initialIndex`, `onTabChanged`, `controller` | the selected tab; switch from a page with `GlassTabScaffold.of(context).index = 1` |

@@ -46,6 +46,15 @@ class GlassTint {
     );
   }
 
+  /// [color] as it is: over black glass and white glass alike.
+  factory GlassTint.paint(Color? color) => color == null || color.a == 0
+      ? none
+      : GlassTint._(
+          <double>[color.r, color.g, color.b],
+          <double>[color.r, color.g, color.b],
+          color.a,
+        );
+
   /// The tint's color over black glass, and over white glass (r, g, b).
   final List<double> dark;
   final List<double> bright;

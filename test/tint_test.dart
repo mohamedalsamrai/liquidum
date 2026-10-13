@@ -68,4 +68,11 @@ void main() {
     );
     expect(GlassTint(null, darkAppearance: false).alpha, 0);
   });
+
+  test('a painted color is itself over any glass', () {
+    final t = GlassTint.paint(const Color(0xC21E1E1E));
+    expect(t.bright, t.dark);
+    expect(t.bright[0], moreOrLessEquals(0x1E / 255, epsilon: 1e-6));
+    expect(t.alpha, moreOrLessEquals(0xC2 / 255, epsilon: 1e-6));
+  });
 }

@@ -143,4 +143,61 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('profile 0'), findsOneWidget);
   });
+
+  testWidgets('decorated glass lays out and paints', (
+    WidgetTester tester,
+  ) async {
+    const shadow = BoxShadow(color: Color(0x1A000000), blurRadius: 6);
+    await tester.pumpWidget(
+      const CupertinoApp(
+        home: GlassTabScaffold(
+          glass: GlassDecoration(
+            color: Color(0xC21E1E1E),
+            shadows: <BoxShadow>[shadow],
+            innerShadows: <BoxShadow>[
+              BoxShadow(color: Color(0x40000000), blurRadius: 13),
+            ],
+          ),
+          indicator: GlassDecoration(
+            gradient: LinearGradient(
+              colors: <Color>[Color(0xFFD82789), Color(0xFF7257A8)],
+            ),
+            shadows: <BoxShadow>[shadow],
+          ),
+          lensColor: Color(0xB37257A8),
+          tabs: <GlassTab>[
+            GlassTab(
+              icon: CupertinoIcons.house,
+              label: 'Home',
+              page: Counter('home'),
+            ),
+            GlassTab(
+              icon: CupertinoIcons.bell,
+              label: 'Alerts',
+              page: Counter('alerts'),
+            ),
+          ],
+        ),
+      ),
+    );
+    await tapTab(tester, 'Alerts');
+    expect(find.text('alerts 0'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  test('a decoration takes a shorthand color only when it has none', () {
+    const red = Color(0xFFFF0000);
+    const blue = Color(0xFF0000FF);
+    expect(const GlassDecoration().withColor(red).color, red);
+    expect(const GlassDecoration(color: blue).withColor(red).color, blue);
+    const gradient = LinearGradient(colors: <Color>[red, blue]);
+    expect(
+      const GlassDecoration(gradient: gradient).withColor(red).color,
+      isNull,
+    );
+    expect(
+      const GlassDecoration(shadows: <BoxShadow>[BoxShadow()]),
+      const GlassDecoration(shadows: <BoxShadow>[BoxShadow()]),
+    );
+  });
 }

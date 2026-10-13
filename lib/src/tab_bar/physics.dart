@@ -47,10 +47,34 @@ class GlassTabBarPhysics {
   /// The tab that the lens rests on when released.
   int get selectedIndex => _selected;
 
-  /// Width of the resting pill: wider than the spacing between tabs, so
-  /// neighbouring pills would overlap (107.5pt for four tabs in 398pt).
+  /// Width of the resting pill, as UIKit sizes its tab buttons: wider than
+  /// the spacing between tabs, so that neighbours overlap. For up to three
+  /// tabs they overlap by 8pt and the bar hugs them (see [naturalWidth]); for
+  /// more the bar fills its width and they overlap by 40pt in all for four
+  /// tabs, 33pt for five (107.5pt for four tabs in 398pt, 84.6pt for five).
   double get pillWidth =>
-      ((_size.width - 2 * inset) / _count + 10).clamp(0, _size.width);
+      ((_size.width - 2 * inset + _overlap(_count)) / _count).clamp(
+        0,
+        _size.width,
+      );
+
+  static double _overlap(int count) => switch (count) {
+    <= 3 => 8.0 * (count - 1),
+    4 => 40,
+    _ => 33,
+  };
+
+  /// The width of UIKit's bar of [count] tabs whose widest label is [label]
+  /// points wide, or null for four tabs or more, which fill the width they
+  /// are given. Each tab is 94pt wide, or 39pt wider than the widest label;
+  /// three tabs with short labels make a 274pt bar.
+  static double? naturalWidth(int count, double label) {
+    if (count > 3) {
+      return null;
+    }
+    final double tab = math.max(94, label + 39);
+    return count * tab - _overlap(count) + 2 * inset;
+  }
 
   double get pillHeight => math.max(_size.height - 2 * inset, 0);
 

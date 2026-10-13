@@ -53,3 +53,30 @@ a blue lens, held), each against the model applied to its untinted glass:
   platter, light and dark, full and 50%: within 1 level
   lens, lifted: 0 levels
   resting selection: within 4 levels
+
+Bar and tab widths, 2026-10-13 (UIKit above Liquidum in 7 and 8):
+  UIKit's bar hugs up to three tabs, centered: each tab button 94pt, or the
+  widest (selected) label + 39pt, overlapping its neighbours by 8pt, the bar
+  4pt around them (1, 2, 3 tabs: 102, 188, 274pt; three long labels: 374pt).
+  Given less room, it fills it, keeping the 8pt overlap (3 tabs in 238pt:
+  82pt buttons).
+  Four tabs or more fill the width: buttons equal, (inner width + c) / n wide
+  with c = 40 for four tabs and 33 for five (398pt: 107.5 and 84.6; 360pt: 98
+  and 77). Not modelled: below about 320pt UIKit departs from this (a 94pt
+  minimum, then narrower), and with long labels it sizes four or more tabs
+  each to its label + a shared amount, overlapping by 20pt.
+  Liquidum vs UIKit, white: 2 and 3 tabs, the same bar edges, mean 0.7 and
+  1.0 levels; 4 and 5 tabs, mean 1.1 and 1.7 levels.
+
+Decorations (GlassDecoration), 2026-10-13: a LinearGradient tint (the tint
+model at its first and last colors, along its axis over the shape), drop
+shadows around a shape and not under it, and inner shadows over it (as
+inset shadows). Not from UIKit, whose tab bar has none of these.
+Note: Metal gives each shader uniform its own buffer, at most 31; the tints
+are one array (uTints[15]) for that reason.
+
+GlassFill.paint, 2026-10-13: a decoration's color or gradient painted as it
+is over the frosted backdrop (in place of the platter's face, or of the
+resting selection's color matrix; over the lens's material), as a
+translucent fill over a background blur in a design tool; an opaque
+gradient shows its own colors exactly.

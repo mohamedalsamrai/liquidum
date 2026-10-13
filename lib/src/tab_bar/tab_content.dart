@@ -61,6 +61,18 @@ class TabContent extends StatelessWidget {
   static const Color _normalLight = Color(0xFF191919);
   static const Color _normalDark = Color(0xFFF3F3F3);
 
+  /// The labels' style: UIKit's 10pt, semibold when selected and medium
+  /// otherwise, with SF's small-size tracking, merged with the bar's.
+  static TextStyle labelStyle(
+    GlassTabBarStyle style, {
+    required bool selected,
+  }) => TextStyle(
+    fontSize: 10,
+    fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+    letterSpacing: 0.1,
+    height: 1.2,
+  ).merge(style.labelStyle);
+
   /// Whether [item] puts anything in an original layer.
   static bool hasOriginal(GlassTabItem item, GlassTabBarStyle style) =>
       item.badge != null ||
@@ -115,12 +127,10 @@ class TabContent extends StatelessWidget {
               softWrap: false,
               textAlign: TextAlign.center,
               overflow: TextOverflow.visible,
-              style: TextStyle(
-                fontSize: 10,
-                fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-                letterSpacing: 0.1,
-                height: 1.2,
-              ).merge(style.labelStyle).copyWith(color: color),
+              style: labelStyle(
+                style,
+                selected: selected,
+              ).copyWith(color: color),
             ),
           ),
         if (badge != null)

@@ -5,6 +5,7 @@ import 'package:flutter/cupertino.dart'
 import 'package:flutter/widgets.dart';
 
 import 'glass_backdrop.dart';
+import 'tab_bar/decoration.dart';
 import 'tab_bar/item.dart';
 import 'tab_bar/tab_bar.dart';
 
@@ -28,10 +29,10 @@ class GlassTab {
        _selectedIcon = null,
        tintIcon = true;
 
-  /// A tab whose icons are widgets: an image, an SVG, any widget. With
-  /// [tintIcon] (the default) the bar colors them, so they should take their
-  /// color from the ambient [IconTheme]; turn it off for icons with colors
-  /// of their own, such as a profile photo.
+  /// A tab whose icons are widgets: an SVG, an image, any widget. The bar
+  /// uses them for their shape and colors them itself, whatever colors they
+  /// have; turn off [tintIcon] for icons that keep their own colors, such as
+  /// a profile photo.
   const GlassTab.custom({
     required Widget this._icon,
     this._selectedIcon,
@@ -111,6 +112,9 @@ class GlassTabScaffold extends StatefulWidget {
     this.glassColor,
     this.indicatorColor,
     this.lensColor,
+    this.glass,
+    this.indicator,
+    this.lens,
     this.backgroundColor,
     this.initialIndex = 0,
     this.onTabChanged,
@@ -149,6 +153,17 @@ class GlassTabScaffold extends StatefulWidget {
   /// Tints the lens the selection lifts into while the bar is pressed or
   /// dragged. None by default (clear, as in UIKit).
   final Color? lensColor;
+
+  /// The bar's glass decorated: a tint or a [LinearGradient], drop shadows
+  /// (in place of UIKit's) and inner shadows, like a [BoxDecoration].
+  /// [glassColor] is short for its color.
+  final GlassDecoration? glass;
+
+  /// The glass under the selected tab at rest, decorated the same way.
+  final GlassDecoration? indicator;
+
+  /// The lens while the selection moves, decorated the same way.
+  final GlassDecoration? lens;
 
   /// Painted behind the pages. Defaults to the theme's background.
   final Color? backgroundColor;
@@ -299,24 +314,31 @@ class _GlassTabScaffoldState extends State<GlassTabScaffold> {
             left: 21 + inset.left,
             right: 21 + inset.right,
             bottom: bottom,
-            child: GlassTabBar(
-              items: <GlassTabItem>[
-                for (final GlassTab t in widget.tabs) t._item,
-              ],
-              selectedIndex: index,
-              onSelected: (int i) => _controller.index = i,
-              onReselected: (int i) => _navigators[i].currentState?.popUntil(
-                (Route<dynamic> route) => route.isFirst,
+            // Centered: with up to three tabs, the bar is only as wide as its
+            // tabs, as UIKit's.
+            child: Center(
+              child: GlassTabBar(
+                items: <GlassTabItem>[
+                  for (final GlassTab t in widget.tabs) t._item,
+                ],
+                selectedIndex: index,
+                onSelected: (int i) => _controller.index = i,
+                onReselected: (int i) => _navigators[i].currentState?.popUntil(
+                  (Route<dynamic> route) => route.isFirst,
+                ),
+                selectedColor: widget.selectedColor,
+                unselectedColor: widget.unselectedColor,
+                badgeColor: widget.badgeColor,
+                brightness: widget.brightness,
+                adaptive: widget.adaptive,
+                labelStyle: widget.labelStyle,
+                glassColor: widget.glassColor,
+                indicatorColor: widget.indicatorColor,
+                lensColor: widget.lensColor,
+                glass: widget.glass,
+                indicator: widget.indicator,
+                lens: widget.lens,
               ),
-              selectedColor: widget.selectedColor,
-              unselectedColor: widget.unselectedColor,
-              badgeColor: widget.badgeColor,
-              brightness: widget.brightness,
-              adaptive: widget.adaptive,
-              labelStyle: widget.labelStyle,
-              glassColor: widget.glassColor,
-              indicatorColor: widget.indicatorColor,
-              lensColor: widget.lensColor,
             ),
           ),
         ],

@@ -18,9 +18,9 @@ class GlassTabItem {
   });
 
   /// Drawn centered 24pt below the top of the bar, as UIKit centers a tab's
-  /// symbol. Use an [Icon], or anything else that takes its color from the
-  /// ambient [IconTheme]: the bar colors it as UIKit colors template images.
-  /// For an icon with colors of its own, turn off [tintIcon].
+  /// symbol: an [Icon], an SVG, an image, any widget. The bar uses it as UIKit
+  /// uses a template image, for its shape only, and colors it itself. For an
+  /// icon that should keep its own colors, turn off [tintIcon].
   final Widget icon;
 
   /// The icon while the tab is selected (for example, a filled variant), as

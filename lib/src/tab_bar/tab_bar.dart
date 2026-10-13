@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
@@ -9,6 +10,7 @@ import 'package:flutter/widgets.dart';
 import '../glass_backdrop.dart';
 import '../shader_program.dart';
 import 'appearance.dart';
+import 'decoration.dart';
 import 'item.dart';
 import 'physics.dart';
 import 'style.dart';
@@ -73,7 +75,9 @@ abstract final class GlassTabBarOptics {
 /// selects one. Press and slide to carry the lens between tabs; release to
 /// select the tab under it.
 ///
-/// The bar is 62pt high and as wide as it is allowed to be; UIKit floats it
+/// The bar is 62pt high. As UIKit's, with four tabs or more it is as wide as
+/// it is allowed to be, and with fewer it is only as wide as its tabs need
+/// (274pt for three) when allowed to be narrower: center it. UIKit floats it
 /// 21pt from the sides and bottom of the screen. It adapts to what is
 /// behind it when that is wrapped in a [GlassBackdrop]. [GlassTabScaffold]
 /// does all of this, and gives each tab its page.
@@ -96,6 +100,9 @@ class GlassTabBar extends StatefulWidget {
     this.glassColor,
     this.indicatorColor,
     this.lensColor,
+    this.glass,
+    this.indicator,
+    this.lens,
     this.debugView = GlassTabBarDebugView.none,
     this.debugShareBackdrop = true,
     this.debugInspector,
@@ -169,6 +176,18 @@ class GlassTabBar extends StatefulWidget {
   /// Tints the lens that the selection lifts into while the bar is pressed
   /// or dragged, the same way. UIKit's lens is clear. None by default.
   final Color? lensColor;
+
+  /// The bar's glass decorated: a tint or a gradient, drop shadows (in place
+  /// of UIKit's) and inner shadows. [glassColor] is short for its color.
+  final GlassDecoration? glass;
+
+  /// The selection at rest decorated the same way ([indicatorColor] is
+  /// short for its color).
+  final GlassDecoration? indicator;
+
+  /// The lens, while the selection moves, decorated the same way
+  /// ([lensColor] is short for its color).
+  final GlassDecoration? lens;
 
   GlassTabBarStyle get _style => GlassTabBarStyle(
     selectedColor: selectedColor,
@@ -421,6 +440,27 @@ class _GlassTabBarState extends State<GlassTabBar>
     super.dispose();
   }
 
+  // The widest label, as UIKit sizes tabs by it: selected, which is widest.
+  static double _widestLabel(
+    BuildContext context,
+    List<GlassTabItem> items,
+    GlassTabBarStyle style,
+  ) {
+    var widest = 0.0;
+    final TextStyle label = TabContent.labelStyle(style, selected: true);
+    for (final GlassTabItem item in items) {
+      final painter = TextPainter(
+        text: TextSpan(text: item.label, style: label),
+        textDirection: Directionality.maybeOf(context) ?? TextDirection.ltr,
+        textScaler: MediaQuery.textScalerOf(context),
+        maxLines: 1,
+      )..layout();
+      widest = math.max(widest, painter.width);
+      painter.dispose();
+    }
+    return widest;
+  }
+
   @override
   Widget build(BuildContext context) {
     // The tabs in slot order.
@@ -455,9 +495,26 @@ class _GlassTabBarState extends State<GlassTabBar>
         devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
         contentDark: _contentDark,
         hasOriginal: anyOriginal(items, style),
-        glassColor: widget.glassColor,
-        indicatorColor: widget.indicatorColor,
-        lensColor: widget.lensColor,
+        labelWidth: _widestLabel(context, items, style),
+        tints: <Color>[
+          for (final GlassTabItem item in items)
+            GlassTabBarStyle.resolve(
+              item.selectedColor ??
+                  widget.selectedColor ??
+                  GlassTabBarStyle.systemBlue,
+              dark: _contentDark,
+            ),
+        ],
+        glass: (widget.glass ?? const GlassDecoration()).withColor(
+          widget.glassColor,
+        ),
+        indicator: (widget.indicator ?? const GlassDecoration()).withColor(
+          widget.indicatorColor,
+        ),
+        lens: (widget.lens ?? const GlassDecoration()).withColor(
+          widget.lensColor,
+        ),
+        textDirection: Directionality.maybeOf(context) ?? TextDirection.ltr,
         // One child per tab and layer: each layer's tabs in slot order.
         children: <Widget>[
           for (var slot = 0; slot < items.length; slot++)
@@ -495,9 +552,12 @@ class _TabBarLayout extends MultiChildRenderObjectWidget {
     required this.devicePixelRatio,
     required this.contentDark,
     required this.hasOriginal,
-    required this.glassColor,
-    required this.indicatorColor,
-    required this.lensColor,
+    required this.labelWidth,
+    required this.tints,
+    required this.glass,
+    required this.indicator,
+    required this.lens,
+    required this.textDirection,
     required super.children,
   });
 
@@ -513,9 +573,12 @@ class _TabBarLayout extends MultiChildRenderObjectWidget {
   final double devicePixelRatio;
   final bool contentDark;
   final bool hasOriginal;
-  final Color? glassColor;
-  final Color? indicatorColor;
-  final Color? lensColor;
+  final double labelWidth;
+  final List<Color> tints;
+  final GlassDecoration glass;
+  final GlassDecoration indicator;
+  final GlassDecoration lens;
+  final TextDirection textDirection;
 
   @override
   RenderGlassTabBar createRenderObject(BuildContext context) {
@@ -532,9 +595,12 @@ class _TabBarLayout extends MultiChildRenderObjectWidget {
       devicePixelRatio: devicePixelRatio,
       contentDark: contentDark,
       hasOriginal: hasOriginal,
-      glassColor: glassColor,
-      indicatorColor: indicatorColor,
-      lensColor: lensColor,
+      labelWidth: labelWidth,
+      tints: tints,
+      glass: glass,
+      indicator: indicator,
+      lens: lens,
+      textDirection: textDirection,
     );
   }
 
@@ -553,9 +619,12 @@ class _TabBarLayout extends MultiChildRenderObjectWidget {
       ..devicePixelRatio = devicePixelRatio
       ..contentDark = contentDark
       ..hasOriginal = hasOriginal
-      ..glassColor = glassColor
-      ..indicatorColor = indicatorColor
-      ..lensColor = lensColor;
+      ..labelWidth = labelWidth
+      ..tints = tints
+      ..glass = glass
+      ..indicator = indicator
+      ..lens = lens
+      ..textDirection = textDirection;
   }
 }
 
@@ -589,9 +658,12 @@ class RenderGlassTabBar extends RenderBox
     required this._devicePixelRatio,
     this._contentDark = false,
     this._hasOriginal = false,
-    this._glassColor,
-    this._indicatorColor,
-    this._lensColor,
+    this._labelWidth = 0,
+    this._tints = const <Color>[],
+    this._glass = const GlassDecoration(),
+    this._indicator = const GlassDecoration(),
+    this._lens = const GlassDecoration(),
+    this._textDirection = TextDirection.ltr,
   });
 
   final GlassTabBarPhysics _physics;
@@ -678,39 +750,98 @@ class RenderGlassTabBar extends RenderBox
     }
   }
 
-  /// The tints of the platter, the resting selection and the lens (see
-  /// [GlassTabBar.glassColor]).
-  Color? get glassColor => _glassColor;
-  Color? _glassColor;
-  set glassColor(Color? value) {
-    if (value != _glassColor) {
-      _glassColor = value;
+  /// The widest label's width, which sizes a bar of up to three tabs.
+  double get labelWidth => _labelWidth;
+  double _labelWidth;
+  set labelWidth(double value) {
+    if (value != _labelWidth) {
+      _labelWidth = value;
+      markNeedsLayout();
+    }
+  }
+
+  /// Each tab's selected color (in slot order), resolved for the appearance:
+  /// the shader reads it from a strip under the content atlas, so a
+  /// template's own colors never matter, as in UIKit.
+  List<Color> get tints => _tints;
+  List<Color> _tints;
+  set tints(List<Color> value) {
+    if (!listEquals(value, _tints)) {
+      _tints = value;
       markNeedsPaint();
     }
   }
 
-  Color? get indicatorColor => _indicatorColor;
-  Color? _indicatorColor;
-  set indicatorColor(Color? value) {
-    if (value != _indicatorColor) {
-      _indicatorColor = value;
+  /// The decorations of the platter, the resting selection and the lens
+  /// (see [GlassTabBar.glass]).
+  GlassDecoration get glass => _glass;
+  GlassDecoration _glass;
+  set glass(GlassDecoration value) {
+    if (value != _glass) {
+      _glass = value;
       markNeedsPaint();
     }
   }
 
-  Color? get lensColor => _lensColor;
-  Color? _lensColor;
-  set lensColor(Color? value) {
-    if (value != _lensColor) {
-      _lensColor = value;
+  GlassDecoration get indicator => _indicator;
+  GlassDecoration _indicator;
+  set indicator(GlassDecoration value) {
+    if (value != _indicator) {
+      _indicator = value;
       markNeedsPaint();
     }
   }
 
-  GlassTint _tint(Color? color) => GlassTint(
-    color == null ? null : GlassTabBarStyle.resolve(color, dark: _contentDark),
-    darkAppearance: _contentDark,
-  );
+  GlassDecoration get lens => _lens;
+  GlassDecoration _lens;
+  set lens(GlassDecoration value) {
+    if (value != _lens) {
+      _lens = value;
+      markNeedsPaint();
+    }
+  }
+
+  /// For gradients' directional alignments.
+  TextDirection get textDirection => _textDirection;
+  TextDirection _textDirection;
+  set textDirection(TextDirection value) {
+    if (value != _textDirection) {
+      _textDirection = value;
+      markNeedsPaint();
+    }
+  }
+
+  GlassTint _tint(Color? color, GlassFill fill) {
+    final Color? resolved = color == null
+        ? null
+        : GlassTabBarStyle.resolve(color, dark: _contentDark);
+    return fill == GlassFill.paint
+        ? GlassTint.paint(resolved)
+        : GlassTint(resolved, darkAppearance: _contentDark);
+  }
+
+  // A decoration's tint over [shape] (capture pixels): at its gradient's
+  // start and end, the gradient's axis, and whether it is painted rather
+  // than tinted; a color is both ends at once.
+  (GlassTint, GlassTint, Offset, Offset, bool) _decorationTint(
+    GlassDecoration decoration,
+    Rect shape,
+  ) {
+    final GlassFill fill = decoration.fill;
+    final bool paint = fill == GlassFill.paint;
+    final LinearGradient? gradient = decoration.gradient;
+    if (gradient == null || gradient.colors.isEmpty) {
+      final GlassTint t = _tint(decoration.color, fill);
+      return (t, t, Offset.zero, Offset.zero, paint);
+    }
+    return (
+      _tint(gradient.colors.first, fill),
+      _tint(gradient.colors.last, fill),
+      gradient.begin.resolve(_textDirection).withinRect(shape),
+      gradient.end.resolve(_textDirection).withinRect(shape),
+      paint,
+    );
+  }
 
   ui.FragmentShader? _fieldShader;
 
@@ -806,10 +937,14 @@ class RenderGlassTabBar extends RenderBox
   @override
   void performLayout() {
     _contentDirty = true;
-    size = constraints.constrain(
-      Size(constraints.maxWidth, GlassTabBar.height),
-    );
     final int count = _tabCount;
+    size = constraints.constrain(
+      Size(
+        GlassTabBarPhysics.naturalWidth(count, _labelWidth) ??
+            (constraints.hasBoundedWidth ? constraints.maxWidth : 398),
+        GlassTabBar.height,
+      ),
+    );
     if (count == 0) {
       return;
     }
@@ -938,9 +1073,9 @@ class RenderGlassTabBar extends RenderBox
     final (double, double, double) lensRim = appearance.lensRim;
     final (double, double, double) pill = appearance.pill;
     final (double, double) symbol = appearance.symbol;
-    final GlassTint glassTint = _tint(_glassColor);
-    final GlassTint restTint = _tint(_indicatorColor);
-    final GlassTint lensTint = _tint(_lensColor);
+    final glassTint = _decorationTint(_glass, platterPixels);
+    final restTint = _decorationTint(_indicator, lensPixels);
+    final lensTint = _decorationTint(_lens, lensPixels);
 
     ui.ImageFilter passFilter(int pass) {
       final _BackdropUniforms u = _passes[pass]
@@ -999,7 +1134,13 @@ class RenderGlassTabBar extends RenderBox
           glowCenter == null ? 0 : glowAlpha * glowPeak,
         )
         ..face.set(face.$1, face.$2, face.$3, face.$4)
-        ..rim.set(platterRim.$1, platterRim.$2, platterRim.$3, shadow)
+        // A decoration's own shadows replace UIKit's.
+        ..rim.set(
+          platterRim.$1,
+          platterRim.$2,
+          platterRim.$3,
+          _glass.shadows == null ? shadow : 0,
+        )
         ..lensRim.set(lensRim.$1, lensRim.$2, lensRim.$3, symbol.$2)
         ..pill.set(pill.$1, pill.$2, pill.$3, symbol.$1)
         // UIKit's selected matrix: half of the glass below plus the tint
@@ -1009,6 +1150,28 @@ class RenderGlassTabBar extends RenderBox
         ..setTints(glassTint, restTint, lensTint);
       u.shader.setImageSampler(1, atlas);
       return ui.ImageFilter.shader(u.shader);
+    }
+
+    // The decorations' shadows, with the glass's shapes as drawn: the
+    // selection's fade as the lens lifts (the resting selection with the
+    // lift, the lens's material four times as fast, as UIKit's).
+    final RRect platterShape = RRect.fromRectAndRadius(
+      platter.shift(offset),
+      Radius.circular(platter.shortestSide / 2),
+    );
+    final RRect lensShape = RRect.fromRectAndRadius(
+      lens.shift(offset),
+      Radius.circular(lens.shortestSide / 2),
+    );
+    final double lift = _lift ?? _physics.liftProgress;
+    final double resting = (1 - lift).clamp(0.0, 1.0);
+    final double lifted = (4 * lift).clamp(0.0, 1.0);
+    // The canvas between the passes' layers.
+    Canvas canvas() => context.canvas;
+
+    // The glass's drop shadows go under it, into the backdrop it captures.
+    if (!diagnostic) {
+      _paintShadows(canvas(), platterShape, _glass.shadows, 1);
     }
 
     // Pass 1, the bar: takes the capture, before any glass. Its shadows
@@ -1034,6 +1197,11 @@ class RenderGlassTabBar extends RenderBox
 
     // The fingertip glow, over the platter and its tabs: under the lens,
     // whose shader sees it through its optics.
+    if (!diagnostic) {
+      _paintInnerShadows(canvas(), platterShape, _glass.innerShadows, 1);
+      _paintShadows(canvas(), lensShape, _indicator.shadows, resting);
+      _paintShadows(canvas(), lensShape, _lens.shadows, lifted);
+    }
     _paintGlow(context, offset, platter);
 
     // Pass 2, the lens: the same capture, with the tabs under it lifted into
@@ -1056,6 +1224,8 @@ class RenderGlassTabBar extends RenderBox
     );
 
     if (!diagnostic) {
+      _paintInnerShadows(canvas(), lensShape, _indicator.innerShadows, resting);
+      _paintInnerShadows(canvas(), lensShape, _lens.innerShadows, lifted);
       _inspectorClip.layer = null;
       _inspectorPass.layer = null;
       return;
@@ -1084,6 +1254,78 @@ class RenderGlassTabBar extends RenderBox
   }
 
   static void _paintNothing(PaintingContext context, Offset offset) {}
+
+  static Paint _shadowPaint(BoxShadow shadow, double opacity) {
+    final paint = Paint()
+      ..color = shadow.color.withValues(alpha: shadow.color.a * opacity);
+    if (shadow.blurSigma > 0) {
+      paint.maskFilter = MaskFilter.blur(BlurStyle.normal, shadow.blurSigma);
+    }
+    return paint;
+  }
+
+  // How far [shadow] reaches past its shape.
+  static double _reach(BoxShadow shadow) =>
+      2 * shadow.blurRadius +
+      shadow.spreadRadius.abs() +
+      shadow.offset.distance +
+      2;
+
+  // Drop shadows of [shape], around it only: the glass shows what is under
+  // it, a shadow there included.
+  static void _paintShadows(
+    Canvas canvas,
+    RRect shape,
+    List<BoxShadow>? shadows,
+    double opacity,
+  ) {
+    if (shadows == null || shadows.isEmpty || opacity <= 0) {
+      return;
+    }
+    final double reach = shadows.map(_reach).reduce(math.max);
+    canvas
+      ..save()
+      ..clipPath(
+        Path()
+          ..fillType = PathFillType.evenOdd
+          ..addRect(shape.outerRect.inflate(reach))
+          ..addRRect(shape),
+      );
+    for (final BoxShadow shadow in shadows) {
+      canvas.drawRRect(
+        shape.inflate(shadow.spreadRadius).shift(shadow.offset),
+        _shadowPaint(shadow, opacity),
+      );
+    }
+    canvas.restore();
+  }
+
+  // Shadows cast inward from [shape]'s edge, over it, as inset shadows: the
+  // shape's outside, its edge moved by the offset and in by the spread,
+  // blurred into it.
+  static void _paintInnerShadows(
+    Canvas canvas,
+    RRect shape,
+    List<BoxShadow>? shadows,
+    double opacity,
+  ) {
+    if (shadows == null || shadows.isEmpty || opacity <= 0) {
+      return;
+    }
+    canvas
+      ..save()
+      ..clipRRect(shape);
+    for (final BoxShadow shadow in shadows) {
+      canvas.drawPath(
+        Path()
+          ..fillType = PathFillType.evenOdd
+          ..addRect(shape.outerRect.inflate(_reach(shadow)))
+          ..addRRect(shape.deflate(shadow.spreadRadius).shift(shadow.offset)),
+        _shadowPaint(shadow, opacity),
+      );
+    }
+    canvas.restore();
+  }
 
   // How far the platter's shadow reaches past it: 39pt past its outline
   // moved 8pt down.
@@ -1205,12 +1447,13 @@ class RenderGlassTabBar extends RenderBox
     }
     if (_contentDirty || _contentAtlas == null) {
       _contentDirty = false;
-      // A row for each layer (TabLayer.row), a slot in it for each tab.
+      // A row for each layer (TabLayer.row), a slot in it for each tab;
+      // under them, a point high strip of each tab's selected color.
       final Rect bounds = Rect.fromLTWH(
         0,
         0,
         count * _atlasPitch,
-        tabLayerCount * size.height,
+        tabLayerCount * size.height + 1,
       );
       final layer = OffsetLayer();
       final context = _AtlasContext(layer, bounds);
@@ -1226,6 +1469,17 @@ class RenderGlassTabBar extends RenderBox
         );
         child = childAfter(child);
         i++;
+      }
+      for (var slot = 0; slot < count && slot < _tints.length; slot++) {
+        context.canvas.drawRect(
+          Rect.fromLTWH(
+            slot * _atlasPitch,
+            tabLayerCount * size.height,
+            _atlasPitch,
+            1,
+          ),
+          Paint()..color = _tints[slot].withValues(alpha: 1),
+        );
       }
       context.finish();
       _contentAtlas?.dispose();
@@ -1392,12 +1646,9 @@ class _BackdropUniforms {
       rim = shader.getUniformVec4('uRim'),
       lensRim = shader.getUniformVec4('uLensRim'),
       pill = shader.getUniformVec4('uPill'),
-      glassTint = shader.getUniformVec4('uGlassTint'),
-      glassTintDark = shader.getUniformVec4('uGlassTintD'),
-      restTint = shader.getUniformVec4('uRestTint'),
-      restTintDark = shader.getUniformVec4('uRestTintD'),
-      lensTint = shader.getUniformVec4('uLensTint'),
-      lensTintDark = shader.getUniformVec4('uLensTintD'),
+      glassTint = _tintSlots(shader, 0),
+      restTint = _tintSlots(shader, 1),
+      lensTint = _tintSlots(shader, 2),
       selected = shader.getUniformVec4('uSelected');
 
   final ui.FragmentShader shader;
@@ -1417,25 +1668,61 @@ class _BackdropUniforms {
   final ui.UniformVec4Slot rim;
   final ui.UniformVec4Slot lensRim;
   final ui.UniformVec4Slot pill;
-  final ui.UniformVec4Slot glassTint;
-  final ui.UniformVec4Slot glassTintDark;
-  final ui.UniformVec4Slot restTint;
-  final ui.UniformVec4Slot restTintDark;
-  final ui.UniformVec4Slot lensTint;
-  final ui.UniformVec4Slot lensTintDark;
+  final List<ui.UniformVec4Slot> glassTint;
+  final List<ui.UniformVec4Slot> restTint;
+  final List<ui.UniformVec4Slot> lensTint;
   final ui.UniformVec4Slot selected;
 
-  /// The platter's, the resting selection's and the lens's tints: each over
-  /// white glass with its alpha in one slot, over black glass in the other.
-  void setTints(GlassTint glass, GlassTint rest, GlassTint lens) {
-    for (final (ui.UniformVec4Slot bright, ui.UniformVec4Slot dark, GlassTint t)
-        in <(ui.UniformVec4Slot, ui.UniformVec4Slot, GlassTint)>[
-          (glassTint, glassTintDark, glass),
-          (restTint, restTintDark, rest),
-          (lensTint, lensTintDark, lens),
-        ]) {
-      bright.set(t.bright[0], t.bright[1], t.bright[2], t.alpha);
-      dark.set(t.dark[0], t.dark[1], t.dark[2], 0);
+  // A tint's slots: at its gradient's start (over white glass, with its
+  // alpha, and over black glass), at its end, and its axis.
+  // A tint's five slots in uTints (one array: Metal gives each uniform a
+  // buffer of its own, and has 31): at its gradient's start (over white
+  // glass, with its alpha, and over black glass), at its end, and its axis.
+  static List<ui.UniformVec4Slot> _tintSlots(
+    ui.FragmentShader shader,
+    int tint,
+  ) {
+    final ui.UniformArray<ui.UniformVec4Slot> all = shader.getUniformVec4Array(
+      'uTints',
+    );
+    return <ui.UniformVec4Slot>[for (var i = 0; i < 5; i++) all[5 * tint + i]];
+  }
+
+  /// The platter's, the resting selection's and the lens's tints, each at its
+  /// gradient's start and end, along its axis (capture pixels).
+  void setTints(
+    (GlassTint, GlassTint, Offset, Offset, bool) glass,
+    (GlassTint, GlassTint, Offset, Offset, bool) rest,
+    (GlassTint, GlassTint, Offset, Offset, bool) lens,
+  ) {
+    for (final (
+          List<ui.UniformVec4Slot> slots,
+          (GlassTint, GlassTint, Offset, Offset, bool) t,
+        )
+        in <
+          (
+            List<ui.UniformVec4Slot>,
+            (GlassTint, GlassTint, Offset, Offset, bool),
+          )
+        >[(glassTint, glass), (restTint, rest), (lensTint, lens)]) {
+      final (
+        GlassTint start,
+        GlassTint end,
+        Offset from,
+        Offset to,
+        bool paint,
+      ) = t;
+      slots[0].set(
+        start.bright[0],
+        start.bright[1],
+        start.bright[2],
+        start.alpha,
+      );
+      // .w: painted rather than tinted.
+      slots[1].set(start.dark[0], start.dark[1], start.dark[2], paint ? 1 : 0);
+      slots[2].set(end.bright[0], end.bright[1], end.bright[2], end.alpha);
+      slots[3].set(end.dark[0], end.dark[1], end.dark[2], 0);
+      slots[4].set(from.dx, from.dy, to.dx, to.dy);
     }
   }
 }
