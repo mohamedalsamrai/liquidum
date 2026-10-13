@@ -46,9 +46,16 @@ Everything else is optional:
 | `selectedColor` | the selected tab's color (UIKit's `tintColor`); default system blue |
 | `unselectedColor` | the other tabs' color; by default they take UIKit's colors from the glass |
 | `badgeColor` | default system red |
+| `glassColor` | tints the bar's glass |
+| `indicatorColor` | tints the glass under the selected tab at rest |
+| `lensColor` | tints the lens while the bar is pressed or dragged |
 | `brightness`, `adaptive` | force light or dark; whether the bar adapts to the pages |
 | `labelStyle` | for example a font family |
 | `initialIndex`, `onTabChanged`, `controller` | the selected tab; switch from a page with `GlassTabScaffold.of(context).index = 1` |
+
+Glass tints follow iOS's own tinted glass (`UIGlassEffect.tintColor`). The
+tint is deeper where the glass is darker and true where it is white, and its
+alpha sets how strongly it shows. UIKit's tab bar itself can't be tinted.
 
 Colors, badges and the selected tint match UIKit's. They were measured in the iOS
 26.5 simulator over white, gray and black. UIKit's iOS 26 bar has no unselected color

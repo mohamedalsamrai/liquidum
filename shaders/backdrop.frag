@@ -53,6 +53,12 @@ uniform vec4 uFace;        // platter face: luma black and white points, fill al
 uniform vec4 uRim;         // platter rim matrix: chroma gain, luma weight, lift; platter shadow strength
 uniform vec4 uLensRim;     // lens rim matrix: chroma gain, luma weight, lift; symbols' lift
 uniform vec4 uPill;        // resting selection matrix: chroma gain, luma weight, lift; symbols' luma weight
+uniform vec4 uGlassTint;   // the platter's tint (UIGlassEffect.tintColor): over white glass .rgb, alpha
+uniform vec4 uGlassTintD;  // over black glass .rgb
+uniform vec4 uRestTint;    // the resting selection's tint, the same way
+uniform vec4 uRestTintD;
+uniform vec4 uLensTint;    // the lifted lens's tint, the same way
+uniform vec4 uLensTintD;
 uniform vec4 uSelected;    // selected symbols: offset added to half of what is below them and the tint; content drawn as it is (flag)
 
 uniform sampler2D uCapture;
@@ -234,6 +240,17 @@ vec3 face(vec3 c) {
   return clamp(kPlatterTone * mix(f, vec3(uFace.w), uFace.z), 0.0, 1.0);
 }
 
+// UIKit's tinted glass: a color matrix over the glass c taking its luma to
+// a color between the tint over black glass and over white glass, mixed in
+// at the tint's alpha (bright.a).
+vec3 tint(vec3 c, vec4 bright, vec4 dark) {
+  if (bright.a <= 0.0) {
+    return c;
+  }
+  float l = dot(c, kLuma);
+  return mix(c, clamp(dark.rgb + (bright.rgb - dark.rgb) * l, 0.0, 1.0), bright.a);
+}
+
 // A vibrant color matrix (chroma gain, luma weight, lift) applied to c.
 vec3 vibrant(vec3 c, vec3 m) {
   float l = dot(c, kLuma);
@@ -251,7 +268,7 @@ vec3 platter(vec2 p, int taps, float extra) {
   float sharp = sqrt(kFrostSharp * kFrostSharp + extra * extra) * k;
   float heavy = sqrt(kFrostDeep * kFrostDeep + extra * extra) * k;
   vec3 light = frost(q, sharp, extra > 0.0 ? taps : 8);
-  return face(mix(light, frost(q, heavy, taps), deep));
+  return tint(face(mix(light, frost(q, heavy, taps), deep)), uGlassTint, uGlassTintD);
 }
 
 // ---- Lighting.
@@ -392,7 +409,7 @@ vec3 base(vec2 q, float lift, int taps) {
     vec3 behind = stage(kPlatterStage) && capsule(s, uPlatter) < 0.0
                       ? litPlatter(s, 32, kRestBlur)
                       : frost(s, kRestBlur * k, 32);
-    vec3 rest = vibrant(behind, uPill.xyz);
+    vec3 rest = tint(vibrant(behind, uPill.xyz), uRestTint, uRestTintD);
     w = mix(rest, w, lift);
   }
   return w;
@@ -595,7 +612,7 @@ void main() {
       // content (lensed again) over it, all dispersed near the edge. A tap
       // past the lens's outline reads the unwarped backdrop, as UIKit's warp
       // is clipped to the outline.
-      vec3 glass = contentInMaterial(p, lift, base(innerSource(p), lift, 32) * tone);
+      vec3 glass = contentInMaterial(p, lift, tint(base(innerSource(p), lift, 32) * tone, uLensTint, uLensTintD));
       float spread = clamp(1.0 - depth / (kAberrationDepth * k), 0.0, 1.0);
       if (spread > 0.0 && stage(kDispersionStage)) {
         vec2 v = kAberration * ((p - uLens.xy) / uLens.zw) * k;
@@ -608,7 +625,7 @@ void main() {
           vec3 s = i == 3 ? glass
                           : contentInMaterial(at, lift,
                                 capsule(at, uLens) < 0.0
-                                    ? base(innerSource(at), lift, 16) * tone
+                                    ? tint(base(innerSource(at), lift, 16) * tone, uLensTint, uLensTintD)
                                     : below(at, vec2(1.0, 0.0), vec2(0.0, 1.0), 16));
           dispersed += w * s;
         }

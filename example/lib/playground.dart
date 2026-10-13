@@ -23,6 +23,9 @@ class _Options {
   const _Options({
     this.selectedColor,
     this.unselectedColor,
+    this.glassColor,
+    this.indicatorColor,
+    this.lensColor,
     this.badges = true,
     this.brightness,
     this.adaptive = true,
@@ -31,6 +34,9 @@ class _Options {
 
   final Color? selectedColor;
   final Color? unselectedColor;
+  final Color? glassColor;
+  final Color? indicatorColor;
+  final Color? lensColor;
   final bool badges;
   final Brightness? brightness;
   final bool adaptive;
@@ -39,6 +45,9 @@ class _Options {
   _Options copyWith({
     Color? Function()? selectedColor,
     Color? Function()? unselectedColor,
+    Color? Function()? glassColor,
+    Color? Function()? indicatorColor,
+    Color? Function()? lensColor,
     bool? badges,
     Brightness? Function()? brightness,
     bool? adaptive,
@@ -48,6 +57,11 @@ class _Options {
     unselectedColor: unselectedColor == null
         ? this.unselectedColor
         : unselectedColor(),
+    glassColor: glassColor == null ? this.glassColor : glassColor(),
+    indicatorColor: indicatorColor == null
+        ? this.indicatorColor
+        : indicatorColor(),
+    lensColor: lensColor == null ? this.lensColor : lensColor(),
     badges: badges ?? this.badges,
     brightness: brightness == null ? this.brightness : brightness(),
     adaptive: adaptive ?? this.adaptive,
@@ -131,6 +145,9 @@ class _PlaygroundState extends State<Playground> {
         controller: _tabs,
         selectedColor: o.selectedColor,
         unselectedColor: o.unselectedColor,
+        glassColor: o.glassColor,
+        indicatorColor: o.indicatorColor,
+        lensColor: o.lensColor,
         brightness: o.brightness,
         adaptive: o.adaptive,
         tabs: <GlassTab>[
@@ -211,7 +228,7 @@ class _OptionsSheet extends StatelessWidget {
     return CupertinoPopupSurface(
       child: SafeArea(
         top: false,
-        child: Padding(
+        child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -230,6 +247,27 @@ class _OptionsSheet extends StatelessWidget {
                 value: o.unselectedColor,
                 onChanged: (Color? c) =>
                     onChanged(o.copyWith(unselectedColor: () => c)),
+              ),
+              const _Heading('Bar glass'),
+              _Swatches(
+                colors: _colors,
+                value: o.glassColor,
+                onChanged: (Color? c) =>
+                    onChanged(o.copyWith(glassColor: () => c)),
+              ),
+              const _Heading('Selection at rest'),
+              _Swatches(
+                colors: _colors,
+                value: o.indicatorColor,
+                onChanged: (Color? c) =>
+                    onChanged(o.copyWith(indicatorColor: () => c)),
+              ),
+              const _Heading('Lens while moving'),
+              _Swatches(
+                colors: _colors,
+                value: o.lensColor,
+                onChanged: (Color? c) =>
+                    onChanged(o.copyWith(lensColor: () => c)),
               ),
               const _Heading('Appearance'),
               CupertinoSlidingSegmentedControl<int>(

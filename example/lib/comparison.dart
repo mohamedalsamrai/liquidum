@@ -8,7 +8,8 @@
 // (no tab content), `optics=<mask>` (GlassTabBarOptics stages) and
 // `lift=<progress>` (the optics at a fixed lift), `tint=<rrggbb>` and
 // `utint=<rrggbb>` (selected and normal item colors) and `badge=<i>:<text>`
-// (a badge on tab i).
+// (a badge on tab i), `glass=`, `indicator=` and `lens=<rrggbbaa>` (glass
+// tints).
 //
 // The bar and background are laid out as on the reference screen (the
 // iPhone 17 Pro Max the bars were compared on): on any other screen the bar
@@ -92,6 +93,9 @@ Future<void> main() async {
       ),
       shareBackdrop: !flags.contains('noshare'),
       tint: _color(flags, 'tint='),
+      glass: _rgba(flags, 'glass='),
+      indicator: _rgba(flags, 'indicator='),
+      lens: _rgba(flags, 'lens='),
       unselectedTint: _color(flags, 'utint='),
       badges: <String?>[
         for (var i = 0; i < tabs.length; i++)
@@ -103,6 +107,12 @@ Future<void> main() async {
     ),
   );
 }
+
+Color? _rgba(Set<String> flags, String prefix) =>
+    flags.where((String f) => f.startsWith(prefix)).map((String f) {
+      final int v = int.parse(f.substring(prefix.length), radix: 16);
+      return Color((v & 0xff) << 24 | v >> 8);
+    }).firstOrNull;
 
 Color? _color(Set<String> flags, String prefix) => flags
     .where((String f) => f.startsWith(prefix))
@@ -209,6 +219,9 @@ class ComparisonApp extends StatefulWidget {
     this.tint,
     this.unselectedTint,
     this.badges = const <String?>[],
+    this.glass,
+    this.indicator,
+    this.lens,
   });
 
   final bool apple;
@@ -225,6 +238,9 @@ class ComparisonApp extends StatefulWidget {
   final Color? tint;
   final Color? unselectedTint;
   final List<String?> badges;
+  final Color? glass;
+  final Color? indicator;
+  final Color? lens;
 
   @override
   State<ComparisonApp> createState() => _ComparisonAppState();
@@ -395,6 +411,9 @@ class _ComparisonAppState extends State<ComparisonApp>
               ],
               // UIKit ignores its unselected tint; so does the comparison.
               selectedColor: widget.tint,
+              glassColor: widget.glass,
+              indicatorColor: widget.indicator,
+              lensColor: widget.lens,
               selectedIndex: _selected,
               onSelected: (int i) => setState(() => _selected = i),
               debugView: widget.view,

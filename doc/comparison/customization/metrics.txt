@@ -26,3 +26,30 @@ Liquidum vs UIKit:
   whole bar at rest, default colors: mean 1.2-1.3 levels; tinted with
     badges: 1.9-2.2 (glyph edges).
   lifted at the first tab (4-lifted-tint-badge): mean 3.1, p95 10 levels.
+
+Glass tints (UIGlassEffect.tintColor), 2026-10-13. UIKit's tab bar has no
+glass tint; liquidum's glassColor, indicatorColor and lensColor follow how
+iOS tints glass, read from UIGlassEffect views (5-uikit-tinted-glass: plain,
+#FF3366 and #33CC66 regular glass, then clear glass, then both at 50%).
+  The glass filter is unchanged; a layer inside it applies a backdrop-aware
+  color matrix to the glass: rows proportional to Rec. 709 luma, so the
+  glass's luma L maps to dark + (bright - dark) L, unclamped, then mixed in
+  at the tint's alpha (50% tints: within 1 level of the mix).
+  Model vs UIKit pixels over a black-white ramp, regular and clear glass:
+  0 levels at 7 points each.
+  The same matrix over black and white backgrounds and for regular and clear
+  glass; different in the dark appearance (system dark mode).
+  bright = the tint itself (light appearance); exact grays apart: 0.95 g over
+  black glass, 0.1 + 0.9 g over white (a gray 1/255 off is chromatic).
+  dark (and dark-appearance bright) has no simple form found (not an HSL,
+  OKLab or affine map of the tint); it is continuous and symmetric under
+  swapping channels, so it was measured on a 9-level grid of sorted tints
+  (165 per appearance; tint-light.txt, tint-dark.txt: tint, then the matrix's
+  luma weight per channel and offset) and is interpolated tetrahedrally.
+  Interpolation vs 8 off-grid tints: max 0.004 except #33CC66 (0.03 over
+  black glass, 0 over white).
+Liquidum (6-liquidum-glass-tints: red glass with a green resting selection;
+a blue lens, held), each against the model applied to its untinted glass:
+  platter, light and dark, full and 50%: within 1 level
+  lens, lifted: 0 levels
+  resting selection: within 4 levels

@@ -108,6 +108,9 @@ class GlassTabScaffold extends StatefulWidget {
     this.brightness,
     this.adaptive = true,
     this.labelStyle,
+    this.glassColor,
+    this.indicatorColor,
+    this.lensColor,
     this.backgroundColor,
     this.initialIndex = 0,
     this.onTabChanged,
@@ -135,6 +138,17 @@ class GlassTabScaffold extends StatefulWidget {
 
   /// Merged into the labels' style, for example to set a font family.
   final TextStyle? labelStyle;
+
+  /// Tints the bar's glass, as iOS tints glass (`UIGlassEffect.tintColor`).
+  /// The color's alpha sets how strongly. None by default.
+  final Color? glassColor;
+
+  /// Tints the glass under the selected tab at rest. None by default.
+  final Color? indicatorColor;
+
+  /// Tints the lens the selection lifts into while the bar is pressed or
+  /// dragged. None by default (clear, as in UIKit).
+  final Color? lensColor;
 
   /// Painted behind the pages. Defaults to the theme's background.
   final Color? backgroundColor;
@@ -300,6 +314,9 @@ class _GlassTabScaffoldState extends State<GlassTabScaffold> {
               brightness: widget.brightness,
               adaptive: widget.adaptive,
               labelStyle: widget.labelStyle,
+              glassColor: widget.glassColor,
+              indicatorColor: widget.indicatorColor,
+              lensColor: widget.lensColor,
             ),
           ),
         ],

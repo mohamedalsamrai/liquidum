@@ -12,9 +12,11 @@ class ExampleApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return const CupertinoApp(
       home: GlassTabScaffold(
+glassColor: Color(0xffffffff),
+indicatorColor: Color.fromARGB(126, 0, 204, 255),
+lensColor: Color.fromARGB(124, 0, 204, 255),
         tabs: [
           GlassTab(
-            color: Color.fromARGB(255, 235, 5, 5),
             icon: CupertinoIcons.house_fill,
             label: 'Home',
             page: Feed(title: 'Home'),
