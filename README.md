@@ -1,13 +1,45 @@
-# liquidum
+<div align="center">
 
-Liquid glass as a material for Flutter. This is a reconstruction of the iOS 26
-look, not Apple's renderer. Its parameters are fitted to native iOS 26 glass,
-which was measured in the iOS 26.5 simulator against ramp, stripe and color
-backgrounds.
+# Liquidum
 
-## Tab bar
+**The iOS 26 Liquid Glass tab bar, for Flutter.**
+It looks and moves like Apple's own, and it takes a few lines to use.
 
-An iOS 26 tab bar, with each tab's page, in one widget:
+![Flutter](https://img.shields.io/badge/Flutter-3.44%2B-02569B?logo=flutter&logoColor=white)
+![Renderer](https://img.shields.io/badge/renderer-Impeller-7257A8)
+![Platforms](https://img.shields.io/badge/platforms-iOS%20%7C%20Android-lightgrey)
+![Status](https://img.shields.io/badge/status-0.0.1%20preview-orange)
+
+<img src="doc/images/hero.png" alt="Liquidum's glass tab bar over colorful content: light, dark, and with a custom gradient and dark glass" width="860">
+
+</div>
+
+## Why Liquidum
+
+- **Measured, not imitated.** Every part of the glass was rebuilt from
+  Apple's own bar in the iOS 26.5 simulator: refraction, frost, dispersion,
+  rim light, shadows, the lens and its springs, and the colors over light and
+  dark content. Each was checked side by side with UIKit.
+- **One widget.** `GlassTabScaffold` gives you the bar, the pages, the
+  navigation and the iOS behaviour. You describe the tabs.
+- **Adapts like iOS.** The glass reads what is under it and turns light or
+  dark at UIKit's thresholds, and its colors follow the content.
+- **Yours to style.** Colors, badges, gradients, shadows, padding and fonts.
+  You can use iOS's own tint model or paint your design's colors exactly.
+- **Right to left.** In Arabic, Hebrew and other right-to-left apps, the tabs
+  are mirrored as UIKit mirrors them.
+
+## Install
+
+Liquidum isn't on pub.dev yet. Add it from GitHub:
+
+```yaml
+dependencies:
+  liquidum:
+    git: https://github.com/mohamedalsamrai/liquidum.git
+```
+
+## Quick start
 
 ```dart
 import 'package:flutter/cupertino.dart';
@@ -26,110 +58,283 @@ void main() => runApp(
 );
 ```
 
-The scaffold handles the rest the way an iOS app does:
+It works the same inside a `MaterialApp`.
 
-- The bar floats over the pages, and its glass adapts to what is under it.
-  With up to three tabs it is only as wide as they need and centered; with
-  more it spans the screen, as in UIKit.
-- Each tab keeps its page and that page's state.
-- Each tab has its own navigator, so `Navigator.push` stays inside the tab.
-- Tapping the selected tab again returns to its first page.
-- The pages' bottom padding includes the bar.
-- In right-to-left apps, the first tab is on the right.
+<img src="doc/images/bar-hero.png" alt="The default bar: four tabs, the selected one on a light glass pill" width="600">
 
-Everything else is optional:
+### What the scaffold does for you
 
-| | |
-|---|---|
-| `GlassTab(selectedIcon: …)` | the icon while the tab is selected |
-| `GlassTab(badge: '3')` | a badge on the icon |
-| `GlassTab(color: …)` | this tab's selected color |
-| `GlassTab.custom(icon: anyWidget)` | an image or SVG icon; `tintIcon: false` keeps its own colors |
-| `selectedColor` | the selected tab's color (UIKit's `tintColor`); default system blue |
-| `unselectedColor` | the other tabs' color; by default they take UIKit's colors from the glass |
-| `badgeColor` | default system red |
-| `glassColor` | tints the bar's glass |
-| `indicatorColor` | tints the glass under the selected tab at rest |
-| `lensColor` | tints the lens while the bar is pressed or dragged |
-| `glass`, `indicator`, `lens` | the same three, decorated like a `BoxDecoration`: `GlassDecoration(color:, gradient: LinearGradient(…), shadows: […], innerShadows: […])`; `fill: GlassFill.paint` paints the color as it is over the blur (as a design tool does) instead of tinting the glass the iOS way |
-| `brightness`, `adaptive` | force light or dark; whether the bar adapts to the pages |
-| `labelStyle` | for example a font family |
-| `barPadding` | space inside the bar around its tabs; the bar grows with it (UIKit: 4pt, a 62pt bar) |
-| `barMargin` | the bar's space from the screen's sides and bottom; UIKit's 21pt by default |
-| `initialIndex`, `onTabChanged`, `controller` | the selected tab; switch from a page with `GlassTabScaffold.of(context).index = 1` |
+- **The bar floats over your pages**, and its glass adapts to what scrolls
+  under it.
+- **The bar sizes itself the way UIKit's does.** With up to three tabs it is
+  only as wide as they need, and centered. With four or more it spans the
+  screen.
+- **Each tab keeps its page.** Scroll position and state survive switching.
+- **Each tab has its own navigator.** `Navigator.push` stays inside the tab,
+  under the bar, and the back button pops it first.
+- **Tapping the selected tab again** returns to its first page.
+- **Your pages see the bar** in `MediaQuery.padding`, so a `SafeArea` or a
+  scroll view keeps the last item clear of it.
+- **To switch tabs from code**, use `GlassTabScaffold.of(context).index = 1`,
+  or pass a `GlassTabController`.
 
-Glass tints follow iOS's own tinted glass (`UIGlassEffect.tintColor`). The
-tint is deeper where the glass is darker and true where it is white, and its
-alpha sets how strongly it shows. UIKit's tab bar itself can't be tinted.
+## Press and slide
 
-Colors, badges and the selected tint match UIKit's. They were measured in the iOS
-26.5 simulator over white, gray and black. UIKit's iOS 26 bar has no unselected color
-(it ignores `unselectedItemTintColor`), so `unselectedColor` goes beyond UIKit.
-`GlassTabBar` is the bar alone, for apps that manage their own pages or
-router.
+Press anywhere on the bar and the selection lifts into a clear lens that
+follows your finger exactly. Slide it across the tabs, then let go to select
+the tab under it. The tabs under the lens are magnified and refracted through
+it, and the bar swells, glows and washes under your finger, as in iOS.
 
-## Building blocks
+<img src="doc/images/press-and-slide.gif" alt="Pressing the bar: the lens lifts, slides across the tabs magnifying them, and settles on the tab let go over" width="600">
 
-- **`GlassMaterial`**: what the glass is. Presets: `regular` and `regularDark`
-  (bars and controls), `clear` and `clearDark` (lens-like), and `identity` (no
-  effect, used to animate glass in and out). Materials can be animated with
-  `GlassMaterial.lerp`.
-- **`Glass`**: a rounded-rectangle or capsule surface made of a material, with
-  a child drawn on top.
-- **`GlassBackdrop`** and **`GlassBrightness`**: adaptive appearance. Wrap the
-  content that glass floats over in a `GlassBackdrop`. A `GlassBrightness`
-  under a surface then measures that content and switches between light and
-  dark glass the way iOS bars do. It follows the system appearance, except
-  over nearly black content (light glass turns dark) or nearly white content
-  (dark glass turns light). `GlassTabBar` reads the content under it the same
-  way and adapts as UIKit's tab bar does: its glass, symbols and labels take
-  their colors from that content, and it switches between its light and dark
-  appearances at UIKit's thresholds. Without a `GlassBackdrop` under it, it
-  follows the system appearance.
-- **`shaders/glass.frag`**: one backdrop pass. It computes:
-  - the shape from an SDF;
-  - inward refraction that is strongest at the rim, where it folds into a
-    mirrored image;
-  - a lengthwise lens for elongated shapes;
-  - zoom and per-channel dispersion;
-  - the frost veil;
-  - the rim light;
-  - an analytic soft shadow.
+## Customize
+
+Every option is optional and defaults to UIKit's look.
+
+### Colors and badges
 
 ```dart
-void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  await Glass.precache();
-  runApp(const App());
-}
-
-Glass(
-  material: GlassMaterial.regular,
-  child: SizedBox(width: 398, height: 62, child: tabs),
+GlassTabScaffold(
+  selectedColor: CupertinoColors.systemPink,
+  tabs: [
+    GlassTab(icon: CupertinoIcons.house_fill, label: 'Home', page: HomePage()),
+    GlassTab(icon: CupertinoIcons.bell_fill, label: 'Alerts', badge: '3', page: AlertsPage()),
+  ],
 )
 ```
 
-`example/lib/main.dart` is the scaffold above with four tabs. Press and slide to
-move the clear lens between tabs, then release to select the tab under it. Judge
-motion in profile or release mode, because debug builds are much slower on
-device.
+<img src="doc/images/bar-custom.png" alt="The bar with a pink selected tab and red badges" width="600">
 
-`example/lib/playground.dart` (run it with `flutter run -t lib/playground.dart`)
-changes the bar's colors and appearance live. The switch at the top swaps in Apple's own tab bar
-(`UITabBarController`, embedded as a platform view) in the same place over the
-same content, so the two can be compared directly, including the pressed lens.
-The example draws its tab symbols with UIKit, in the configuration read from
-the native bar, so both bars use identical glyphs.
+The selected color is mixed with the glass below it, as `UITabBar.tintColor`
+is. The other tabs take their colors from the glass, as in iOS 26. Set
+`unselectedColor` to override them; UIKit itself can't do that.
 
-## Requirements and current limits
+### Glass colors, at rest and in motion
 
-- Needs Impeller (`ImageFilter.shader`). Other backends get a plain frost.
-- Glass reads what is painted before it, so paint it after its content (for
-  example, later in a `Stack`). Glass painted later sees glass painted earlier.
-- The surface must paint into the root layer: no ancestor `Opacity`,
-  `ShaderMask` or similar save layer.
-- Geometry is refreshed when the surface paints, so keep it out of subtrees
-  that move without repainting it (for example, items in a scrolling list).
-- The tab bar draws its tabs from an image of them, which it renders again
-  whenever they repaint. An icon that contains a `RepaintBoundary` hides its
-  repaints from the bar.
+The glass under the selected tab and the lens it lifts into while you drag
+can each have their own color.
+
+```dart
+GlassTabScaffold(
+  selectedColor: CupertinoColors.systemIndigo,
+  indicatorColor: Color(0x4D5E5CE6), // the selection at rest
+  lensColor: Color(0x99FF2D55),      // the lens, while it moves
+  tabs: [...],
+)
+```
+
+<img src="doc/images/glass-colors.gif" alt="An indigo selection at rest turns into a pink lens while dragged across the tabs, then back to indigo when let go" width="600">
+
+`glassColor` colors the whole bar the same way. The color's alpha sets how
+strongly it shows.
+
+### Decorations: gradients and shadows
+
+`glass`, `indicator` and `lens` decorate the three pieces of glass: the bar,
+the selection at rest, and the lens while it moves. Each takes a
+`GlassDecoration`, which works like a `BoxDecoration`.
+
+```dart
+GlassTabScaffold(
+  brightness: Brightness.dark,
+  adaptive: false,
+  barPadding: EdgeInsets.all(8),
+  glass: GlassDecoration(
+    color: Color(0xC21C1C24),
+    fill: GlassFill.paint,
+    shadows: [BoxShadow(color: Color(0x33000000), offset: Offset(0, 4), blurRadius: 16)],
+    innerShadows: [BoxShadow(color: Color(0x33FFFFFF), blurRadius: 1, spreadRadius: 1)],
+  ),
+  indicator: GlassDecoration(
+    gradient: LinearGradient(colors: [Color(0xFF5E5CE6), Color(0xFFBF5AF2)]),
+    fill: GlassFill.paint,
+  ),
+  tabs: [...],
+)
+```
+
+<img src="doc/images/bar-brand.png" alt="A three-tab bar with dark glass and a purple gradient selection" width="600">
+
+There are two ways to fill the glass:
+- **`GlassFill.tint`**, the default, colors the glass the way iOS does
+  (`UIGlassEffect.tintColor`). The color is true over white glass and
+  deeper over dark glass.
+- **`GlassFill.paint`** lays the color over the blur exactly as given, the way
+  a design tool does. Use it to match a brand's colors exactly.
+
+Drop shadows are drawn around the glass, not under it. Inner shadows work
+like inset shadows.
+
+### Right to left
+
+<img src="doc/images/bar-rtl.png" alt="An Arabic bar: the first tab on the right, with a badge" width="600">
+
+Nothing to set: in a right-to-left `Directionality` the first tab sits on the
+right, and badges move to the icon's other side.
+
+### All options
+
+| On `GlassTab` | |
+|---|---|
+| `icon`, `selectedIcon` | `IconData`, or any widget with `GlassTab.custom` (SVG, image). The bar uses the icon's shape and colors it. Set `tintIcon: false` to keep its own colors, for example for a profile photo |
+| `label` | shown under the icon, and read by screen readers |
+| `badge` | a count or short word on the icon |
+| `color` | this tab's selected color |
+| `page` | the tab's first page |
+
+| On `GlassTabScaffold` | |
+|---|---|
+| `selectedColor` | the selected tab's color; the system blue by default |
+| `unselectedColor` | the other tabs' color; by default they take their color from the glass |
+| `badgeColor` | the system red by default |
+| `glassColor`, `indicatorColor`, `lensColor` | shorthands that tint the bar, the selection at rest, and the lens |
+| `glass`, `indicator`, `lens` | `GlassDecoration`: color or gradient, fill, shadows, inner shadows |
+| `brightness`, `adaptive` | force light or dark glass; whether it adapts to the content |
+| `labelStyle` | merged into the labels' style, for example a font family |
+| `barPadding` | space inside the bar around the tabs; the bar grows with it (UIKit: 4pt) |
+| `barMargin` | the bar's distance from the screen's sides and bottom (UIKit: 21pt) |
+| `backgroundColor` | painted behind the pages |
+| `initialIndex`, `onTabChanged`, `controller` | the selected tab |
+
+## Built against UIKit, stage by stage
+
+Liquidum was built in six stages, and each was checked against Apple's bar
+before the next one started:
+- **Same conditions:** the same screen, background and touches for both bars.
+- **Glass:** UIKit's own layers and filters were read in the simulator.
+- **Comparison:** recordings were compared frame by frame.
+
+<img src="doc/images/uikit-vs-liquidum.png" alt="UIKit's tab bar above Liquidum's, at rest and while pressed with a custom tint and badges" width="860">
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+**1 · Controller and glass field**
+
+<img src="doc/comparison/stage1/1-press.jpg" alt="Frames of the lens lifting under a press, UIKit's recording with Liquidum's outlines over it">
+
+<sub>The lens lifting under a press, frame by frame. This is UIKit's
+recording, with Liquidum's lens (cyan) and bar (yellow) outlined on it, from
+the same touches.</sub>
+
+</td>
+<td width="50%" valign="top">
+
+**2 · One shared backdrop**
+
+<img src="doc/comparison/stage2/5-press-grid.jpg" alt="Apple's lens over a grid above Liquidum's">
+
+<sub>The bar and the lens read the content behind them from one capture. So
+the lens can bend content from past its own edge without seeing the bar's
+glass. Apple's is on top. Below is Liquidum's, whose optics were still
+placeholders at this stage.</sub>
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+**3 · Optics**
+
+<img src="doc/comparison/stage3/7-end-cap-stripes-3x.jpg" alt="The lens's end over stripes, three times: UIKit, Apple's optics alone, Liquidum">
+
+<sub>Refraction and dispersion at the lens's end over stripes, zoomed 3×.
+From left: UIKit, UIKit's optics rebuilt on their own, Liquidum.</sub>
+
+</td>
+<td width="50%" valign="top">
+
+**4 · Lifted content**
+
+<img src="doc/comparison/stage4/4-rest-and-lifted.jpg" alt="Liquidum's bar at rest and with the lens lifted">
+
+<sub>When the lens lifts, the selected tab grows 16% and is lensed through
+it, as in UIKit.</sub>
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+**5 · Lighting**
+
+<img src="doc/comparison/stage5/1-white.jpg" alt="UIKit's bar and Liquidum's side by side, at rest and lifted">
+
+<sub>Rim light, shadows, and the glow under the finger. UIKit is on the left
+and Liquidum on the right, at rest on top and lifted below.</sub>
+
+</td>
+<td width="50%" valign="top">
+
+**6 · Adaptive appearance**
+
+<img src="doc/comparison/stage6/3-dark.jpg" alt="UIKit's bar and Liquidum's over dark content, at rest and lifted">
+
+<sub>Over dark content the bar turns dark at UIKit's thresholds, and its
+colors follow the content. UIKit is on the left and Liquidum on the
+right.</sub>
+
+</td>
+</tr>
+</table>
+
+<p align="center">
+<img src="doc/comparison/stage6/5-android.jpg" alt="Liquidum's bar on Android: dark, lifted, over gray and over color blocks" width="420"><br>
+<sub>The same bar on Android, with Impeller on OpenGL ES.</sub>
+</p>
+
+At rest the two bars differ by about one level out of 255 on average, mostly
+at the edges of letters. Each stage's measurements, method and remaining
+differences are in [`doc/comparison`](doc/comparison).
+
+## Going further
+
+- **`GlassTabBar`** is the bar on its own, for apps that manage their own
+  pages or use a router such as go_router's `StatefulShellRoute`. It takes
+  `items`, `selectedIndex` and `onSelected`, and the same styling options,
+  with `padding` in place of `barPadding`. You place it yourself, so it has no
+  margin.
+- **`GlassBackdrop`** wraps the content that glass floats over. The bar
+  measures it to adapt; the scaffold adds one for you.
+- **`Glass`** turns any widget into a glass surface, a capsule or a rounded
+  rectangle. Its `GlassMaterial` presets are `regular`, `regularDark`,
+  `clear`, `clearDark` and `identity`, and `GlassMaterial.lerp` animates
+  between them.
+
+```dart
+Glass(
+  material: GlassMaterial.regular,
+  child: Padding(padding: EdgeInsets.all(16), child: Text('Liquid glass')),
+)
+```
+
+## Examples
+
+The [`example`](example) folder holds three apps. Run them from it.
+
+| | |
+|---|---|
+| `flutter run` | the scaffold with four tabs, about 40 lines |
+| `flutter run -t lib/playground.dart` | change colors, badges, appearance and direction live. On iOS, a switch swaps in Apple's own tab bar over the same content to compare them |
+| `flutter run -t lib/comparison.dart` | the harness used to compare with UIKit |
+
+Judge motion in profile or release mode: debug builds are much slower.
+
+## Requirements and limits
+
+- **Impeller is required** (`ImageFilter.shader`), on iOS and on Android.
+  Other renderers get a plain frosted bar.
+- **Paint glass after the content it floats over**, for example later in a
+  `Stack`; the scaffold does this.
+- **Don't wrap glass in an `Opacity`, a `ShaderMask` or another save layer.**
+  It has to paint into the root layer.
+- **Keep tab icons static.** The bar draws its tabs from an image of them,
+  rendered again whenever they repaint. A `RepaintBoundary` inside an icon
+  hides its repaints from the bar.
+- **Not done yet:**
+  - minimizing the bar on scroll,
+  - the scroll-edge effect,
+  - light that follows the device's tilt,
+  - morphing into a search field,
+  - the accessibility settings (Reduce Transparency, Increase Contrast).

@@ -1,4 +1,5 @@
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/material.dart' show Icons, MaterialApp;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liquidum/liquidum.dart';
 
@@ -281,5 +282,25 @@ void main() {
     );
     await tapTab(tester, 'c');
     expect(find.text('c 0'), findsOneWidget);
+  });
+
+  testWidgets('works inside a MaterialApp', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: GlassTabScaffold(
+          tabs: <GlassTab>[
+            GlassTab(icon: Icons.home, label: 'Home', page: Counter('home')),
+            GlassTab(
+              icon: Icons.search,
+              label: 'Search',
+              page: Counter('search'),
+            ),
+          ],
+        ),
+      ),
+    );
+    await tapTab(tester, 'Search');
+    expect(find.text('search 0'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 }
