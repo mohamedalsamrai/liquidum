@@ -54,6 +54,8 @@ Everything else is optional:
 | `glass`, `indicator`, `lens` | the same three, decorated like a `BoxDecoration`: `GlassDecoration(color:, gradient: LinearGradient(…), shadows: […], innerShadows: […])`; `fill: GlassFill.paint` paints the color as it is over the blur (as a design tool does) instead of tinting the glass the iOS way |
 | `brightness`, `adaptive` | force light or dark; whether the bar adapts to the pages |
 | `labelStyle` | for example a font family |
+| `barPadding` | space inside the bar around its tabs; the bar grows with it (UIKit: 4pt, a 62pt bar) |
+| `barMargin` | the bar's space from the screen's sides and bottom; UIKit's 21pt by default |
 | `initialIndex`, `onTabChanged`, `controller` | the selected tab; switch from a page with `GlassTabScaffold.of(context).index = 1` |
 
 Glass tints follow iOS's own tinted glass (`UIGlassEffect.tintColor`). The

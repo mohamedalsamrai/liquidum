@@ -45,7 +45,7 @@ uniform vec4 uWindow;      // capture window it shows: origin.xy, size.xy
 uniform vec4 uContent;     // the bar's origin in capture pixels.xy, the content atlas's size as rendered in points.zw
 uniform vec4 uTabs;        // first tab's center x, spacing, count, atlas slot pitch (points)
 uniform vec4 uPlatterXf;   // platter transform: center.xy, drift.xy (points)
-uniform vec4 uPlatterS;    // platter scale.xy, bar height, atlas slot width (points)
+uniform vec4 uPlatterS;    // platter scale.xy, content row height, atlas slot width (points)
 uniform vec4 uGlow;        // fingertip glow: center.xy, 1 / (2 variance) (pixels), peak alpha
 // The adaptive appearance (GlassAppearance): the glass's color inputs as
 // they follow the backdrop's luma and the light or dark appearance.
@@ -64,7 +64,7 @@ uniform vec4 uTints[15];
 #define GLASS_TINT uTints[0], uTints[1], uTints[2], uTints[3], uTints[4]
 #define REST_TINT uTints[5], uTints[6], uTints[7], uTints[8], uTints[9]
 #define LENS_TINT uTints[10], uTints[11], uTints[12], uTints[13], uTints[14]
-uniform vec4 uSelected;    // selected symbols: offset added to half of what is below them and the tint; content drawn as it is (flag)
+uniform vec4 uSelected;    // selected symbols: offset added to half of what is below them and the tint; content rows' top in the bar (points); content drawn as it is (flag)
 
 uniform sampler2D uCapture;
 uniform sampler2D uContentAtlas;  // the tabs' content: a row per layer, a slot per tab
@@ -447,7 +447,7 @@ vec4 glyphs(vec2 x, float grow, float row, out vec4 original) {
   vec2 b = (x - uContent.xy) / uPass.z;
   vec2 u = uPlatterXf.xy + (b - uPlatterXf.xy - uPlatterXf.zw) / uPlatterS.xy;
   float first = uTabs.x, spacing = uTabs.y, count = uTabs.z, pitch = uTabs.w;
-  float width = uPlatterS.w, height = uPlatterS.z;
+  float width = uPlatterS.w, height = uPlatterS.z, top = uSelected.y;
   float nearest = spacing > 0.0 ? floor((u.x - first) / spacing + 0.5) : 0.0;
   vec4 sum = vec4(0.0);
   original = vec4(0.0);
@@ -456,13 +456,14 @@ vec4 glyphs(vec2 x, float grow, float row, out vec4 original) {
     if (i < 0.0 || i >= count) {
       continue;
     }
-    vec2 center = vec2(first + i * spacing, height * 0.5);
+    vec2 center = vec2(first + i * spacing, top + height * 0.5);
     vec2 v = center + (u - center) / grow;
     float local = v.x - (center.x - width * 0.5);
-    if (local < 0.0 || local > width || v.y < 0.0 || v.y > height) {
+    float y = v.y - top;
+    if (local < 0.0 || local > width || y < 0.0 || y > height) {
       continue;
     }
-    vec2 at = vec2(i * pitch + local, v.y + row * height);
+    vec2 at = vec2(i * pitch + local, y + row * height);
     vec4 t = texture(uContentAtlas, texel(at, uContent.zw));
     if (row < 0.5 && t.a > 0.0) {
       // A template is only a shape: the selected ones take the tab's tint,

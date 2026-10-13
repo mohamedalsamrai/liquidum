@@ -116,6 +116,8 @@ class GlassTabScaffold extends StatefulWidget {
     this.indicator,
     this.lens,
     this.backgroundColor,
+    this.barMargin,
+    this.barPadding,
     this.initialIndex = 0,
     this.onTabChanged,
     this.controller,
@@ -167,6 +169,20 @@ class GlassTabScaffold extends StatefulWidget {
 
   /// Painted behind the pages. Defaults to the theme's background.
   final Color? backgroundColor;
+
+  /// Space between the bar and the screen's left, right and bottom edges
+  /// (its top is not used), for example
+  /// `EdgeInsets.fromLTRB(16, 0, 16, 30)`. Directional insets follow the
+  /// app's direction. Defaults to UIKit's: 21pt from each, clear of the
+  /// system's insets (on iPhones with a home indicator, the bar sits 13pt
+  /// into the 34pt safe area). With up to three tabs, the bar is centered
+  /// between the side margins.
+  final EdgeInsetsGeometry? barMargin;
+
+  /// Space inside the bar around its tabs, for example `EdgeInsets.all(12)`:
+  /// the bar grows with it, the tabs keep their height. Defaults to UIKit's
+  /// 4pt all round (a 62pt bar).
+  final EdgeInsetsGeometry? barPadding;
 
   /// The tab shown first.
   final int initialIndex;
@@ -262,12 +278,20 @@ class _GlassTabScaffoldState extends State<GlassTabScaffold> {
       _heroes.add(HeroController());
     }
     final MediaQueryData media = MediaQuery.of(context);
+    final EdgeInsets inset = media.viewPadding;
     // UIKit floats the bar 21pt from the sides and bottom of the screen (on
     // iPhones with a home indicator, 13pt into the 34pt safe area), clear of
     // wider system insets.
-    final EdgeInsets inset = media.viewPadding;
-    final double bottom = math.max(21, inset.bottom - 13);
-    final double barSpace = bottom + GlassTabBar.height;
+    final EdgeInsets margin =
+        widget.barMargin?.resolve(Directionality.of(context)) ??
+        EdgeInsets.fromLTRB(
+          21 + inset.left,
+          0,
+          21 + inset.right,
+          math.max(21, inset.bottom - 13),
+        );
+    final double barSpace =
+        margin.bottom + GlassTabBar.heightWith(widget.barPadding);
     final int index = _index;
     _built.add(index);
 
@@ -311,9 +335,9 @@ class _GlassTabScaffoldState extends State<GlassTabScaffold> {
             ),
           ),
           Positioned(
-            left: 21 + inset.left,
-            right: 21 + inset.right,
-            bottom: bottom,
+            left: margin.left,
+            right: margin.right,
+            bottom: margin.bottom,
             // Centered: with up to three tabs, the bar is only as wide as its
             // tabs, as UIKit's.
             child: Center(
@@ -338,6 +362,7 @@ class _GlassTabScaffoldState extends State<GlassTabScaffold> {
                 glass: widget.glass,
                 indicator: widget.indicator,
                 lens: widget.lens,
+                padding: widget.barPadding,
               ),
             ),
           ),

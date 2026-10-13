@@ -2,7 +2,7 @@ import 'dart:collection';
 import 'dart:math' as math;
 import 'dart:ui';
 
-import 'package:flutter/rendering.dart' show Matrix4;
+import 'package:flutter/rendering.dart' show EdgeInsets, Matrix4;
 
 import 'spring.dart';
 
@@ -31,8 +31,17 @@ class GlassTabBarPhysics {
 
   // ---------------------------------------------------------------- layout
 
-  /// Gap between the platter's edge and the resting pill of an end tab.
+  /// UIKit's gap between the platter's edge and its tabs' resting pills.
   static const double inset = 4;
+
+  /// UIKit's tab (and resting pill) height: its 62pt bar less [inset] above
+  /// and below.
+  static const double tabHeight = 54;
+
+  /// Gaps between the platter's edges and its tabs (UIKit's: [inset] all
+  /// round).
+  EdgeInsets get padding => _padding;
+  EdgeInsets _padding = const EdgeInsets.all(inset);
 
   /// How much the lens outgrows the pill when lifted, on each side.
   static const double liftOutset = 8;
@@ -53,7 +62,7 @@ class GlassTabBarPhysics {
   /// more the bar fills its width and they overlap by 40pt in all for four
   /// tabs, 33pt for five (107.5pt for four tabs in 398pt, 84.6pt for five).
   double get pillWidth =>
-      ((_size.width - 2 * inset + _overlap(_count)) / _count).clamp(
+      ((_size.width - _padding.horizontal + _overlap(_count)) / _count).clamp(
         0,
         _size.width,
       );
@@ -67,26 +76,35 @@ class GlassTabBarPhysics {
   /// The width of UIKit's bar of [count] tabs whose widest label is [label]
   /// points wide, or null for four tabs or more, which fill the width they
   /// are given. Each tab is 94pt wide, or 39pt wider than the widest label;
-  /// three tabs with short labels make a 274pt bar.
-  static double? naturalWidth(int count, double label) {
+  /// three tabs with short labels make a 274pt bar. [horizontal] is the
+  /// padding at its two ends.
+  static double? naturalWidth(
+    int count,
+    double label, {
+    double horizontal = 2 * inset,
+  }) {
     if (count > 3) {
       return null;
     }
     final double tab = math.max(94, label + 39);
-    return count * tab - _overlap(count) + 2 * inset;
+    return count * tab - _overlap(count) + horizontal;
   }
 
-  double get pillHeight => math.max(_size.height - 2 * inset, 0);
+  double get pillHeight => math.max(_size.height - _padding.vertical, 0);
 
-  /// Center of tab [index]: the end tabs' pills sit [inset] from the ends,
-  /// and the others are evenly spaced between them.
+  /// Center of tab [index]: the end tabs' pills sit at the padding, and the
+  /// others are evenly spaced between them.
   double tabCenter(int index) {
+    final double first = _padding.left + pillWidth / 2;
+    final double last = _size.width - _padding.right - pillWidth / 2;
     if (_count == 1) {
-      return _size.width / 2;
+      return (first + last) / 2;
     }
-    final double first = inset + pillWidth / 2;
-    return first + index * (_size.width - 2 * first) / (_count - 1);
+    return first + index * (last - first) / (_count - 1);
   }
+
+  /// The tabs' vertical center.
+  double get tabMiddle => _padding.top + pillHeight / 2;
 
   int nearestTab(double x) {
     var best = 0;
@@ -98,10 +116,16 @@ class GlassTabBarPhysics {
     return best;
   }
 
-  /// Lays the bar out at [size] with [count] tabs.
-  void layout(Size size, int count) {
+  /// Lays the bar out at [size] with [count] tabs, [padding] inside its
+  /// edges.
+  void layout(
+    Size size,
+    int count, {
+    EdgeInsets padding = const EdgeInsets.all(inset),
+  }) {
     final bool first = _size == Size.zero;
     _size = size;
+    _padding = padding;
     _count = count;
     _selected = _selected.clamp(0, count - 1);
     if (first || !isActive) {
@@ -825,11 +849,17 @@ class GlassTabBarPhysics {
   /// The lens in platter coordinates: its bounds (the pill grown by the
   /// lift) with its flex scale, drifted by the flex.
   Rect get lensInPlatter {
-    final double grow = 2 * liftOutset * math.max(_growth.value, -0.25);
+    // UIKit's lens grows 8pt past the pill all round, rising 4pt out of its
+    // 62pt bar; in a bar with more padding it rises out by as much,
+    // growing further up and down.
+    final double g = math.max(_growth.value, -0.25);
+    final double side = liftOutset * g;
+    final double up = (liftOutset - inset + _padding.top) * g;
+    final double down = (liftOutset - inset + _padding.bottom) * g;
     return Rect.fromCenter(
-      center: Offset(lensX + _flexShift.value, _size.height / 2),
-      width: (pillWidth + grow) * _flexX.value,
-      height: (pillHeight + grow) * _flexY.value,
+      center: Offset(lensX + _flexShift.value, tabMiddle + (down - up) / 2),
+      width: (pillWidth + 2 * side) * _flexX.value,
+      height: (pillHeight + up + down) * _flexY.value,
     );
   }
 

@@ -231,6 +231,53 @@ void main() {
     }
   });
 
+  test('padding moves the tabs in and grows the bar', () {
+    const padding = EdgeInsets.fromLTRB(12, 10, 20, 6);
+    expect(
+      GlassTabBarPhysics.naturalWidth(3, 30, horizontal: padding.horizontal),
+      3 * 94 - 16 + 32,
+    );
+    final p = GlassTabBarPhysics(count: 3, selectedIndex: 0)
+      ..layout(const Size(298, 54 + 16), 3, padding: padding);
+    expect(p.pillHeight, 54);
+    expect(p.pillWidth, 94);
+    expect(p.tabCenter(0), 12 + 47);
+    expect(p.tabCenter(2), 298 - 20 - 47);
+    expect(p.tabMiddle, 10 + 27);
+    expect(p.lensRect.center.dy, moreOrLessEquals(37, epsilon: 1e-9));
+  });
+
+  test('the lifted lens rises out of a padded bar as out of UIKit\'s', () {
+    // How far the lifted lens rises past the platter's top and bottom, in
+    // the platter's own points.
+    (double, double) rise(EdgeInsets padding) {
+      final size = Size(274 + padding.horizontal - 8, 54 + padding.vertical);
+      final p = GlassTabBarPhysics(count: 3, selectedIndex: 0)
+        ..layout(size, 3, padding: padding);
+      p.tick(0);
+      p.pointerDown(Offset(141, size.height / 2), time: 0);
+      run(p, 0, 0.6);
+      final Rect lens = p.lensRect, bar = p.platterRect;
+      return (
+        (bar.top - lens.top) / p.platterScaleY,
+        (lens.bottom - bar.bottom) / p.platterScaleY,
+      );
+    }
+
+    final (double top, double bottom) = rise(const EdgeInsets.all(4));
+    // UIKit's: 4pt, and the flex.
+    expect(top, greaterThan(4));
+    expect(bottom, greaterThan(4));
+    for (final padding in <EdgeInsets>[
+      const EdgeInsets.all(8),
+      const EdgeInsets.fromLTRB(8, 12, 8, 6),
+    ]) {
+      final (double t, double b) = rise(padding);
+      expect(t, moreOrLessEquals(top, epsilon: 0.5));
+      expect(b, moreOrLessEquals(bottom, epsilon: 0.5));
+    }
+  });
+
   test('capsule distances', () {
     final shape = GlassShape(const Rect.fromLTWH(0, 0, 100, 40));
     expect(shape.radius, 20);

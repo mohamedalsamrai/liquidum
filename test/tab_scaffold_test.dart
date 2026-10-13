@@ -200,4 +200,86 @@ void main() {
       const GlassDecoration(shadows: <BoxShadow>[BoxShadow()]),
     );
   });
+
+  testWidgets('the bar keeps a custom margin, and the pages clear it', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(1320, 2868);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    Widget scaffold(EdgeInsetsGeometry margin, TextDirection direction) =>
+        CupertinoApp(
+          home: Directionality(
+            textDirection: direction,
+            child: GlassTabScaffold(
+              barMargin: margin,
+              tabs: <GlassTab>[
+                for (final String name in <String>['a', 'b', 'c', 'd'])
+                  GlassTab(
+                    icon: CupertinoIcons.house,
+                    label: name,
+                    page: Counter(name),
+                  ),
+              ],
+            ),
+          ),
+        );
+    await tester.pumpWidget(
+      scaffold(const EdgeInsets.fromLTRB(10, 0, 30, 40), TextDirection.ltr),
+    );
+    expect(
+      tester.getRect(find.byType(GlassTabBar)),
+      const Rect.fromLTRB(10, 956 - 40 - 62, 440 - 30, 956 - 40),
+    );
+    expect(
+      MediaQuery.paddingOf(tester.element(find.text('a 0'))).bottom,
+      40 + 62,
+    );
+    // Start is the right in a right-to-left app.
+    await tester.pumpWidget(
+      scaffold(
+        const EdgeInsetsDirectional.fromSTEB(10, 0, 30, 40),
+        TextDirection.rtl,
+      ),
+    );
+    final Rect bar = tester.getRect(find.byType(GlassTabBar));
+    expect(bar.left, 30);
+    expect(bar.right, 440 - 10);
+  });
+
+  testWidgets('padding inside the bar grows it around its tabs', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(1320, 2868);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      const CupertinoApp(
+        home: GlassTabScaffold(
+          barMargin: EdgeInsets.only(bottom: 30),
+          barPadding: EdgeInsets.all(12),
+          tabs: <GlassTab>[
+            GlassTab(
+              icon: CupertinoIcons.house,
+              label: 'a',
+              page: Counter('a'),
+            ),
+            GlassTab(icon: CupertinoIcons.bell, label: 'b', page: Counter('b')),
+            GlassTab(icon: CupertinoIcons.star, label: 'c', page: Counter('c')),
+          ],
+        ),
+      ),
+    );
+    final Rect bar = tester.getRect(find.byType(GlassTabBar));
+    // Three 94pt tabs overlapping by 8pt, 12pt of padding each side.
+    expect(bar.size, const Size(3 * 94 - 16 + 24, 54 + 24));
+    expect(bar.center.dx, 220);
+    expect(bar.bottom, 956 - 30);
+    expect(
+      MediaQuery.paddingOf(tester.element(find.text('a 0'))).bottom,
+      30 + 54 + 24,
+    );
+    await tapTab(tester, 'c');
+    expect(find.text('c 0'), findsOneWidget);
+  });
 }

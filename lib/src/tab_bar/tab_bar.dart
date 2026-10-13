@@ -103,6 +103,7 @@ class GlassTabBar extends StatefulWidget {
     this.glass,
     this.indicator,
     this.lens,
+    this.padding,
     this.debugView = GlassTabBarDebugView.none,
     this.debugShareBackdrop = true,
     this.debugInspector,
@@ -188,6 +189,19 @@ class GlassTabBar extends StatefulWidget {
   /// The lens, while the selection moves, decorated the same way
   /// ([lensColor] is short for its color).
   final GlassDecoration? lens;
+
+  /// Space inside the bar around its tabs, as a box's padding: the bar grows
+  /// with it, the tabs keep their 54pt height. Defaults to UIKit's 4pt all
+  /// round (a 62pt bar). Directional padding follows the app's direction.
+  ///
+  /// The lens the selection lifts into still rises out of the bar as UIKit's
+  /// does, 4pt past its top and bottom edges whatever the padding.
+  final EdgeInsetsGeometry? padding;
+
+  /// The bar's height with [padding] (UIKit's, 62pt, without).
+  static double heightWith(EdgeInsetsGeometry? padding) =>
+      GlassTabBarPhysics.tabHeight +
+      (padding ?? const EdgeInsets.all(GlassTabBarPhysics.inset)).vertical;
 
   GlassTabBarStyle get _style => GlassTabBarStyle(
     selectedColor: selectedColor,
@@ -481,7 +495,7 @@ class _GlassTabBarState extends State<GlassTabBar>
             ),
           );
     return SizedBox(
-      height: GlassTabBar.height,
+      height: GlassTabBar.heightWith(widget.padding),
       child: _TabBarLayout(
         physics: _physics,
         appearance: _appearance,
@@ -515,6 +529,9 @@ class _GlassTabBarState extends State<GlassTabBar>
           widget.lensColor,
         ),
         textDirection: Directionality.maybeOf(context) ?? TextDirection.ltr,
+        padding:
+            (widget.padding ?? const EdgeInsets.all(GlassTabBarPhysics.inset))
+                .resolve(Directionality.maybeOf(context) ?? TextDirection.ltr),
         // One child per tab and layer: each layer's tabs in slot order.
         children: <Widget>[
           for (var slot = 0; slot < items.length; slot++)
@@ -558,6 +575,7 @@ class _TabBarLayout extends MultiChildRenderObjectWidget {
     required this.indicator,
     required this.lens,
     required this.textDirection,
+    required this.padding,
     required super.children,
   });
 
@@ -579,6 +597,7 @@ class _TabBarLayout extends MultiChildRenderObjectWidget {
   final GlassDecoration indicator;
   final GlassDecoration lens;
   final TextDirection textDirection;
+  final EdgeInsets padding;
 
   @override
   RenderGlassTabBar createRenderObject(BuildContext context) {
@@ -601,6 +620,7 @@ class _TabBarLayout extends MultiChildRenderObjectWidget {
       indicator: indicator,
       lens: lens,
       textDirection: textDirection,
+      padding: padding,
     );
   }
 
@@ -624,7 +644,8 @@ class _TabBarLayout extends MultiChildRenderObjectWidget {
       ..glass = glass
       ..indicator = indicator
       ..lens = lens
-      ..textDirection = textDirection;
+      ..textDirection = textDirection
+      ..padding = padding;
   }
 }
 
@@ -664,6 +685,7 @@ class RenderGlassTabBar extends RenderBox
     this._indicator = const GlassDecoration(),
     this._lens = const GlassDecoration(),
     this._textDirection = TextDirection.ltr,
+    this._padding = const EdgeInsets.all(GlassTabBarPhysics.inset),
   });
 
   final GlassTabBarPhysics _physics;
@@ -800,6 +822,22 @@ class RenderGlassTabBar extends RenderBox
       markNeedsPaint();
     }
   }
+
+  /// Space inside the bar around its tabs (see [GlassTabBar.padding]).
+  EdgeInsets get padding => _padding;
+  EdgeInsets _padding;
+  set padding(EdgeInsets value) {
+    if (value != _padding) {
+      _padding = value;
+      markNeedsLayout();
+    }
+  }
+
+  // Each tab's content is laid out in a box of UIKit's 62pt bar, its pill
+  // 4pt in from its top and bottom; the padding moves it down by this much.
+  static const double _rowHeight =
+      GlassTabBarPhysics.tabHeight + 2 * GlassTabBarPhysics.inset;
+  double get _rowTop => _padding.top - GlassTabBarPhysics.inset;
 
   /// For gradients' directional alignments.
   TextDirection get textDirection => _textDirection;
@@ -940,24 +978,28 @@ class RenderGlassTabBar extends RenderBox
     final int count = _tabCount;
     size = constraints.constrain(
       Size(
-        GlassTabBarPhysics.naturalWidth(count, _labelWidth) ??
+        GlassTabBarPhysics.naturalWidth(
+              count,
+              _labelWidth,
+              horizontal: _padding.horizontal,
+            ) ??
             (constraints.hasBoundedWidth ? constraints.maxWidth : 398),
-        GlassTabBar.height,
+        GlassTabBarPhysics.tabHeight + _padding.vertical,
       ),
     );
     if (count == 0) {
       return;
     }
-    _physics.layout(size, count);
+    _physics.layout(size, count, padding: _padding);
     final double width = _physics.pillWidth;
-    final tight = BoxConstraints.tight(Size(width, size.height));
+    final tight = BoxConstraints.tight(Size(width, _rowHeight));
     var i = 0;
     RenderBox? child = firstChild;
     while (child != null) {
       child.layout(tight);
       (child.parentData! as _TabParentData).offset = Offset(
         _physics.tabCenter(i % count) - width / 2,
-        0,
+        _rowTop,
       );
       child = childAfter(child);
       i++;
@@ -1124,7 +1166,7 @@ class RenderGlassTabBar extends RenderBox
         ..platterScale.set(
           _physics.platterScaleX,
           _physics.platterScaleY,
-          size.height,
+          _rowHeight,
           _atlasSlot,
         )
         ..glow.set(
@@ -1146,7 +1188,13 @@ class RenderGlassTabBar extends RenderBox
         // UIKit's selected matrix: half of the glass below plus the tint
         // (held in the atlas's color), less half a unit in the light
         // appearance.
-        ..selected.set(_contentDark ? 0 : -0.5, 0, 0, _hasOriginal ? 1 : 0)
+        // .y: where the tabs' content rows start in the bar.
+        ..selected.set(
+          _contentDark ? 0 : -0.5,
+          _rowTop,
+          0,
+          _hasOriginal ? 1 : 0,
+        )
         ..setTints(glassTint, restTint, lensTint);
       u.shader.setImageSampler(1, atlas);
       return ui.ImageFilter.shader(u.shader);
@@ -1453,7 +1501,7 @@ class RenderGlassTabBar extends RenderBox
         0,
         0,
         count * _atlasPitch,
-        tabLayerCount * size.height + 1,
+        tabLayerCount * _rowHeight + 1,
       );
       final layer = OffsetLayer();
       final context = _AtlasContext(layer, bounds);
@@ -1464,7 +1512,7 @@ class RenderGlassTabBar extends RenderBox
           child,
           Offset(
             (i % count) * _atlasPitch + _atlasMargin,
-            TabLayer.values[i ~/ count].row * size.height,
+            TabLayer.values[i ~/ count].row * _rowHeight,
           ),
         );
         child = childAfter(child);
@@ -1474,7 +1522,7 @@ class RenderGlassTabBar extends RenderBox
         context.canvas.drawRect(
           Rect.fromLTWH(
             slot * _atlasPitch,
-            tabLayerCount * size.height,
+            tabLayerCount * _rowHeight,
             _atlasPitch,
             1,
           ),
