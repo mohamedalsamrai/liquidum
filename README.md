@@ -5,6 +5,7 @@
 **The iOS 26 Liquid Glass tab bar, for Flutter.**
 It looks and moves like Apple's own, and it takes a few lines to use.
 
+[![pub package](https://img.shields.io/pub/v/liquidum.svg)](https://pub.dev/packages/liquidum)
 ![Flutter](https://img.shields.io/badge/Flutter-3.44%2B-02569B?logo=flutter&logoColor=white)
 ![Renderer](https://img.shields.io/badge/renderer-Impeller-7257A8)
 ![Platforms](https://img.shields.io/badge/platforms-iOS%20%7C%20Android-lightgrey)
@@ -32,12 +33,8 @@ It looks and moves like Apple's own, and it takes a few lines to use.
 
 ## Install
 
-Liquidum isn't on pub.dev yet. Add it from GitHub:
-
-```yaml
-dependencies:
-  liquidum:
-    git: https://github.com/mohamedalsamrai/liquidum.git
+```sh
+flutter pub add liquidum
 ```
 
 ## Quick start

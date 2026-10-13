@@ -1,11 +1,23 @@
 name: liquidum
-description: "Liquid glass as a material for Flutter, rendered with Impeller."
+description: >-
+  The iOS 26 Liquid Glass tab bar for Flutter, measured against UIKit: real
+  refraction, a lifting lens, adaptive light and dark glass, and full styling.
 version: 0.0.1
-homepage:
+repository: https://github.com/mohamedalsamrai/liquidum
+issue_tracker: https://github.com/mohamedalsamrai/liquidum/issues
+topics:
+  - liquid-glass
+  - tab-bar
+  - cupertino
+  - ios
+  - glassmorphism
+screenshots:
+  - description: The glass tab bar over content, light, dark and styled.
+    path: doc/images/hero.png
 
 environment:
   sdk: ^3.12.2
-  flutter: ">=1.17.0"
+  flutter: ">=3.44.0"
 
 dependencies:
   flutter:

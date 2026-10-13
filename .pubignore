@@ -1,0 +1,31 @@
+# Kept out of the published package (a .pubignore here replaces .gitignore's
+# rules for this folder, so those are repeated).
+
+# From .gitignore.
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.buildlog/
+.history
+.svn/
+migrate_working_dir/
+*.iml
+*.ipr
+*.iws
+.idea/
+/pubspec.lock
+**/doc/api/
+.dart_tool/
+.flutter-plugins-dependencies
+/build/
+/coverage/
+/hassa_example/
+
+# Research evidence and the README's images, which pub.dev loads from the
+# repository; only the screenshot is shipped.
+/doc/comparison/
+/doc/images/*
+!/doc/images/hero.png
