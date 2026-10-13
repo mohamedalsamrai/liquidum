@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
@@ -5,7 +6,9 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 
+import '../glass_backdrop.dart';
 import '../shader_program.dart';
+import 'appearance.dart';
 import 'physics.dart';
 
 /// A tab in a [GlassTabBar].
@@ -148,6 +151,16 @@ class _GlassTabBarState extends State<GlassTabBar>
   final _Frame _frame = _Frame();
   int? _pointer;
 
+  // The adaptive appearance, fed by readings of the backdrop under the bar:
+  // UIKit reads it about every frame; this, every 50ms while frames are
+  // being drawn.
+  final GlassAppearance _appearance = GlassAppearance();
+  Timer? _sampler;
+  bool _sampling = false;
+  int _sampledFrame = -1;
+  static int _frames = 0;
+  static bool _counting = false;
+
   // The raw vsync time: on the same clock as pointer event time stamps, so
   // touches take effect at the moment they happened.
   static double get _frameTime =>
@@ -158,10 +171,48 @@ class _GlassTabBarState extends State<GlassTabBar>
       event.timeStamp.inMicroseconds / 1e6;
 
   void _tick(Duration _) {
-    if (!_physics.tick(_frameTime)) {
+    final double now = _frameTime;
+    if (!(_physics.tick(now) | _appearance.tick(now))) {
       _ticker.stop();
     }
     _frame.notify();
+  }
+
+  Future<void> _sample() async {
+    if (_sampling || !mounted || _frames == _sampledFrame) {
+      return;
+    }
+    final RenderObject? box = context.findRenderObject();
+    if (box is! RenderBox || !box.attached || !box.hasSize) {
+      return;
+    }
+    final GlassBackdropState? backdrop = GlassBackdrop.under(
+      MatrixUtils.transformRect(
+        box.getTransformTo(null),
+        Offset.zero & box.size,
+      ),
+    );
+    if (backdrop == null) {
+      return;
+    }
+    _sampling = true;
+    _sampledFrame = _frames;
+    try {
+      final double? luma = await backdrop.meanLuma(
+        GlassAppearance.sampleArea(
+          MatrixUtils.transformRect(
+            box.getTransformTo(null),
+            Offset.zero & box.size,
+          ),
+        ),
+      );
+      if (mounted && luma != null) {
+        _appearance.sample(luma);
+        _wake();
+      }
+    } finally {
+      _sampling = false;
+    }
   }
 
   void _wake() {
@@ -216,6 +267,14 @@ class _GlassTabBarState extends State<GlassTabBar>
   @override
   void initState() {
     super.initState();
+    if (!_counting) {
+      _counting = true;
+      SchedulerBinding.instance.addPersistentFrameCallback((_) => _frames++);
+    }
+    _sampler = Timer.periodic(
+      const Duration(milliseconds: 50),
+      (_) => _sample(),
+    );
     GlassTabBar.precache().then((_) {
       if (mounted) {
         _frame.notify();
@@ -233,6 +292,13 @@ class _GlassTabBarState extends State<GlassTabBar>
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _appearance.system = MediaQuery.platformBrightnessOf(context);
+    _wake();
+  }
+
+  @override
   void didUpdateWidget(GlassTabBar oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.selectedIndex != _physics.selectedIndex) {
@@ -243,6 +309,7 @@ class _GlassTabBarState extends State<GlassTabBar>
 
   @override
   void dispose() {
+    _sampler?.cancel();
     _ticker.dispose();
     _frame.dispose();
     super.dispose();
@@ -262,6 +329,7 @@ class _GlassTabBarState extends State<GlassTabBar>
       height: GlassTabBar.height,
       child: _TabBarLayout(
         physics: _physics,
+        appearance: _appearance,
         frame: _frame,
         onPointer: _handlePointer,
         debugView: widget.debugView,
@@ -355,6 +423,7 @@ class _TabView extends StatelessWidget {
 class _TabBarLayout extends MultiChildRenderObjectWidget {
   const _TabBarLayout({
     required this.physics,
+    required this.appearance,
     required this.frame,
     required this.onPointer,
     required this.debugView,
@@ -367,6 +436,7 @@ class _TabBarLayout extends MultiChildRenderObjectWidget {
   });
 
   final GlassTabBarPhysics physics;
+  final GlassAppearance appearance;
   final Listenable frame;
   final ValueChanged<PointerEvent> onPointer;
   final GlassTabBarDebugView debugView;
@@ -380,6 +450,7 @@ class _TabBarLayout extends MultiChildRenderObjectWidget {
   RenderGlassTabBar createRenderObject(BuildContext context) {
     return RenderGlassTabBar(
       physics: physics,
+      appearance: appearance,
       frame: frame,
       onPointer: onPointer,
       debugView: debugView,
@@ -426,6 +497,7 @@ class RenderGlassTabBar extends RenderBox
         RenderBoxContainerDefaultsMixin<RenderBox, _TabParentData> {
   RenderGlassTabBar({
     required this._physics,
+    required this._appearance,
     required this._frame,
     required this.onPointer,
     required this._debugView,
@@ -437,6 +509,7 @@ class RenderGlassTabBar extends RenderBox
   });
 
   final GlassTabBarPhysics _physics;
+  final GlassAppearance _appearance;
   final Listenable _frame;
   ValueChanged<PointerEvent> onPointer;
 
@@ -583,7 +656,6 @@ class RenderGlassTabBar extends RenderBox
     _lensPass.layer = null;
     _inspectorClip.layer = null;
     _inspectorPass.layer = null;
-    _washLayer.layer = null;
     _glowClip.layer = null;
   }
 
@@ -710,6 +782,16 @@ class RenderGlassTabBar extends RenderBox
         ? Offset.zero
         : space.point(glowCenter);
 
+    // The appearance's color inputs.
+    final GlassAppearance appearance = _appearance;
+    final (double, double, double, double) face = appearance.face;
+    final double shadow = appearance.shadow;
+    final (double, double, double) platterRim = appearance.platterRim;
+    final (double, double, double) lensRim = appearance.lensRim;
+    final (double, double, double) pill = appearance.pill;
+    final (double, double) symbol = appearance.symbol;
+    final (double, double, double) selected = appearance.selected;
+
     ui.ImageFilter passFilter(int pass) {
       final _BackdropUniforms u = _passes[pass]
         ..pass.set(
@@ -765,7 +847,12 @@ class RenderGlassTabBar extends RenderBox
           glowPixels.dy,
           1 / (2 * glowVariance),
           glowCenter == null ? 0 : glowAlpha * glowPeak,
-        );
+        )
+        ..face.set(face.$1, face.$2, face.$3, face.$4)
+        ..rim.set(platterRim.$1, platterRim.$2, platterRim.$3, shadow)
+        ..lensRim.set(lensRim.$1, lensRim.$2, lensRim.$3, symbol.$2)
+        ..pill.set(pill.$1, pill.$2, pill.$3, symbol.$1)
+        ..selected.set(selected.$1, selected.$2, selected.$3, 0);
       u.shader.setImageSampler(1, atlas);
       return ui.ImageFilter.shader(u.shader);
     }
@@ -787,31 +874,9 @@ class RenderGlassTabBar extends RenderBox
       oldLayer: _barClip.layer,
     );
 
-    // The tabs outside the lens, under the press's wash.
-    final double wash = _optics & GlassTabBarOptics.press != 0
-        ? _washAmount * _physics.press
-        : 0;
-    void paintTabs(PaintingContext context, Offset offset) {
-      context.pushTransform(
-        needsCompositing,
-        offset,
-        _physics.platterTransform,
-        (PaintingContext context, Offset offset) =>
-            _paintTabs(context, offset, inside: false),
-      );
-    }
-
-    if (wash > 0) {
-      _washLayer.layer = context.pushColorFilter(
-        offset,
-        _washFilter(wash),
-        paintTabs,
-        oldLayer: _washLayer.layer,
-      );
-    } else {
-      _washLayer.layer = null;
-      paintTabs(context, offset);
-    }
+    // (The bar's shader draws the tabs outside the lens, and the lens's
+    // shader those in it, from the content atlas: UIKit colors them from
+    // the glass below them.)
 
     // The fingertip glow, over the platter and its tabs: under the lens,
     // whose shader sees it through its optics.
@@ -873,25 +938,6 @@ class RenderGlassTabBar extends RenderBox
   // How far the lens's shadow reaches past it: its outline moved 7pt down,
   // and 9.2pt past that.
   static const double _lensShadowMargin = 18;
-
-  // The press's wash (UIKit's white layer over the platter through a vibrant
-  // color matrix): chroma x1.2 and a 0.05 lift, at 0.8448 when pressed. The
-  // glass shaders apply it to the platter and the lens; this filter, to the
-  // tabs over them.
-  static const double _washAmount = 0.8448;
-  final LayerHandle<ColorFilterLayer> _washLayer =
-      LayerHandle<ColorFilterLayer>();
-
-  static ColorFilter _washFilter(double w) {
-    const double r = 0.2126, g = 0.7152, b = 0.0722;
-    final double k = 1 + 0.2 * w, m = -0.2 * w, lift = 0.05 * w * 255;
-    return ColorFilter.matrix(<double>[
-      k + m * r, m * g, m * b, 0, lift, //
-      m * r, k + m * g, m * b, 0, lift,
-      m * r, m * g, k + m * b, 0, lift,
-      0, 0, 0, 1, 0,
-    ]);
-  }
 
   // UIKit's LittleGlowView: a white disk under the finger, blurred, clipped
   // to the platter.
@@ -1005,18 +1051,24 @@ class RenderGlassTabBar extends RenderBox
     }
     if (_contentDirty || _contentAtlas == null) {
       _contentDirty = false;
-      final Rect bounds = Rect.fromLTWH(0, 0, count * _atlasPitch, size.height);
+      // Two rows: the tabs in the selected style, then the normal ones.
+      final Rect bounds = Rect.fromLTWH(
+        0,
+        0,
+        count * _atlasPitch,
+        2 * size.height,
+      );
       final layer = OffsetLayer();
       final context = _AtlasContext(layer, bounds);
       var i = 0;
       RenderBox? child = firstChild;
       while (child != null) {
-        if (i >= count) {
-          context.paintChild(
-            child,
-            Offset((i - count) * _atlasPitch + _atlasMargin, 0),
-          );
-        }
+        context.paintChild(
+          child,
+          i >= count
+              ? Offset((i - count) * _atlasPitch + _atlasMargin, 0)
+              : Offset(i * _atlasPitch + _atlasMargin, size.height),
+        );
         child = childAfter(child);
         i++;
       }
@@ -1180,7 +1232,12 @@ class _BackdropUniforms {
       tabs = shader.getUniformVec4('uTabs'),
       platterTransform = shader.getUniformVec4('uPlatterXf'),
       platterScale = shader.getUniformVec4('uPlatterS'),
-      glow = shader.getUniformVec4('uGlow');
+      glow = shader.getUniformVec4('uGlow'),
+      face = shader.getUniformVec4('uFace'),
+      rim = shader.getUniformVec4('uRim'),
+      lensRim = shader.getUniformVec4('uLensRim'),
+      pill = shader.getUniformVec4('uPill'),
+      selected = shader.getUniformVec4('uSelected');
 
   final ui.FragmentShader shader;
   final ui.UniformVec4Slot pass;
@@ -1195,6 +1252,11 @@ class _BackdropUniforms {
   final ui.UniformVec4Slot platterTransform;
   final ui.UniformVec4Slot platterScale;
   final ui.UniformVec4Slot glow;
+  final ui.UniformVec4Slot face;
+  final ui.UniformVec4Slot rim;
+  final ui.UniformVec4Slot lensRim;
+  final ui.UniformVec4Slot pill;
+  final ui.UniformVec4Slot selected;
 }
 
 /// Paints the tabs into a layer of their own, for the content atlas.

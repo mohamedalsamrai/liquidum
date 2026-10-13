@@ -1,0 +1,37 @@
+Stage 6 (adaptive appearance), 2026-10-13. UIKit = iOS 26.5 simulator, iPhone 17 Pro Max.
+UIKit's adaptive inputs were logged every frame from its tab bar's filters while the
+comparison app changed the background (flat grays, steps, rectangles), with marks
+for when each change was shown.
+
+What UIKit reads: the mean luma (Rec. 709 on the colors) of the backdrop over the
+bar's container grown by the glass's 12.4pt margin (here x 0..440, y 860.6..956),
+read about every frame. The glass's inputs use it rounded to 1/32; the light/dark
+switch uses it as is. (Probes: black under the platter on white 13/32, white
+under it on gray 25/32, left half 11/32, a band above 14/32, below 12/32, beside
+15/32; Liquidum's face black within 0.0003 of UIKit's on all of them.)
+
+Switch (hysteresis): system light: dark below 0.210, light above 0.492.
+                     system dark:  light above 0.867, dark below 0.584.
+  Liquidum switches at the same steps (0x35 / 0x7e; 0xde / 0x94).
+
+Values (L rounded to 1/32):
+  face black 1.032 L - 0.15 (0.1..0.85); white = that + 0.6 (to 1.03 light, 0.9 dark)
+  fill: light white, alpha 0.75 - 0.517 L (0.25..0.6); dark black, 0.25 + 0.367 L (to 0.5)
+  face = 0.97 x mix(luma mapped black..white + chroma, fill, alpha)
+  shadow: light 0.46875 (0.093 + 0.966 fill(L)); dark 0.38125 x 0.093
+  rims (chroma gain, luma weight, lift): platter 1.5,0.1,0.9 / 3.0,1.35,0.15;
+    lens 1.5,0.4374,1.125 / 1.5,0.5,0.75
+  resting pill: 1.2,1.1294,-0.2 / 1.116,0.958,0.135
+  symbols and labels (vibrant, over the glass below them): normal (c-L)+0.1L /
+    (c-L)+0.05L+0.95; selected 0.5c + (-0.5,0.033,0.5) / (0,0.569,1.0)
+
+Timing (white <-> black): UIKit / Liquidum
+  symbols switch     +34..89ms (mean 57) / +59..76ms
+  glass 50%          +0.22..0.25s        / +0.21..0.24s
+  glass 90%          +0.39..0.44s        / +0.38..0.41s
+  glass on a critically damped 0.5s spring, a frame after the symbols; the
+  resting pill on a 0.24s one.
+
+Static comparison (pixel values, UIKit vs Liquidum): gray and dark backgrounds,
+rest and lifted: platter, pill, lens interior, symbols, labels, shadows within
+0-2 levels; edge pixels of glyphs and the lens's top rim band (Stage 5) differ.

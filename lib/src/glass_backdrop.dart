@@ -73,10 +73,13 @@ class GlassBackdropState extends State<GlassBackdrop> {
       await SchedulerBinding.instance.endOfFrame;
     }
     final RenderObject? object = _boundary.currentContext?.findRenderObject();
-    if (object is! RenderRepaintBoundary || !object.attached) {
+    if (object is! _RenderBackdropBoundary || !object.attached) {
       return null;
     }
-    final ui.Image image = await object.toImage(pixelRatio: _ratio);
+    final ui.Image image = await object.snapshot(
+      Offset.zero & object.size,
+      _ratio,
+    );
     try {
       final ByteData? data = await image.toByteData();
       if (data == null) {
@@ -105,10 +108,62 @@ class GlassBackdropState extends State<GlassBackdrop> {
     }
   }
 
+  /// The backdrop's mean luma (Rec. 709 on its colors, 0 to 1) over
+  /// [area], in global logical coordinates, read from a coarse snapshot of
+  /// just that area; null if it cannot be read right now.
+  Future<double?> meanLuma(Rect area, {double ratio = 0.25}) async {
+    final RenderObject? object = _boundary.currentContext?.findRenderObject();
+    if (object is! _RenderBackdropBoundary || !object.attached) {
+      return null;
+    }
+    final Rect local = area
+        .shift(-object.localToGlobal(Offset.zero))
+        .intersect(Offset.zero & object.size);
+    if (local.isEmpty) {
+      return null;
+    }
+    final ui.Image image = await object.snapshot(local, ratio);
+    try {
+      final ByteData? data = await image.toByteData();
+      if (data == null) {
+        return null;
+      }
+      var sum = 0.0;
+      final int n = image.width * image.height;
+      for (var i = 0; i < n * 4; i += 4) {
+        sum +=
+            0.2126 * data.getUint8(i) +
+            0.7152 * data.getUint8(i + 1) +
+            0.0722 * data.getUint8(i + 2);
+      }
+      return n == 0 ? null : sum / n / 255;
+    } finally {
+      image.dispose();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    return RepaintBoundary(key: _boundary, child: widget.child);
+    return _BackdropBoundary(key: _boundary, child: widget.child);
   }
+}
+
+/// A repaint boundary whose layer can be snapshot in part.
+class _BackdropBoundary extends SingleChildRenderObjectWidget {
+  const _BackdropBoundary({super.key, super.child});
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderBackdropBoundary();
+}
+
+class _RenderBackdropBoundary extends RenderProxyBox {
+  @override
+  bool get isRepaintBoundary => true;
+
+  /// [rect] (local) of what was last painted, at [ratio] pixels per point.
+  Future<ui.Image> snapshot(Rect rect, double ratio) =>
+      (layer! as OffsetLayer).toImage(rect, pixelRatio: ratio);
 }
 
 /// Picks light or dark glass for what is behind it, the way iOS bars do: it
@@ -131,11 +186,12 @@ class _GlassBrightnessState extends State<GlassBrightness>
     with SingleTickerProviderStateMixin {
   static const _interval = Duration(milliseconds: 250);
 
-  // Thresholds on average backdrop luminance, measured against iOS 26 tab
-  // bars: they only change appearance over nearly black or nearly white
-  // content. Each pair has a gap so that it does not flicker at the boundary.
-  static const double _enterDark = 0.10, _leaveDark = 0.18;
-  static const double _enterLight = 0.90, _leaveLight = 0.82;
+  // Thresholds on average backdrop luminance, as UIKit's iOS 26.5 tab bar
+  // switches (see GlassAppearance): with the system light, dark below 0.210
+  // and light again above 0.492; with it dark, light above 0.867 and dark
+  // again below 0.584.
+  static const double _enterDark = 0.210, _leaveDark = 0.492;
+  static const double _enterLight = 0.867, _leaveLight = 0.584;
 
   late final AnimationController _dark = AnimationController(
     vsync: this,

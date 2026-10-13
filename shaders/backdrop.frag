@@ -47,6 +47,13 @@ uniform vec4 uTabs;        // first tab's center x, spacing, count, atlas slot p
 uniform vec4 uPlatterXf;   // platter transform: center.xy, drift.xy (points)
 uniform vec4 uPlatterS;    // platter scale.xy, bar height, atlas slot width (points)
 uniform vec4 uGlow;        // fingertip glow: center.xy, 1 / (2 variance) (pixels), peak alpha
+// The adaptive appearance (GlassAppearance): the glass's color inputs as
+// they follow the backdrop's luma and the light or dark appearance.
+uniform vec4 uFace;        // platter face: luma black and white points, fill alpha, fill gray
+uniform vec4 uRim;         // platter rim matrix: chroma gain, luma weight, lift; platter shadow strength
+uniform vec4 uLensRim;     // lens rim matrix: chroma gain, luma weight, lift; symbols' lift
+uniform vec4 uPill;        // resting selection matrix: chroma gain, luma weight, lift; symbols' luma weight
+uniform vec4 uSelected;    // selected symbols: the blue added to half of what is below them
 
 uniform sampler2D uCapture;
 uniform sampler2D uContentAtlas;  // the tabs in the selected style, one per slot
@@ -81,13 +88,13 @@ const float kPlatterInnerHeight = 15.5;
 const float kFrostSharp = 1.0;
 const float kFrostDeep = 2.9;
 const float kFrostFullDepth = 31.0;
-const vec3 kFace = vec3(0.8627, 0.1294, 0.727);
+// Its face color matrix (the luma mapped from a black to a white point, the
+// chroma kept, a fill mixed in; inputs in uFace) sits under the filter's
+// 0.97 SDR holding tone.
+const float kPlatterTone = 0.97;
 // The resting selection blurs the glass behind it again (gaussianBlur,
-// radius 2 at quarter scale), then applies a color matrix (columns: from
-// red, green, blue).
+// radius 2 at quarter scale), then applies a color matrix (uPill).
 const float kRestBlur = 2.22;
-const mat3 kRest = mat3(1.185, -0.015, -0.015, -0.05, 1.15, -0.05, -0.005, -0.005, 1.195);
-const float kRestOffset = -0.2;
 // Lifted content (UIKit's contentWrapperDisplacement): the selected tabs, seen
 // in the lens, are lensed by two displacement maps of this amount at full
 // lift (one of height 11.2, then one of height 14 in the material), each
@@ -101,29 +108,26 @@ const float kContentGrowth = 0.16;
 // times the lift progress.
 const float kMaterialFade = 4.0;
 
-// ---- Lighting, UIKit's light appearance.
+// ---- Lighting.
 
 // Rim (CASDFKeyFillHighlightEffect): a key light from up-left and a fill
 // from down-right at equal amounts light a 1pt band inside the edge by
 // |n.l|, fading toward its inner side by the effect's curvature (platter
 // 0.7, lens 0.8); measured alpha = |n.l| (1 - curvature u), u the depth
 // over the band, within 1-4% of UIKit's rim at every angle. Its vibrant
-// color matrix pushes what is below toward 1.5x its chroma plus a weight of
-// its luma and a lift: (luma weight, lift).
+// color matrix (uRim, uLensRim) pushes what is below toward a gain of its
+// chroma plus a weight of its luma and a lift.
 const vec2 kLight = vec2(0.70710678, 0.70710678);
 const float kRimHeight = 1.0;
 const float kPlatterRimCurvature = 0.7;
 const float kLensRimCurvature = 0.8;
-const vec2 kPlatterRim = vec2(0.1, 0.9);
-const vec2 kLensRim = vec2(0.4374, 1.125);
 // Shadows (glassBackground): outside the glass, what is below is multiplied
 // by 1 - strength * (a gaussian edge of the outline moved down); the edge's
 // sigma is 0.685 of the filter's shadow radius. (offset, sigma, center) in
 // points. The strength is opacity * (0.093 + 0.966 fill): the lens's fill
-// is black; the platter's adapts to the backdrop's luma (shadowFill). Both
-// fit UIKit's within 0.3 levels; the platter's stops where its SDF does.
+// is black; the platter's adapts to the backdrop (uRim.w). Both fit UIKit's
+// within 0.3 levels; the platter's stops where its SDF does.
 const vec3 kPlatterShadow = vec3(8.0, 16.4, 0.85);
-const float kPlatterShadowOpacity = 0.46875;
 const float kPlatterShadowReach = 39.06;
 const vec3 kLensShadow = vec3(7.0, 5.49, 0.05);
 const float kLensShadowStrength = 0.1086;
@@ -223,9 +227,17 @@ vec3 frost(vec2 p, float sigma, int taps) {
   return sum / total;
 }
 
+// The platter's face over its frosted backdrop c.
 vec3 face(vec3 c) {
   float l = dot(c, kLuma);
-  return clamp(kFace.x + kFace.y * l + kFace.z * (c - l), 0.0, 1.0);
+  vec3 f = uFace.x + (uFace.y - uFace.x) * l + (c - l);
+  return clamp(kPlatterTone * mix(f, vec3(uFace.w), uFace.z), 0.0, 1.0);
+}
+
+// A vibrant color matrix (chroma gain, luma weight, lift) applied to c.
+vec3 vibrant(vec3 c, vec3 m) {
+  float l = dot(c, kLuma);
+  return clamp(m.x * (c - l) + m.y * l + m.z, 0.0, 1.0);
 }
 
 // The platter's glass at p (inside it), blurred by `extra` points more (for
@@ -246,7 +258,7 @@ vec3 platter(vec2 p, int taps, float extra) {
 
 // The lit rim over color c at p, for glass shaped `shape` scaled by k pixels
 // per point: c pushed toward the rim's vibrant color by the rim's alpha.
-vec3 rim(vec3 c, vec2 p, vec4 shape, float k, float curvature, vec2 matrix, float amount) {
+vec3 rim(vec3 c, vec2 p, vec4 shape, float k, float curvature, vec3 matrix, float amount) {
   float depth = max(-capsule(p, shape), 0.0) / k;
   if (amount <= 0.0 || depth >= kRimHeight + 0.5 / k) {
     return c;
@@ -255,9 +267,7 @@ vec3 rim(vec3 c, vec2 p, vec4 shape, float k, float curvature, vec2 matrix, floa
   float alpha = abs(dot(outward(p, shape, 0.0), kLight)) * (1.0 - curvature * u);
   // The band ends within half a pixel.
   alpha *= clamp((kRimHeight - depth) * k * 2.0 + 0.5, 0.0, 1.0);
-  float l = dot(c, kLuma);
-  vec3 lit = clamp(1.5 * (c - l) + matrix.x * l + matrix.y, 0.0, 1.0);
-  return mix(c, lit, alpha * amount);
+  return mix(c, vibrant(c, matrix), alpha * amount);
 }
 
 // erfc(x) / 2 for a gaussian edge: Abramowitz and Stegun 7.1.26.
@@ -278,30 +288,6 @@ float shade(vec2 p, vec4 shape, float k, vec3 shadow, float reach) {
   return gaussEdge((d - shadow.z) / shadow.y);
 }
 
-// The platter shadow's fill opacity over a backdrop of luma l (UIKit, light
-// appearance, over flat backdrops): 0.3 up to 0.385, less over brighter
-// ones, and 0.05 over nearly white ones.
-float shadowFill(float l) {
-  return l > 0.935 ? 0.05 : 0.3 - 0.224 * max(l - 0.385, 0.0);
-}
-
-// The platter shadow's strength over this backdrop.
-float backdropLuma();
-float platterShadowStrength() {
-  return kPlatterShadowOpacity * (0.093 + 0.966 * shadowFill(backdropLuma()));
-}
-
-// The backdrop's luma under the platter: its capture averaged over a grid.
-float backdropLuma() {
-  float sum = 0.0;
-  for (int i = 0; i < 8; i++) {
-    for (int j = 0; j < 2; j++) {
-      vec2 f = vec2((float(i) + 0.5) / 8.0, (float(j) + 0.5) / 2.0) * 2.0 - 1.0;
-      sum += dot(capture(uPlatter.xy + f * uPlatter.zw), kLuma);
-    }
-  }
-  return sum / 16.0;
-}
 
 // The press wash over color c, which UIKit clips to white.
 vec3 wash(vec3 c, float amount) {
@@ -324,7 +310,7 @@ float gPlatterShadow = 0.0;
 vec3 litPlatter(vec2 p, int taps, float extra) {
   vec3 c = platter(p, taps, extra);
   if (stage(kRimStage)) {
-    c = rim(c, p, uPlatter, uPass.z * uOptics.z, kPlatterRimCurvature, kPlatterRim, 1.0);
+    c = rim(c, p, uPlatter, uPass.z * uOptics.z, kPlatterRimCurvature, uRim.xyz, 1.0);
   }
   if (stage(kPressStage)) {
     c = wash(c, kWash * uTouch.w);
@@ -406,7 +392,7 @@ vec3 base(vec2 q, float lift, int taps) {
     vec3 behind = stage(kPlatterStage) && capsule(s, uPlatter) < 0.0
                       ? litPlatter(s, 32, kRestBlur)
                       : frost(s, kRestBlur * k, 32);
-    vec3 rest = clamp(kRest * behind + kRestOffset, 0.0, 1.0);
+    vec3 rest = vibrant(behind, uPill.xyz);
     w = mix(rest, w, lift);
   }
   return w;
@@ -414,49 +400,56 @@ vec3 base(vec2 q, float lift, int taps) {
 
 // ---- Lifted content.
 
-// The tabs in the selected style at x (capture pixels), as laid out in the
-// platter, each scaled about its center by the lift (premultiplied).
-vec4 content(vec2 x, float lift) {
+// The tabs' symbols and labels at x (capture pixels), as laid out in the
+// platter, each grown about its center by `grow`: their coverage, from the
+// atlas's row of selected tabs (0) or of normal ones (1). UIKit renders them
+// as templates through vibrant color matrices, so only the shapes count.
+float glyphs(vec2 x, float grow, float row) {
   vec2 b = (x - uContent.xy) / uPass.z;
   vec2 u = uPlatterXf.xy + (b - uPlatterXf.xy - uPlatterXf.zw) / uPlatterS.xy;
   float first = uTabs.x, spacing = uTabs.y, count = uTabs.z, pitch = uTabs.w;
   float width = uPlatterS.w, height = uPlatterS.z;
   float nearest = spacing > 0.0 ? floor((u.x - first) / spacing + 0.5) : 0.0;
-  vec4 sum = vec4(0.0);
+  float sum = 0.0;
   for (int j = -1; j <= 1; j++) {
     float i = nearest + float(j);
     if (i < 0.0 || i >= count) {
       continue;
     }
     vec2 center = vec2(first + i * spacing, height * 0.5);
-    float grow = stage(kContentStage) ? 1.0 + kContentGrowth * lift : 1.0;
     vec2 v = center + (u - center) / grow;
     float local = v.x - (center.x - width * 0.5);
     if (local < 0.0 || local > width || v.y < 0.0 || v.y > height) {
       continue;
     }
-    vec4 t = texture(uContentAtlas, texel(vec2(i * pitch + local, v.y), uContent.zw));
-    sum = t + sum * (1.0 - t.a);
+    float a = texture(uContentAtlas,
+                      texel(vec2(i * pitch + local, v.y + row * height), uContent.zw)).a;
+    sum = a + sum * (1.0 - a);
   }
   return sum;
 }
 
+// The selected tabs, each grown by the lift.
+float content(vec2 x, float lift) {
+  return glyphs(x, stage(kContentStage) ? 1.0 + kContentGrowth * lift : 1.0, 0.0);
+}
+
 // The content as the lens shows it directly: clipped to the lens and lensed
 // once (UIKit's ClearGlassView).
-vec4 contentLensed(vec2 q, float lift) {
+float contentLensed(vec2 q, float lift) {
   if (!stage(kContentStage)) {
-    return capsule(q, uLens) < 0.0 ? content(q, lift) : vec4(0.0);
+    return capsule(q, uLens) < 0.0 ? content(q, lift) : 0.0;
   }
   float k = uPass.z * uOptics.y;
   float depth = max(-capsule(q, uLens), 0.0);
   vec2 s = q - outward(q, uLens, uPass.w) * kContentLens * k * lift *
                    sag(depth, kContentLensHeight * k);
-  return capsule(s, uLens) < 0.0 ? content(s, lift) : vec4(0.0);
+  return capsule(s, uLens) < 0.0 ? content(s, lift) : 0.0;
 }
 
 // The content as the lens's material shows it: lensed once more
 // (ContentLensingView).
-vec4 contentInMaterial(vec2 p, float lift) {
+float contentInMaterial(vec2 p, float lift) {
   if (!stage(kContentStage)) {
     return contentLensed(p, lift);
   }
@@ -467,8 +460,16 @@ vec4 contentInMaterial(vec2 p, float lift) {
   return contentLensed(r, lift);
 }
 
-vec3 over(vec4 top, vec3 under) {
-  return top.rgb + under * (1.0 - top.a);
+// Selected symbols of coverage a over what is below them: half of it plus
+// a blue (the selected vibrant matrix).
+vec3 selectedOver(float a, vec3 under) {
+  return mix(under, clamp(0.5 * under + uSelected.rgb, 0.0, 1.0), a);
+}
+
+// Normal symbols of coverage a over what is below them: its chroma at a
+// luma weight plus a lift.
+vec3 symbolsOver(float a, vec3 under) {
+  return mix(under, vibrant(under, vec3(1.0, uPill.w, uLensRim.w)), a);
 }
 
 
@@ -515,8 +516,10 @@ void main() {
     if (a > 0.0) {
       c = stage(kPlatterStage) ? platter(p, 64, 0.0) : capture(p);
       if (stage(kRimStage)) {
-        c = rim(c, p, uPlatter, kp, kPlatterRimCurvature, kPlatterRim, 1.0);
+        c = rim(c, p, uPlatter, kp, kPlatterRimCurvature, uRim.xyz, 1.0);
       }
+      // The normal tabs (under the lens, the lens covers them).
+      c = symbolsOver(glyphs(p, 1.0, 1.0), c);
       if (stage(kPressStage)) {
         c = wash(c, kWash * uTouch.w);
       }
@@ -533,7 +536,7 @@ void main() {
     float shaded = 0.0;
     if (a < 1.0) {
       float s = shade(p, uPlatter, kp, kPlatterShadow, kPlatterShadowReach);
-      shaded = s > 0.0 ? platterShadowStrength() * s : 0.0;
+      shaded = uRim.w * s;
     }
     if (a <= 0.0 && shaded <= 0.0) {
       fragColor = vec4(0.0);
@@ -563,19 +566,19 @@ void main() {
     float depth = max(-d, 0.0);
     vec2 sg = lensSource(p, lift);
     if (stage(kShadowStage)) {
-      gPlatterShadow = platterShadowStrength();
+      gPlatterShadow = uRim.w;
     }
     float tone = stage(kInnerStage) ? kLensTone : 1.0;
     // The material fades in quickly as the lens lifts (UIKit's opacityPair),
     // over the base: the resting selection over the warped backdrop.
     // Below the material: the base with the content over it, lensed once.
-    vec3 c = fade < 1.0 ? over(contentLensed(p, lift), base(p, lift, 32)) : vec3(0.0);
+    vec3 c = fade < 1.0 ? selectedOver(contentLensed(p, lift), base(p, lift, 32)) : vec3(0.0);
     if (fade > 0.0) {
       // The material: the base seen through the inner refraction, the
       // content (lensed again) over it, all dispersed near the edge. A tap
       // past the lens's outline reads the unwarped backdrop, as UIKit's warp
       // is clipped to the outline.
-      vec3 glass = over(contentInMaterial(p, lift),
+      vec3 glass = selectedOver(contentInMaterial(p, lift),
                         base(innerSource(p), lift, 32) * tone);
       float spread = clamp(1.0 - depth / (kAberrationDepth * k), 0.0, 1.0);
       if (spread > 0.0 && stage(kDispersionStage)) {
@@ -587,7 +590,7 @@ void main() {
           vec3 w = vec3(max(t, 0.0) * 0.5, (1.0 - abs(t)) / 3.0, max(-t, 0.0) * 0.5);
           vec2 at = clamp(p + v * t, texels.xy, texels.zw);
           vec3 s = i == 3 ? glass
-                          : over(contentInMaterial(at, lift),
+                          : selectedOver(contentInMaterial(at, lift),
                                  capsule(at, uLens) < 0.0
                                      ? base(innerSource(at), lift, 16) * tone
                                      : below(at, vec2(1.0, 0.0), vec2(0.0, 1.0), 16));
@@ -598,7 +601,7 @@ void main() {
       c = mix(c, glass, fade);
     }
     if (stage(kRimStage)) {
-      c = rim(c, p, uLens, k, kLensRimCurvature, kLensRim, fade);
+      c = rim(c, p, uLens, k, kLensRimCurvature, uLensRim.xyz, fade);
     }
     if (diagnostic) {
       // Pixels showing content from outside the lens.

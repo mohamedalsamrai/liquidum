@@ -25,6 +25,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:flutter/services.dart';
 import 'package:liquidum/liquidum.dart';
 
 import 'native_tab_bar.dart';
@@ -54,6 +55,9 @@ Future<void> main() async {
   final Set<String> flags = config.skip(2).toSet();
   if (flags.contains('log')) {
     _StateLog.start();
+  }
+  if (flags.contains('adaptlog')) {
+    _AdaptLog.start();
   }
   final String? view = flags
       .where((String f) => f.startsWith('view='))
@@ -87,6 +91,41 @@ Future<void> main() async {
       shareBackdrop: !flags.contains('noshare'),
     ),
   );
+}
+
+/// Writes the appearance's inputs, as they change, to `<tmp>/liqadapt.txt`,
+/// with the background changes (the `adaptlog` flag).
+abstract final class _AdaptLog {
+  static final List<String> lines = <String>[];
+  static final Stopwatch _clock = Stopwatch()..start();
+  static String _last = '';
+
+  static String get _now =>
+      (_clock.elapsedMicroseconds / 1e6).toStringAsFixed(4);
+
+  static void mark(String text) => lines.add('$_now MARK $text');
+
+  static void start() {
+    final file = File('${Directory.systemTemp.path}/liqadapt.txt');
+    GlassAppearance.debugOnChange = (GlassAppearance a, String event) {
+      final (double black, double white, double fill, double gray) = a.face;
+      final String text =
+          'face ${black.toStringAsFixed(4)},${white.toStringAsFixed(4)} '
+          'fill ${gray.toStringAsFixed(3)},${fill.toStringAsFixed(3)} '
+          'icon ${a.isDark ? 'dark' : 'light'} '
+          'pill ${a.pill.$1.toStringAsFixed(3)}';
+      if (event != 'tick') {
+        lines.add('$_now $event');
+      }
+      if (text != _last) {
+        _last = text;
+        lines.add('$_now $text');
+      }
+    };
+    Timer.periodic(const Duration(seconds: 1), (_) {
+      file.writeAsStringSync('${lines.join('\n')}\n');
+    });
+  }
 }
 
 /// Writes the bar's state every frame to `<tmp>/liqlog.txt`, in the format
@@ -191,11 +230,53 @@ class _ComparisonAppState extends State<ComparisonApp>
     }
   }
 
+  // A background that steps through flat grays ("steps:<ms>:<hex>,<hex>,..."),
+  // telling the native side (channel liquidum/marks) when each is shown.
+  Timer? _steps;
+  int _step = 0;
+  static const _marks = MethodChannel('liquidum/marks');
+
+  String get _background {
+    final String kind = widget.background;
+    if (kind.startsWith('seq:')) {
+      // "seq:<ms>:<kind>|<kind>|...": any backgrounds, in turn.
+      final List<String> kinds = kind.split(':')[2].split('|');
+      return kinds[_step % kinds.length];
+    }
+    if (!kind.startsWith('steps:')) {
+      return kind;
+    }
+    final List<String> values = kind.split(':')[2].split(',');
+    return 'flat-${values[_step % values.length]}';
+  }
+
+  void _startSteps() {
+    final List<String> parts = widget.background.split(':');
+    final int count = parts[2].split(parts[0] == 'seq' ? '|' : ',').length;
+    void mark() => SchedulerBinding.instance.addPostFrameCallback((_) {
+      _AdaptLog.mark(_background);
+      _marks.invokeMethod<void>('mark', _background).catchError((_) {});
+    });
+    mark();
+    _steps = Timer.periodic(Duration(milliseconds: int.parse(parts[1])), (_) {
+      if (_step + 1 >= count * 2) {
+        _steps?.cancel();
+        return;
+      }
+      setState(() => _step++);
+      mark();
+    });
+  }
+
   @override
   void initState() {
     super.initState();
     // Sees every pointer, including those that go on to a platform view.
     GestureBinding.instance.pointerRouter.addGlobalRoute(_track);
+    if (widget.background.startsWith('steps:') ||
+        widget.background.startsWith('seq:')) {
+      _startSteps();
+    }
   }
 
   void _track(PointerEvent event) {
@@ -215,6 +296,7 @@ class _ComparisonAppState extends State<ComparisonApp>
   @override
   void dispose() {
     GestureBinding.instance.pointerRouter.removeGlobalRoute(_track);
+    _steps?.cancel();
     _clock.dispose();
     _clockMs.dispose();
     _finger.dispose();
@@ -240,7 +322,7 @@ class _ComparisonAppState extends State<ComparisonApp>
       children: <Widget>[
         Positioned.fill(
           child: GlassBackdrop(
-            child: CustomPaint(painter: _Background(widget.background, origin)),
+            child: CustomPaint(painter: _Background(_background, origin)),
           ),
         ),
         Positioned(
@@ -450,6 +532,32 @@ class _Background extends CustomPainter {
         canvas.drawColor(const Color(0xFF15171C), BlendMode.src);
       case 'white':
         canvas.drawColor(_white, BlendMode.src);
+      case final String rects when rects.startsWith('rects-'):
+        // "rects-<bg>-<fg>-<l>,<t>,<w>,<h>+...": rectangles on a flat color.
+        final List<String> p = rects.split('-');
+        canvas.drawColor(
+          Color(0xFF000000 | int.parse(p[1], radix: 16)),
+          BlendMode.src,
+        );
+        final paint = Paint()
+          ..color = Color(0xFF000000 | int.parse(p[2], radix: 16));
+        for (final String spec in p[3].split('+')) {
+          final List<double> r = spec.split(',').map(double.parse).toList();
+          canvas.drawRect(Rect.fromLTWH(r[0], r[1], r[2], r[3]), paint);
+        }
+      case final String rect when rect.startsWith('rect-'):
+        // "rect-<bg>-<fg>-<l>,<t>,<w>,<h>": a rectangle on a flat color.
+        final List<String> p = rect.split('-');
+        final List<double> r = p[3].split(',').map(double.parse).toList();
+        canvas
+          ..drawColor(
+            Color(0xFF000000 | int.parse(p[1], radix: 16)),
+            BlendMode.src,
+          )
+          ..drawRect(
+            Rect.fromLTWH(r[0], r[1], r[2], r[3]),
+            Paint()..color = Color(0xFF000000 | int.parse(p[2], radix: 16)),
+          );
       case final String flat when flat.startsWith('flat-'):
         canvas.drawColor(
           Color(0xFF000000 | int.parse(flat.substring(5), radix: 16)),

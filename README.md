@@ -18,7 +18,11 @@ backgrounds.
   under a surface then measures that content and switches between light and
   dark glass the way iOS bars do. It follows the system appearance, except
   over nearly black content (light glass turns dark) or nearly white content
-  (dark glass turns light).
+  (dark glass turns light). `GlassTabBar` reads the content under it the same
+  way and adapts as UIKit's tab bar does: its glass, symbols and labels take
+  their colors from that content, and it switches between its light and dark
+  appearances at UIKit's thresholds. Without a `GlassBackdrop` under it, it
+  follows the system appearance.
 - **`shaders/glass.frag`**: one backdrop pass. It computes:
   - the shape from an SDF;
   - inward refraction that is strongest at the rim, where it folds into a
