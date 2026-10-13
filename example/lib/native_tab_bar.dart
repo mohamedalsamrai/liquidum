@@ -19,6 +19,10 @@ class NativeTabBar extends StatefulWidget {
   /// Room for the bar, its bottom margin, and the lens rising above it.
   static const double height = 110;
 
+  /// Whether Apple's bar exists here: only on iOS.
+  static bool get isAvailable =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
+
   final List<TabSpec> items;
   final int selectedIndex;
   final ValueChanged<int> onSelected;

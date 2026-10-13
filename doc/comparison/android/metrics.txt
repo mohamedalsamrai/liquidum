@@ -1,0 +1,83 @@
+Android emulator (Impeller OpenGLES, 2.625 px/pt) vs iOS simulator (Metal, 3 px/pt), 2026-10-13.
+Same bar geometry and background in reference points; iOS sampled at each Android pixel center.
+Per-pixel max channel difference (0-255) over the bar and lifted lens; sheets: Android / iOS / difference x4.
+
+s1_rest            liquidum gray
+    s1_rest                mean  4.26  median  0.00  p95   2.92  p99 180.18  >16:  3.41%
+s1_home            liquidum gray hold=57.75
+    s1_home                mean  5.71  median  0.00  p95  13.00  p99 197.02  >16:  4.60%
+s1_mid             liquidum gray hold=104.8
+    s1_mid                 mean  5.89  median  0.00  p95  18.64  p99 195.00  >16:  5.31%
+s1_field           liquidum gray view=field hold=104.8
+    s1_field               mean  5.00  median  0.00  p95  18.21  p99 182.00  >16:  5.46%
+s1_normals         liquidum gray view=normals hold=104.8
+    s1_normals             mean  4.26  median  0.00  p95   9.29  p99 161.88  >16:  3.75%
+s2_sampling        liquidum saw view=sampling hold=104.8
+    s2_sampling            mean  9.88  median  1.00  p95  58.30  p99 127.71  >16: 14.62%
+s2_noshare         liquidum blocks noshare hold=104.8
+    s2_noshare             mean  6.74  median  0.00  p95  23.00  p99 211.93  >16:  6.57%
+s2_identity        liquidum saw optics=0 bare hold=104.8
+    s2_identity            mean  4.77  median  1.19  p95   3.82  p99 127.50  >16:  3.17%
+s2_identity_rest   liquidum saw optics=0 bare
+    s2_identity_rest       mean  4.77  median  1.16  p95   3.84  p99 127.50  >16:  3.09%
+s3_warp            liquidum saw optics=1 bare hold=104.8
+    s3_warp                mean  4.38  median  1.16  p95   3.36  p99 127.50  >16:  2.99%
+s3_inner           liquidum saw optics=3 bare hold=104.8
+    s3_inner               mean  4.38  median  1.01  p95   3.46  p99 127.50  >16:  3.11%
+s3_disp            liquidum saw optics=7 bare hold=104.8
+    s3_disp                mean  4.37  median  1.01  p95   3.61  p99 127.50  >16:  3.29%
+s3_all_saw         liquidum saw optics=31 bare hold=104.8
+    s3_all_saw             mean  3.03  median  0.86  p95   9.00  p99  34.04  >16:  3.05%
+s3_rest_saw        liquidum saw optics=31 bare
+    s3_rest_saw            mean  2.58  median  0.85  p95   6.07  p99  21.78  >16:  1.27%
+s3_blocks          liquidum blocks optics=31 bare hold=104.8
+    s3_blocks              mean  1.00  median  0.00  p95   3.87  p99  21.07  >16:  1.70%
+s3_grid            liquidum grid optics=31 bare hold=104.8
+    s3_grid                mean  2.48  median  0.81  p95  10.00  p99  45.79  >16:  4.20%
+s3_vstripe8        liquidum vstripe8 optics=31 bare hold=104.8
+    s3_vstripe8            mean  1.18  median  0.36  p95   2.41  p99  25.04  >16:  1.70%
+s3_hstripe8        liquidum hstripe8 optics=31 bare hold=104.8
+    s3_hstripe8            mean  1.20  median  0.36  p95   2.86  p99  26.00  >16:  1.67%
+s3_lift25          liquidum blocks optics=31 bare hold=104.8 lift=0.25
+    s3_lift25              mean  0.79  median  0.00  p95   3.21  p99  21.07  >16:  1.31%
+s3_lift50          liquidum blocks optics=31 bare hold=104.8 lift=0.5
+    s3_lift50              mean  0.90  median  0.00  p95   3.57  p99  21.07  >16:  1.62%
+s3_rest_blocks     liquidum blocks optics=31 bare
+    s3_rest_blocks         mean  0.49  median  0.00  p95   2.50  p99   9.21  >16:  0.11%
+s4_blocks_home     liquidum blocks hold=57.75
+    s4_blocks_home         mean  6.68  median  0.00  p95  21.36  p99 213.55  >16:  5.98%
+s4_blocks_mid      liquidum blocks hold=199
+    s4_blocks_mid          mean  5.81  median  0.00  p95  22.53  p99 158.86  >16:  6.66%
+s4_gray_radio      liquidum gray hold=246
+    s4_gray_radio          mean  6.07  median  0.00  p95  13.50  p99 207.46  >16:  4.66%
+s4_dark_mid        liquidum dark hold=104.8
+    s4_dark_mid            mean  5.93  median  0.00  p95  23.25  p99 185.86  >16:  6.94%
+
+Stage 1, real touches (adb), lens anchor minus finger:
+    frames 1241  with touch 929
+    held+lifted frames: 901
+    lens center - finger (pt), lifted frames: median 0.0000  max |err| 2.9157 (excluding clamp at bar ends)
+      frames where lens is held at the bar end: 249  finger x range 402.8571 423.8095  lens cx 374.8935 376.15681260829143
+    
+    flex during moves (finger speed pt/s -> lens stretch sx, squash sy):
+      t 2071.653-2071.653: frames   1, peak speed    1487 pt/s, peak sx 1.0713 / min sx 0.9636, sy at peak 0.8812
+      t 2074.204-2074.204: frames   1, peak speed    1716 pt/s, peak sx 1.0826 / min sx 0.9572, sy at peak 0.8624
+      t 2077.104-2077.104: frames   1, peak speed    3442 pt/s, peak sx 1.0849 / min sx 0.9543, sy at peak 0.8585
+      t 2080.253-2080.253: frames   1, peak speed    1716 pt/s, peak sx 1.0988 / min sx 0.9577, sy at peak 0.8354
+      t 2082.587-2082.587: frames   1, peak speed    3422 pt/s, peak sx 1.0850 / min sx 0.9562, sy at peak 0.8584
+      t 2084.720-2084.720: frames   1, peak speed    2737 pt/s, peak sx 1.0127 / min sx 0.9930, sy at peak 0.9789
+      t 2087.454-2087.454: frames   1, peak speed     629 pt/s, peak sx 1.0006 / min sx 0.9997, sy at peak 0.9990
+      t 2091.287-2091.354: frames   4, peak speed    2601 pt/s, peak sx 1.1750 / min sx 0.8510, sy at peak 0.7300
+      t 2093.020-2093.187: frames   7, peak speed    2555 pt/s, peak sx 1.1532 / min sx 0.7785, sy at peak 1.2166
+    
+    lens center range while held: 79.04 .. 376.16
+    finger inside that range: 652 frames, lens - finger: median +0.0000, max |err| 2.9157
+      of which finger moving > 500 pt/s: 5 frames, max |err| 0.0000
+      t 2069.587 finger 79.048 lens 79.036 lift 0.992
+      t 2095.204 finger 208.267 lens 205.351 lift 0.991
+      t 2095.237 finger 208.609 lens 207.971 lift 0.996
+      t 2095.270 finger 209.054 lens 209.472 lift 0.998
+      t 2095.303 finger 209.511 lens 210.295 lift 0.999
+      t 2095.320 finger 209.727 lens 210.547 lift 0.999
+      t 2095.337 finger 209.880 lens 210.679 lift 1.000
+      t 2095.354 finger 210.146 lens 210.889 lift 1.000

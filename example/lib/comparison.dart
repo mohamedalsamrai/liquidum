@@ -8,6 +8,11 @@
 // (no tab content), `optics=<mask>` (GlassTabBarOptics stages) and
 // `lift=<progress>` (the optics at a fixed lift).
 //
+// The bar and background are laid out as on the reference screen (the
+// iPhone 17 Pro Max the bars were compared on): on any other screen the bar
+// keeps its size, centered, and the background moves with it, so captures
+// from different devices compare point for point.
+//
 // A marker in a clear band above the bar shows where the finger is, so each
 // recorded frame can be measured against the finger. Below it, a 12-bit code
 // gives the milliseconds since the touch began, on the frame clock the bar
@@ -26,11 +31,16 @@ import 'native_tab_bar.dart';
 import 'sf_symbol.dart';
 import 'tabs.dart';
 
+/// The screen the bar was compared with UIKit's on, and the bar's margin
+/// there.
+const Size referenceScreen = Size(440, 956);
+const double barMargin = 21;
+
 /// Top of the marker band, measured up from the bottom of the screen.
 const double markerBandBottom = 21 + 62 + 40;
 const double markerBandHeight = 24;
 
-/// Top of the clock code, measured down from the top of the screen.
+/// Top of the clock code, measured down from the top of the reference screen.
 const double clockTop = 838;
 
 Future<void> main() async {
@@ -83,7 +93,10 @@ Future<void> main() async {
 /// x 21, y 873).
 abstract final class _StateLog {
   static final List<String> _lines = <String>[];
-  static const Offset _bar = Offset(21, 873);
+  static final Offset _bar = Offset(
+    barMargin,
+    referenceScreen.height - barMargin - GlassTabBar.height,
+  );
 
   static void start() {
     final file = File('${Directory.systemTemp.path}/liqlog.txt');
@@ -206,62 +219,70 @@ class _ComparisonAppState extends State<ComparisonApp>
   Widget build(BuildContext context) {
     return CupertinoApp(
       debugShowCheckedModeBanner: false,
-      home: Stack(
-        children: <Widget>[
-          Positioned.fill(
-            child: GlassBackdrop(
-              child: CustomPaint(painter: _Background(widget.background)),
-            ),
+      home: Builder(builder: _buildHome),
+    );
+  }
+
+  Widget _buildHome(BuildContext context) {
+    final Size screen = MediaQuery.sizeOf(context);
+    // Where the reference screen's origin lies on this one.
+    final origin = Offset(
+      (screen.width - referenceScreen.width) / 2,
+      screen.height - referenceScreen.height,
+    );
+    return Stack(
+      children: <Widget>[
+        Positioned.fill(
+          child: GlassBackdrop(
+            child: CustomPaint(painter: _Background(widget.background, origin)),
           ),
+        ),
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: markerBandBottom,
+          height: markerBandHeight,
+          child: CustomPaint(painter: _Marker(_finger)),
+        ),
+        Positioned(
+          left: 0,
+          top: origin.dy + clockTop,
+          width: 4 + 12 * 8,
+          height: 8,
+          child: CustomPaint(painter: _ClockCode(_clockMs)),
+        ),
+        if (widget.apple)
           Positioned(
             left: 0,
             right: 0,
-            bottom: markerBandBottom,
-            height: markerBandHeight,
-            child: CustomPaint(painter: _Marker(_finger)),
-          ),
-          Positioned(
-            left: 0,
-            top: clockTop,
-            width: 4 + 12 * 8,
-            height: 8,
-            child: CustomPaint(painter: _ClockCode(_clockMs)),
-          ),
-          if (widget.apple)
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              height: NativeTabBar.height,
-              child: NativeTabBar(
-                items: tabs,
-                selectedIndex: _selected,
-                onSelected: (int i) => setState(() => _selected = i),
-              ),
-            )
-          else
-            Positioned(
-              left: 21,
-              right: 21,
-              bottom: 21,
-              child: GlassTabBar(
-                items: [for (final TabSpec t in tabs) t.glassItem],
-                selectedIndex: _selected,
-                onSelected: (int i) => setState(() => _selected = i),
-                debugView: widget.view,
-                debugShareBackdrop: widget.shareBackdrop,
-                debugHold: widget.hold == null
-                    ? null
-                    : Offset(widget.hold!, 31),
-                debugHideContent: widget.bare,
-                debugOptics: widget.optics,
-                debugLift: widget.lift,
-                // Above the marker band and the clock code.
-                debugInspector: const Rect.fromLTWH(0, -380, 398, 300),
-              ),
+            bottom: 0,
+            height: NativeTabBar.height,
+            child: NativeTabBar(
+              items: tabs,
+              selectedIndex: _selected,
+              onSelected: (int i) => setState(() => _selected = i),
             ),
-        ],
-      ),
+          )
+        else
+          Positioned(
+            left: origin.dx + barMargin,
+            width: referenceScreen.width - 2 * barMargin,
+            bottom: barMargin,
+            child: GlassTabBar(
+              items: [for (final TabSpec t in tabs) t.glassItem],
+              selectedIndex: _selected,
+              onSelected: (int i) => setState(() => _selected = i),
+              debugView: widget.view,
+              debugShareBackdrop: widget.shareBackdrop,
+              debugHold: widget.hold == null ? null : Offset(widget.hold!, 31),
+              debugHideContent: widget.bare,
+              debugOptics: widget.optics,
+              debugLift: widget.lift,
+              // Above the marker band and the clock code.
+              debugInspector: const Rect.fromLTWH(0, -380, 398, 300),
+            ),
+          ),
+      ],
     );
   }
 }
@@ -314,17 +335,21 @@ class _ClockCode extends CustomPainter {
   bool shouldRepaint(_ClockCode oldDelegate) => false;
 }
 
+/// One of the calibration backgrounds, drawn in the reference screen's
+/// coordinates with their origin at [origin].
 class _Background extends CustomPainter {
-  const _Background(this.kind);
+  const _Background(this.kind, this.origin);
 
   final String kind;
+  final Offset origin;
 
   static const _black = Color(0xFF000000);
   static const _white = Color(0xFFFFFFFF);
 
   @override
   void paint(Canvas canvas, Size size) {
-    final double w = size.width, h = size.height;
+    canvas.translate(origin.dx, origin.dy);
+    final double w = referenceScreen.width, h = referenceScreen.height;
     switch (kind) {
       case 'stripes':
         for (var i = 0; i < 44; i++) {
@@ -355,7 +380,7 @@ class _Background extends CustomPainter {
         }
       case 'rampx':
         canvas.drawRect(
-          Offset.zero & size,
+          Offset.zero & referenceScreen,
           Paint()
             ..shader = ui.Gradient.linear(Offset.zero, Offset(w, 0), <Color>[
               _black,
@@ -383,7 +408,7 @@ class _Background extends CustomPainter {
         // Position code: red rises over every 32pt in x, green over
         // every 32pt in y.
         canvas.drawRect(
-          Offset.zero & size,
+          Offset.zero & referenceScreen,
           Paint()
             ..shader = ui.Gradient.linear(
               Offset.zero,
@@ -394,7 +419,7 @@ class _Background extends CustomPainter {
             ),
         );
         canvas.drawRect(
-          Offset.zero & size,
+          Offset.zero & referenceScreen,
           Paint()
             ..blendMode = BlendMode.plus
             ..shader = ui.Gradient.linear(
@@ -431,5 +456,6 @@ class _Background extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_Background oldDelegate) => oldDelegate.kind != kind;
+  bool shouldRepaint(_Background oldDelegate) =>
+      oldDelegate.kind != kind || oldDelegate.origin != origin;
 }

@@ -71,19 +71,20 @@ class _HomePageState extends State<HomePage> {
                 onSelected: _select,
               ),
             ),
-          Positioned(
-            top: MediaQuery.paddingOf(context).top + 8,
-            right: 16,
-            child: CupertinoSlidingSegmentedControl<bool>(
-              groupValue: _native,
-              onValueChanged: (bool? native) =>
-                  setState(() => _native = native ?? false),
-              children: const <bool, Widget>{
-                false: Text('Liquidum'),
-                true: Text('Apple'),
-              },
+          if (NativeTabBar.isAvailable)
+            Positioned(
+              top: MediaQuery.paddingOf(context).top + 8,
+              right: 16,
+              child: CupertinoSlidingSegmentedControl<bool>(
+                groupValue: _native,
+                onValueChanged: (bool? native) =>
+                    setState(() => _native = native ?? false),
+                children: const <bool, Widget>{
+                  false: Text('Liquidum'),
+                  true: Text('Apple'),
+                },
+              ),
             ),
-          ),
         ],
       ),
     );

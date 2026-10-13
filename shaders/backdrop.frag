@@ -36,10 +36,10 @@ uniform vec4 uOptics;      // lift progress, lens scale, platter scale, stages (
 uniform vec4 uTouch;       // finger.xy, pressed, unused
 uniform vec4 uInspector;   // inspector on screen: origin.xy, size.xy
 uniform vec4 uWindow;      // capture window it shows: origin.xy, size.xy
-uniform vec4 uContent;     // the bar's origin in capture pixels.xy, the content atlas's size in points.zw
+uniform vec4 uContent;     // the bar's origin in capture pixels.xy, the content atlas's size as rendered in points.zw
 uniform vec4 uTabs;        // first tab's center x, spacing, count, atlas slot pitch (points)
 uniform vec4 uPlatterXf;   // platter transform: center.xy, drift.xy (points)
-uniform vec4 uPlatterS;    // platter scale.xy, unused, atlas slot width (points)
+uniform vec4 uPlatterS;    // platter scale.xy, bar height, atlas slot width (points)
 
 uniform sampler2D uCapture;
 uniform sampler2D uContentAtlas;  // the tabs in the selected style, one per slot
@@ -149,8 +149,19 @@ float sag(float depth, float height) {
 
 // ---- Sampling.
 
+// Texture coordinates for a point in an image that is `size` big, top-left
+// origin. Impeller's GLES backend keeps the textures it renders to (the
+// capture, and the content atlas) upside down.
+vec2 texel(vec2 p, vec2 size) {
+  vec2 uv = p / size;
+#ifdef IMPELLER_TARGET_OPENGLES
+  uv.y = 1.0 - uv.y;
+#endif
+  return uv;
+}
+
 vec3 capture(vec2 p) {
-  return texture(uCapture, p / uSize).rgb;
+  return texture(uCapture, texel(p, uSize)).rgb;
 }
 
 // Gaussian frost around p: a Vogel spiral out to 2.5 sigma.
@@ -271,7 +282,7 @@ vec4 content(vec2 x, float lift) {
   vec2 b = (x - uContent.xy) / uPass.z;
   vec2 u = uPlatterXf.xy + (b - uPlatterXf.xy - uPlatterXf.zw) / uPlatterS.xy;
   float first = uTabs.x, spacing = uTabs.y, count = uTabs.z, pitch = uTabs.w;
-  float width = uPlatterS.w;
+  float width = uPlatterS.w, height = uPlatterS.z;
   float nearest = spacing > 0.0 ? floor((u.x - first) / spacing + 0.5) : 0.0;
   vec4 sum = vec4(0.0);
   for (int j = -1; j <= 1; j++) {
@@ -279,14 +290,14 @@ vec4 content(vec2 x, float lift) {
     if (i < 0.0 || i >= count) {
       continue;
     }
-    vec2 center = vec2(first + i * spacing, uContent.w * 0.5);
+    vec2 center = vec2(first + i * spacing, height * 0.5);
     float grow = stage(kContentStage) ? 1.0 + kContentGrowth * lift : 1.0;
     vec2 v = center + (u - center) / grow;
     float local = v.x - (center.x - width * 0.5);
-    if (local < 0.0 || local > width || v.y < 0.0 || v.y > uContent.w) {
+    if (local < 0.0 || local > width || v.y < 0.0 || v.y > height) {
       continue;
     }
-    vec4 t = texture(uContentAtlas, vec2(i * pitch + local, v.y) / uContent.zw);
+    vec4 t = texture(uContentAtlas, texel(vec2(i * pitch + local, v.y), uContent.zw));
     sum = t + sum * (1.0 - t.a);
   }
   return sum;

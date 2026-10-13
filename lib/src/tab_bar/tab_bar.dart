@@ -708,11 +708,13 @@ class RenderGlassTabBar extends RenderBox
           inspectorPixels.height,
         )
         ..window.set(window.left, window.top, window.width, window.height)
+        // The atlas's size as rendered: whole pixels, so at a fractional
+        // pixel ratio a little more than the bounds it was drawn in.
         ..content.set(
           barOrigin.dx,
           barOrigin.dy,
-          count * _atlasPitch,
-          size.height,
+          atlas.width / _devicePixelRatio,
+          atlas.height / _devicePixelRatio,
         )
         ..tabs.set(
           _physics.tabCenter(0),
@@ -729,7 +731,7 @@ class RenderGlassTabBar extends RenderBox
         ..platterScale.set(
           _physics.platterScaleX,
           _physics.platterScaleY,
-          0,
+          size.height,
           _atlasSlot,
         );
       u.shader.setImageSampler(1, atlas);
