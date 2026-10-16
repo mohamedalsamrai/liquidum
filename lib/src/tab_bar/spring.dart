@@ -16,7 +16,7 @@ class GlassSpring {
        target = value;
 
   /// A spring given as mass, stiffness and damping, like
-  /// `BSSpringAnimationSettings` on iOS.
+  /// `CASpringAnimation` on iOS.
   GlassSpring.physical({
     required double mass,
     required double stiffness,

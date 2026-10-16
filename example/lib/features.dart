@@ -79,8 +79,12 @@ class Rows extends StatelessWidget {
         final int i = rows[n];
         return Container(
           color: i % 3 == 0
-              ? HSVColor.fromAHSV(1, (i * 47 % 360).toDouble(), 0.5, 0.95)
-                    .toColor()
+              ? HSVColor.fromAHSV(
+                  1,
+                  (i * 47 % 360).toDouble(),
+                  0.5,
+                  0.95,
+                ).toColor()
               : const Color(0xFFFFFFFF),
           padding: const EdgeInsets.symmetric(horizontal: 20),
           alignment: Alignment.centerLeft,

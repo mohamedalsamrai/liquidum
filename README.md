@@ -2,14 +2,18 @@
 
 # Liquidum
 
-**The iOS 26 Liquid Glass tab bar, for Flutter.**
-It looks and moves like Apple's own, and it takes a few lines to use.
+**An iOS 26-style glass tab bar for Flutter.**
+It looks and moves like the native iOS 26 bar, and it takes a few lines to use.
+
+Free for non-commercial use. Commercial use needs a license ([BUSL-1.1](#license)).
+
+Liquidum is an independent project, not affiliated with or endorsed by Apple Inc.
 
 [![pub package](https://img.shields.io/pub/v/liquidum.svg)](https://pub.dev/packages/liquidum)
 ![Flutter](https://img.shields.io/badge/Flutter-3.44%2B-02569B?logo=flutter&logoColor=white)
 ![Renderer](https://img.shields.io/badge/renderer-Impeller-7257A8)
 ![Platforms](https://img.shields.io/badge/platforms-iOS%20%7C%20Android-lightgrey)
-![Status](https://img.shields.io/badge/status-0.1.0%20preview-orange)
+![Status](https://img.shields.io/badge/status-0.1.1%20preview-orange)
 [![License](https://img.shields.io/badge/license-BUSL--1.1-blue)](LICENSE)
 
 <img src="doc/images/hero.png" alt="Liquidum's glass tab bar over colorful content: light, dark, and with a custom gradient and dark glass" width="860">
@@ -191,8 +195,8 @@ GlassTabScaffold(
 )
 ```
 
-- **`GlassTab.search`** is UIKit's `UISearchTab`: a glass circle at the bar's
-  trailing end. While it is selected, its icon takes the selected color and
+- **`GlassTab.search`** works like UIKit's `UISearchTab`: a glass circle at
+  the bar's trailing end. While it is selected, its icon takes the selected color and
   the bar shows no selection.
 - **With a `controller`**, selecting it opens the bar into a search field, as
   UIKit's does when the search page has a search controller:
@@ -204,9 +208,10 @@ GlassTabScaffold(
 
   The field's text is the controller's, and `onChanged` and `onSubmitted`
   report it.
-- **`accessory`** is UIKit's bottom accessory: a 48pt capsule 8pt above the
-  bar, as wide as it. Its content is drawn as you give it, and takes taps.
-- **`minimizeOnScroll`** is UIKit's `tabBarMinimizeBehavior = .onScrollDown`.
+- **`accessory`** works like UIKit's bottom accessory: a 48pt capsule 8pt
+  above the bar, as wide as it. Its content is drawn as you give it, and takes taps.
+- **`minimizeOnScroll`** works like UIKit's
+  `tabBarMinimizeBehavior = .onScrollDown`.
   Scrolling down collapses the bar into a circle with the selected tab's
   icon, and the accessory moves beside it. Scrolling up, or a tap on the
   circle, expands it again. As in UIKit, the tabs blur and fade where they
@@ -412,13 +417,22 @@ Judge motion in profile or release mode: debug builds are much slower.
 ## License
 
 Liquidum's source is open to read, under the
-[Business Source License 1.1](LICENSE). It is not an open-source license:
+[Business Source License 1.1](LICENSE). It is not an open-source license.
 
-- **Non-commercial use is free, in production too.** That covers personal,
-  educational and research projects, and apps that earn no revenue.
-- **Commercial use needs a commercial license.** That means an app that is
-  sold, earns money through subscriptions, in-app purchases or ads, or is
-  made by or for a company. [Contact the author](https://github.com/mohamedalsamrai).
-- **Each version becomes open source later.** On 2030-10-13, or four years
-  after that version was released if that comes first, it changes to the
-  Apache License 2.0.
+- **Non-commercial use is free, in production too.** A project is
+  non-commercial only if it is not sold, does not make money directly or
+  indirectly (sales, subscriptions, in-app purchases, ads, sponsorships,
+  donations, affiliate programs, or supporting the sale of other products
+  or services), and is not made by, for, or on behalf of a company, other
+  for-profit business, or self-employed person in the course of their
+  business. Personal, educational and research projects qualify only if
+  they meet these conditions.
+- **Commercial use needs a commercial license.** That includes freelance
+  and client work. [Contact the author](https://github.com/mohamedalsamrai).
+- **Each version becomes open source later.** Four years after a version
+  is published, it changes to the Apache License 2.0.
+- **Not affiliated with Apple.** Liquidum is an independent project, not
+  affiliated with or endorsed by Apple Inc. Apple, iOS and UIKit are
+  trademarks of their respective owners.
+
+Each version is licensed under the LICENSE file published with it.

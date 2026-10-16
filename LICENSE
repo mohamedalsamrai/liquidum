@@ -3,18 +3,29 @@ Business Source License 1.1
 Parameters
 
 Licensor:             Mohammed AL-Samarraie
-Licensed Work:        Liquidum 0.0.1
+Licensed Work:        Liquidum Version 0.0.1 or later.
                       The Licensed Work is (c) 2026 Mohammed AL-Samarraie.
 Additional Use Grant: You may make production use of the Licensed Work,
-                      provided that such use is non-commercial.
+                      provided that such use is Non-Commercial.
 
-                      Non-commercial use means use in a project that is not
-                      sold, does not earn revenue (through sales,
-                      subscriptions, in-app purchases or advertising), and is
-                      not made by or for a company in the course of its
-                      business. Personal, educational and research projects
-                      are non-commercial.
-Change Date:          2030-10-13
+                      Use is Non-Commercial only if the project using
+                      the Licensed Work:
+                      (a) is not sold or licensed for a fee, and does not
+                          generate revenue or other monetary benefit,
+                          directly or indirectly, including through
+                          subscriptions, in-app purchases, advertising,
+                          sponsorships, donations, affiliate programs, or
+                          supporting the sale of other products or
+                          services; and
+                      (b) is not made by, for, or on behalf of a company,
+                          other for-profit business, or self-employed
+                          person in the course of their business,
+                          including freelance and client work.
+
+                      Personal, educational and research projects are
+                      Non-Commercial only if they meet both conditions.
+Change Date:          Four years from the date the Licensed Work is
+                      published.
 Change License:       Apache License, Version 2.0
 
 For information about alternative licensing arrangements for the Licensed

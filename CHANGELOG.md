@@ -1,3 +1,13 @@
+## 0.1.1
+
+* License: the Licensed Work now covers version 0.0.1 and later, each
+  version changes to the Apache License 2.0 four years after it is
+  published, and the non-commercial definition is clearer (indirect
+  revenue, freelance and client work). Code and behavior are unchanged.
+* README: clearer description, a license summary at the top, and a note
+  that Liquidum is not affiliated with Apple.
+* Source comments reworded; research notes moved to `doc/comparison`.
+
 ## 0.1.0
 
 * `GlassTab.search`: a search tab in its own glass circle, as UIKit's

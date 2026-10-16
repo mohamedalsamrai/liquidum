@@ -2188,11 +2188,11 @@ class RenderGlassTabBar extends RenderBox
 
   static void _paintNothing(PaintingContext context, Offset offset) {}
 
-  // UIKit's platter frosts what is below it, then refracts that: its
-  // glassBackground blurs its quarter-scale capture and mixes that into the
-  // capture itself, half at the platter's edge and fully 31pt in
-  // (inputBlurDistance and inputBlurOpacity), so a point refracted from deep
-  // inside comes out deeply frosted. Here the capture is not scaled down: the
+  // UIKit's platter frosts what is below it, then refracts that: its glass
+  // filter blurs its quarter-scale capture and mixes that into the capture
+  // itself, half at the platter's edge and fully 31pt in (measured in the
+  // simulator), so a point refracted from deep inside comes out deeply
+  // frosted. Here the capture is not scaled down: the
   // heavy blur is drawn first, natively, and the backdrop shader's frost
   // pass draws a light one (for the capture's filtering) over it, fading
   // from half at the edge to none at the middle line. The heavy sigma is in
@@ -2200,8 +2200,8 @@ class RenderGlassTabBar extends RenderBox
   // which would be simpler, Impeller misplaces a backdrop filter.)
   static const double _frostHeavySigma = 2.9;
 
-  // With Reduce Transparency, UIKit blurs far more (its glassBackground's
-  // inputBlurRadius goes from 0.67 to 36.9) and fully: a sigma that leaves
+  // With Reduce Transparency, UIKit blurs far more (its glass filter's blur
+  // radius goes from 0.67 to 36.9) and fully: a sigma that leaves
   // 40pt blocks as faint as UIKit's do, and no light blur.
   static const double _reducedFrostSigma = 20;
 
@@ -2567,7 +2567,7 @@ class RenderGlassTabBar extends RenderBox
 
   final LayerHandle<ClipRRectLayer> _glowClip = LayerHandle<ClipRRectLayer>();
 
-  // UIKit's gradientOvalization for the glass's distance field.
+  // The ovalization of UIKit's glass shapes, for the glass's distance field.
   static const double _ovalization = 0.5;
   static const double _inspectorZoom = 2;
 

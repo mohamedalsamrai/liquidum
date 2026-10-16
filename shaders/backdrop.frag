@@ -5,9 +5,8 @@
 // the same capture, taken before any of the bar's glass is drawn, and work
 // in its coordinates: physical pixels of the pass it was captured from.
 //
-// The optics are UIKit's, from the layers of its own tab bar on iOS 26.5:
-// parameters read from the live layer tree and each stage measured on its
-// own over position-coded backdrops.
+// The optics follow UIKit's own tab bar on iOS 26.5, each stage measured on
+// its own in the simulator over position-coded backdrops.
 //
 // - The platter (regular glass) frosts what is below it (more toward its
 //   middle line), refracts that inward near its edge, and lifts luma toward
@@ -86,28 +85,28 @@ out vec4 fragColor;
 
 // ---- UIKit's numbers, in the glass's own points.
 
-// Lens: displacementMap amount at full lift (liftedDisplacement) and the
-// height of its CASDFGlassDisplacementEffect.
+// Lens: the warp's displacement at full lift and the height of the lens's
+// glass displacement.
 const float kWarp = 9.0;
 const float kWarpHeight = 36.0;
-// Lens glassBackground: inner refraction amount and height, SDR holding tone.
+// Lens glass filter: inner refraction amount and height, SDR holding tone.
 const float kLensInner = 17.5;
 const float kLensInnerHeight = 7.0;
 const float kLensTone = 0.97;
-// Lens glassForeground (aberration amount 3.68, offset 38.9, angle -15
+// Lens dispersion (aberration amount 3.68, offset 38.9, angle -15
 // degrees): the image is dispersed over seven taps along a vector that grows
 // with the position (x / half width, y / half height); red takes the three
 // taps toward one end (1:2:3), blue the mirror, green the middle five
 // (1:2:3:2:1). Mixed in fully at the edge, not at all 14pt in.
 const float kAberrationDepth = 14.0;
 const mat2 kAberration = mat2(-1.499, 2.235, 5.925, 0.706);
-// Platter glassBackground: inner refraction. Its frost is in the capture
+// Platter glass filter: inner refraction. Its frost is in the capture
 // already, within the platter less this many pixels: the bar draws it
 // there before its other passes, a heavy blur (natively) and over it a
 // light one (this shader's frost pass), at what the platter holds of the
-// light one: half at its edge, none 31pt in (UIKit's inputBlurDistance and
-// inputBlurOpacity, which mix its heavy blur into its quarter-scale
-// capture), along a power of the depth. The light blur's sigma is in
+// light one: half at its edge, none 31pt in (as UIKit's glass filter mixes
+// its heavy blur into its quarter-scale capture, measured in the
+// simulator), along a power of the depth. The light blur's sigma is in
 // points; it and the power are fitted to UIKit's frost over stripes.
 const float kPlatterInner = 49.6;
 const float kPlatterInnerHeight = 15.5;
@@ -119,25 +118,24 @@ const float kFrostRamp = 0.72;
 // chroma kept, a fill mixed in; inputs in uFace) sits under the filter's
 // 0.97 SDR holding tone.
 const float kPlatterTone = 0.97;
-// The resting selection blurs the glass behind it again (gaussianBlur,
+// The resting selection blurs the glass behind it again (a gaussian blur,
 // radius 2 at quarter scale), then applies a color matrix (uPill).
 const float kRestBlur = 2.22;
-// Lifted content (UIKit's contentWrapperDisplacement): the selected tabs, seen
-// in the lens, are lensed by two displacement maps of this amount at full
-// lift (one of height 11.2, then one of height 14 in the material), each
-// pulling inward near the edge.
+// Lifted content (UIKit's displacement of the lens's content): the selected
+// tabs, seen in the lens, are lensed by two displacement maps of this amount
+// at full lift (one of height 11.2, then one of height 14 in the material),
+// each pulling inward near the edge.
 // UIKit also scales each selected tab by 1.16 about its center at full lift.
 const float kContentLens = 17.5;
 const float kContentLensHeight = 11.2;
 const float kContentMaterialHeight = 14.0;
 const float kContentGrowth = 0.16;
-// The lens's material is faded in by UIKit's opacityPair filter, at four
-// times the lift progress.
+// UIKit fades the lens's material in at four times the lift progress.
 const float kMaterialFade = 4.0;
 
 // ---- Lighting.
 
-// Rim (CASDFKeyFillHighlightEffect): a key light from up-left and a fill
+// Rim (UIKit's rim highlight): a key light from up-left and a fill
 // from down-right at equal amounts light a 1pt band inside the edge by
 // |n.l|, fading toward its inner side by the effect's curvature (platter
 // 0.7, lens 0.8); measured alpha = |n.l| (1 - curvature u), u the depth
@@ -148,12 +146,12 @@ const vec2 kLight = vec2(0.70710678, 0.70710678);
 const float kRimHeight = 1.0;
 const float kPlatterRimCurvature = 0.7;
 const float kLensRimCurvature = 0.8;
-// Shadows (glassBackground): outside the glass, what is below is multiplied
-// by 1 - strength * (a gaussian edge of the outline moved down); the edge's
-// sigma is 0.685 of the filter's shadow radius. (offset, sigma, center) in
-// points. The strength is opacity * (0.093 + 0.966 fill): the lens's fill
-// is black; the platter's adapts to the backdrop (uRim.w). Both fit UIKit's
-// within 0.3 levels; the platter's stops where its SDF does.
+// Shadows (from the glass filter): outside the glass, what is below is
+// multiplied by 1 - strength * (a gaussian edge of the outline moved down);
+// the edge's sigma is 0.685 of the filter's shadow radius. (offset, sigma,
+// center) in points. The strength is opacity * (0.093 + 0.966 fill): the
+// lens's fill is black; the platter's adapts to the backdrop (uRim.w). Both
+// fit UIKit's within 0.3 levels; the platter's stops where its SDF does.
 const vec3 kPlatterShadow = vec3(8.0, 16.4, 0.85);
 const float kPlatterShadowReach = 39.06;
 const vec3 kLensShadow = vec3(7.0, 5.49, 0.05);
@@ -162,8 +160,8 @@ const float kLensShadowReach = 9.21;
 // Inside, the lens's material darkens what it reads where its shadow's
 // edge is not: most just inside its top edge, and none past 15pt in (by
 // this much over what is below, wherever the shadow there would be none).
-// Fitted to UIKit's lifted lens over white, gray and a position code; its
-// glassBackground's inputSDRShadowOpacity (0.111) is the likely source.
+// Fitted to UIKit's lifted lens over white, gray and a position code; a
+// shadow opacity of 0.111 in its glass filter is the likely source.
 const float kLensTopShade = 0.06;
 // The press wash (a white layer over the platter through a vibrant color
 // matrix): chroma x1.2 and a 0.05 lift, at 0.8448 when fully pressed.
@@ -198,8 +196,9 @@ float capsule(vec2 p, vec4 s) {
 
 // Outward direction of the capsule's distance, blended by `oval` toward the
 // direction of the point in the capsule's normalized coordinates (x / half
-// width, y / half height): UIKit's gradientOvalization, which this matches
-// to within 1.3 degrees (median) over its lens's displacement field.
+// width, y / half height): the ovalization of UIKit's glass shapes, which
+// this matches to within 1.3 degrees (median) over its lens's displacement
+// field.
 vec2 outward(vec2 p, vec4 s, float oval) {
   vec2 d = p - s.xy;
   vec2 h = s.zw;
@@ -760,7 +759,7 @@ void main() {
       gPlatterShadow = uRim.w;
     }
     float tone = stage(kInnerStage) ? kLensTone : 1.0;
-    // The material fades in quickly as the lens lifts (UIKit's opacityPair),
+    // The material fades in quickly as the lens lifts (as UIKit's does),
     // over the base: the resting selection over the warped backdrop.
     // Below the material: the base with the content over it, lensed once.
     vec3 c = fade < 1.0 ? contentLensed(p, lift, base(p, lift, 32)) : vec3(0.0);
