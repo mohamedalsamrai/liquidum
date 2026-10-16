@@ -3,13 +3,20 @@ import 'package:flutter/cupertino.dart';
 /// Colorful, high-contrast content, so the glass has something to bend.
 /// Tapping a card opens it in the tab's own navigator, under the bar.
 class Feed extends StatelessWidget {
-  const Feed({super.key, required this.title});
+  const Feed({super.key, required this.title, this.query = ''});
 
   final String title;
+
+  /// Shows only the albums whose names contain it, as a search page.
+  final String query;
 
   @override
   Widget build(BuildContext context) {
     final EdgeInsets padding = MediaQuery.paddingOf(context);
+    final List<int> albums = <int>[
+      for (var i = 0; i < 24; i++)
+        if ('Album ${i + 1}'.toLowerCase().contains(query.toLowerCase())) i,
+    ];
     return CustomScrollView(
       slivers: <Widget>[
         SliverPadding(
@@ -28,20 +35,20 @@ class Feed extends StatelessWidget {
         SliverPadding(
           padding: EdgeInsets.fromLTRB(20, 0, 20, padding.bottom + 20),
           sliver: SliverGrid.builder(
-            itemCount: 24,
+            itemCount: albums.length,
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 2,
               mainAxisSpacing: 16,
               crossAxisSpacing: 16,
               childAspectRatio: 0.8,
             ),
-            itemBuilder: (BuildContext context, int index) => GestureDetector(
+            itemBuilder: (BuildContext context, int n) => GestureDetector(
               onTap: () => Navigator.of(context).push(
                 CupertinoPageRoute<void>(
-                  builder: (BuildContext context) => _Detail(index: index),
+                  builder: (BuildContext context) => _Detail(index: albums[n]),
                 ),
               ),
-              child: _Card(index: index),
+              child: _Card(index: albums[n]),
             ),
           ),
         ),

@@ -111,6 +111,43 @@ class GlassAppearance {
 
   bool _adaptive = true;
 
+  /// Increase Contrast, as UIKit's glass honors it (iOS 26.5, from its
+  /// filters' inputs): the light glass is filled 80% white over its face,
+  /// its face keeps 0.8 / 1.1 of the chroma it would, and its shadow's fill
+  /// is 0.12.
+  set contrast(bool value) {
+    if (value != _contrast) {
+      _contrast = value;
+      _snap();
+    }
+  }
+
+  bool _contrast = false;
+
+  /// Reduce Transparency, the same way: on top of [contrast]'s fill and
+  /// shadow, the light glass maps every luma to 0.9, keeps 0.9 / 1.1 of the
+  /// chroma, and does not refract; the bar blurs what is below it heavily
+  /// (see [GlassTabBar]).
+  set reduceTransparency(bool value) {
+    if (value != _reduceTransparency) {
+      _reduceTransparency = value;
+      _snap();
+    }
+  }
+
+  bool _reduceTransparency = false;
+
+  /// The face's chroma gain: 1, but less with [contrast] or
+  /// [reduceTransparency].
+  double get chroma => _reduceTransparency
+      ? 0.9 / 1.1
+      : _contrast
+      ? 0.8 / 1.1
+      : 1;
+
+  /// How much the glass refracts: none with [reduceTransparency].
+  double get refraction => _reduceTransparency ? 0 : 1;
+
   void _decide() {
     final bool darkMode = _system == Brightness.dark;
     if (!_adaptive) {
@@ -188,12 +225,19 @@ class GlassAppearance {
     (_) => _quick(),
   );
 
+  // With Increase Contrast or Reduce Transparency, UIKit fills light glass
+  // 80% white over its face, and its shadow's fill is 0.12.
+  bool get _filled => (_contrast || _reduceTransparency) && !_dark;
+
   List<double> get _glassTargets => <double>[
-    _black(_stepped),
-    _white(_stepped, _dark),
-    _fillAlpha(_stepped, _dark),
+    if (_reduceTransparency && !_dark) 0.9 else _black(_stepped),
+    if (_reduceTransparency && !_dark) 0.9 else _white(_stepped, _dark),
+    if (_filled)
+      1 - 0.2 * (1 - _fillAlpha(_stepped, _dark))
+    else
+      _fillAlpha(_stepped, _dark),
     if (_dark) 0 else 1,
-    _shadow(_stepped, _dark),
+    if (_filled) 0.46875 * (0.093 + 0.966 * 0.12) else _shadow(_stepped, _dark),
     ...(_dark ? _platterRimDark : _platterRimLight),
     ...(_dark ? _lensRimDark : _lensRimLight),
   ];

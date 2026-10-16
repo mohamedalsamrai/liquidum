@@ -48,6 +48,9 @@ class GlassTabBarPhysics {
 
   Size _size = Size.zero;
   int _count;
+
+  // Whether a search tab's circle stands beside the platter.
+  bool _search = false;
   int _selected;
 
   Size get size => _size;
@@ -61,33 +64,43 @@ class GlassTabBarPhysics {
   /// tabs they overlap by 8pt and the bar hugs them (see [naturalWidth]); for
   /// more the bar fills its width and they overlap by 40pt in all for four
   /// tabs, 33pt for five (107.5pt for four tabs in 398pt, 84.6pt for five).
+  ///
+  /// Beside a search tab's circle, UIKit's bar fills its width from three
+  /// tabs on, overlapping them by 20pt in all for three and 22pt for four
+  /// (113.3pt and 85.5pt in 328pt).
   double get pillWidth =>
-      ((_size.width - _padding.horizontal + _overlap(_count)) / _count).clamp(
-        0,
-        _size.width,
-      );
+      ((_size.width - _padding.horizontal + _overlap(_count, search: _search)) /
+              _count)
+          .clamp(0, _size.width);
 
-  static double _overlap(int count) => switch (count) {
-    <= 3 => 8.0 * (count - 1),
-    4 => 40,
-    _ => 33,
-  };
+  static double _overlap(int count, {bool search = false}) =>
+      switch ((count, search)) {
+        (<= 2, true) || (<= 3, false) => 8.0 * (count - 1),
+        (3, true) => 20,
+        (_, true) => 22,
+        (4, false) => 40,
+        _ => 33,
+      };
 
   /// The width of UIKit's bar of [count] tabs whose widest label is [label]
   /// points wide, or null for four tabs or more, which fill the width they
   /// are given. Each tab is 94pt wide, or 39pt wider than the widest label;
   /// three tabs with short labels make a 274pt bar. [horizontal] is the
   /// padding at its two ends.
+  ///
+  /// Beside a search tab's circle ([search]), only a bar of one or two tabs
+  /// hugs them.
   static double? naturalWidth(
     int count,
     double label, {
     double horizontal = 2 * inset,
+    bool search = false,
   }) {
-    if (count > 3) {
+    if (count > (search ? 2 : 3)) {
       return null;
     }
     final double tab = math.max(94, label + 39);
-    return count * tab - _overlap(count) + horizontal;
+    return count * tab - _overlap(count, search: search) + horizontal;
   }
 
   double get pillHeight => math.max(_size.height - _padding.vertical, 0);
@@ -122,11 +135,13 @@ class GlassTabBarPhysics {
     Size size,
     int count, {
     EdgeInsets padding = const EdgeInsets.all(inset),
+    bool search = false,
   }) {
     final bool first = _size == Size.zero;
     _size = size;
     _padding = padding;
     _count = count;
+    _search = search;
     _selected = _selected.clamp(0, count - 1);
     if (first || !isActive) {
       _anchor = _clampToBar(tabCenter(_selected));
@@ -377,6 +392,11 @@ class GlassTabBarPhysics {
   double _now = 0;
   bool _started = false;
 
+  /// Reduce Motion, as UIKit's bar honors it: the resting selection slides
+  /// under the finger without lifting into a lens, and nothing swells,
+  /// stretches or flexes.
+  bool reduceMotion = false;
+
   // Whether the last frame found nothing moving: the next one starts from
   // an input that came in since, half a frame ago unless its time is known.
   bool _idle = true;
@@ -620,9 +640,9 @@ class GlassTabBarPhysics {
     final (double sr, double sz) = down ? _swell : _unswell;
     _scale
       ..configure(sr, sz)
-      ..target = down ? pressedScale : 1;
+      ..target = down && !reduceMotion ? pressedScale : 1;
     double kx = 0, ky = 0;
-    if (down) {
+    if (down && !reduceMotion) {
       final Offset p = _touch!;
       final Offset moved = p - _touchStart;
       final double outX = math.max(math.max(-p.dx, p.dx - _size.width), 0);
@@ -650,7 +670,8 @@ class GlassTabBarPhysics {
 
     // Lift and lens bounds: a frame after a touch, while held or hanging.
     final bool hanging = !down && t < _hangUntil;
-    final bool lifted = (down && since >= _liftDelay) || hanging;
+    final bool lifted =
+        !reduceMotion && ((down && since >= _liftDelay) || hanging);
     _lift.target = lifted ? 1 : (down ? _lift.target : 0);
     final (double gr, double gz) = hanging ? _hangGrowth : _liftSpring;
     _growth
@@ -700,7 +721,9 @@ class GlassTabBarPhysics {
           (_shadowScreenVelocity - _smoothedVelocity) *
           (1 - math.exp(-h / _flexSmoothing));
       final double v = _smoothedVelocity;
-      _flex.velocity += _flexGain * (v - _kickVx);
+      if (!reduceMotion) {
+        _flex.velocity += _flexGain * (v - _kickVx);
+      }
       _kickVx = v;
     }
   }

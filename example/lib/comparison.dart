@@ -79,6 +79,7 @@ Future<void> main() async {
       apple: config[0] == 'apple',
       noBar: config[0] == 'none',
       hold: hold,
+      reduceTransparency: flags.contains('rt'),
       bare: flags.contains('bare'),
       optics:
           flags
@@ -229,6 +230,7 @@ class ComparisonApp extends StatefulWidget {
     this.noBar = false,
     required this.background,
     this.hold,
+    this.reduceTransparency = false,
     this.bare = false,
     this.optics = GlassTabBarOptics.all,
     this.lift,
@@ -247,6 +249,9 @@ class ComparisonApp extends StatefulWidget {
   /// No bar at all, for native experiments over the bare background.
   final bool noBar;
   final double? hold;
+
+  /// Reduce Transparency (the `rt` flag): Flutter does not report it.
+  final bool reduceTransparency;
   final bool bare;
   final int optics;
   final double? lift;
@@ -444,6 +449,7 @@ class _ComparisonAppState extends State<ComparisonApp>
                 debugHideContent: widget.bare,
                 debugOptics: widget.optics,
                 debugLift: widget.lift,
+                reduceTransparency: widget.reduceTransparency,
                 // Above the marker band and the clock code.
                 debugInspector: const Rect.fromLTWH(0, -380, 398, 300),
               ),

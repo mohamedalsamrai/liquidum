@@ -170,6 +170,64 @@ like inset shadows.
 Nothing to set: in a right-to-left `Directionality` the first tab sits on the
 right, and badges move to the icon's other side.
 
+### Search tab, accessory and minimizing
+
+<img src="doc/images/bar-features.png" alt="A search tab in its own circle and a Now Playing accessory above the bar; scrolled, the bar minimized to a circle with the accessory beside it; searching, the tabs collapsed into a circle beside a search field with a close button" width="750">
+
+iOS 26's extras, each one line:
+
+```dart
+GlassTabScaffold(
+  minimizeOnScroll: true,              // collapse as a page scrolls down
+  accessory: Text('Now Playing'),      // a glass capsule above the bar
+  tabs: [
+    GlassTab(icon: CupertinoIcons.house_fill, label: 'Home', page: HomePage()),
+    GlassTab(icon: CupertinoIcons.music_note, label: 'Radio', page: RadioPage()),
+    GlassTab.search(                   // its own circle at the end
+      controller: searchText,          // and a search field when selected
+      page: SearchPage(searchText),
+    ),
+  ],
+)
+```
+
+- **`GlassTab.search`** is UIKit's `UISearchTab`: a glass circle at the bar's
+  trailing end. While it is selected, its icon takes the selected color and
+  the bar shows no selection.
+- **With a `controller`**, selecting it opens the bar into a search field, as
+  UIKit's does when the search page has a search controller:
+  - the other tabs collapse into a circle with the last tab's icon, and a
+    tap on the circle goes back;
+  - while the field has the keyboard, it narrows for a close button and rides
+    above the keyboard;
+  - the close button clears the field and ends the editing.
+
+  The field's text is the controller's, and `onChanged` and `onSubmitted`
+  report it.
+- **`accessory`** is UIKit's bottom accessory: a 48pt capsule 8pt above the
+  bar, as wide as it. Its content is drawn as you give it, and takes taps.
+- **`minimizeOnScroll`** is UIKit's `tabBarMinimizeBehavior = .onScrollDown`.
+  Scrolling down collapses the bar into a circle with the selected tab's
+  icon, and the accessory moves beside it. Scrolling up, or a tap on the
+  circle, expands it again. As in UIKit, the tabs blur and fade where they
+  are while the glass shrinks over them, and the selected icon slides into
+  the circle. The motion uses UIKit's springs, measured frame by frame.
+
+### Accessibility
+
+The bar follows iOS's **Increase Contrast** and **Reduce Motion** by itself:
+
+- With Increase Contrast, the glass is filled nearly white, the tabs are
+  drawn in their colors as they are, and the selected color darkens the way
+  UIKit's does (the system blue turns `#1E6EF4`).
+- With Reduce Motion, the selection slides under the finger without lifting
+  into a lens, and nothing swells or flexes.
+
+**Reduce Transparency** makes the glass nearly opaque, with no refraction.
+Flutter does not report that setting, so pass it in with
+`reduceTransparency: true`, for example from a platform channel that reads
+`UIAccessibility.isReduceTransparencyEnabled`.
+
 ### All options
 
 | On `GlassTab` | |
@@ -179,6 +237,7 @@ right, and badges move to the icon's other side.
 | `badge` | a count or short word on the icon |
 | `color` | this tab's selected color |
 | `page` | the tab's first page |
+| `GlassTab.search(page:)` | a search tab, in its own circle at the bar's end; with `controller` (and `placeholder`, `onChanged`, `onSubmitted`), it opens into a search field |
 
 | On `GlassTabScaffold` | |
 |---|---|
@@ -192,6 +251,9 @@ right, and badges move to the icon's other side.
 | `barPadding` | space inside the bar around the tabs; the bar grows with it (UIKit: 4pt) |
 | `barMargin` | the bar's distance from the screen's sides and bottom (UIKit: 21pt) |
 | `backgroundColor` | painted behind the pages |
+| `accessory` | a widget in a glass capsule above the bar |
+| `minimizeOnScroll` | collapse the bar as a page scrolls down |
+| `reduceTransparency` | draw the glass as iOS's Reduce Transparency does |
 | `initialIndex`, `onTabChanged`, `controller` | the selected tab |
 
 ## Built against UIKit, stage by stage
@@ -286,6 +348,16 @@ At rest the two bars differ by about one level out of 255 on average, mostly
 at the edges of letters. Each stage's measurements, method and remaining
 differences are in [`doc/comparison`](doc/comparison).
 
+Since then, the same way:
+- **The frost** is a real blur, drawn once, then refracted, as UIKit does it.
+  The ghosting behind fine lines is gone, and the bar's edges are closer to
+  UIKit's.
+- **The lens** has UIKit's darker band inside its top edge.
+- **New:** the search tab, the accessory, minimizing, and the accessibility
+  settings, each measured from UIKit.
+
+The numbers are in [`doc/comparison/refinements`](doc/comparison/refinements).
+
 ## Going further
 
 - **`GlassTabBar`** is the bar on its own, for apps that manage their own
@@ -309,12 +381,13 @@ Glass(
 
 ## Examples
 
-The [`example`](example) folder holds three apps. Run them from it.
+The [`example`](example) folder holds four apps. Run them from it.
 
 | | |
 |---|---|
 | `flutter run` | the scaffold with four tabs, about 40 lines |
-| `flutter run -t lib/playground.dart` | change colors, badges, appearance and direction live. On iOS, a switch swaps in Apple's own tab bar over the same content to compare them |
+| `flutter run -t lib/playground.dart` | change colors, badges, appearance and direction live, and turn on the search tab, the accessory, minimizing on scroll and Reduce Transparency. On iOS, a switch swaps in Apple's own tab bar over the same content to compare them |
+| `flutter run -t lib/features.dart` | a search tab that opens into a field, an accessory, and the bar minimizing as you scroll |
 | `flutter run -t lib/comparison.dart` | the harness used to compare with UIKit |
 
 Judge motion in profile or release mode: debug builds are much slower.
@@ -330,12 +403,11 @@ Judge motion in profile or release mode: debug builds are much slower.
 - **Keep tab icons static.** The bar draws its tabs from an image of them,
   rendered again whenever they repaint. A `RepaintBoundary` inside an icon
   hides its repaints from the bar.
-- **Not done yet:**
-  - minimizing the bar on scroll,
-  - the scroll-edge effect,
-  - light that follows the device's tilt,
-  - morphing into a search field,
-  - the accessibility settings (Reduce Transparency, Increase Contrast).
+- **Reduce Transparency has to be passed in** (see Accessibility): Flutter
+  does not report it.
+- **No scroll-edge effect**, because UIKit's iOS 26.5 tab bar shows none: content
+  scrolling under it is only frosted by the glass and darkened by its shadow.
+- **Not done yet:** light that follows the device's tilt.
 
 ## License
 

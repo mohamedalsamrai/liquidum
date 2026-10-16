@@ -1,3 +1,21 @@
+## Unreleased
+
+* `GlassTab.search`: a search tab in its own glass circle, as UIKit's
+  `UISearchTab`; with a `controller`, it opens into a search field (the tabs
+  collapse into a circle, a close button while typing, the bar above the
+  keyboard).
+* `accessory`: UIKit's bottom accessory, a glass capsule above the bar.
+* `minimizeOnScroll`: the bar collapses as a page scrolls down, with UIKit's
+  springs (`tabBarMinimizeBehavior`), its tabs blurring and fading in place
+  and the selected icon sliding into the circle, as UIKit's crossfade does.
+* Accessibility: Increase Contrast and Reduce Motion followed from the
+  system; `reduceTransparency` to draw the glass as Reduce Transparency does.
+* The frost is now a real blur drawn before the glass, as UIKit's: no more
+  ghosting behind fine lines, and closer to UIKit at the bar's edges. It
+  takes a second backdrop capture.
+* The lens's darker band inside its top edge, as UIKit's.
+* Filtered sampling of the backdrop and the tabs' content.
+
 ## 0.0.1
 
 First preview.

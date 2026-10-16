@@ -2,7 +2,9 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
+import 'package:flutter/cupertino.dart' show CupertinoTextField;
 import 'package:flutter/foundation.dart' show listEquals;
+import 'package:flutter/services.dart' show TextInputAction;
 import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
@@ -10,8 +12,10 @@ import 'package:flutter/widgets.dart';
 import '../glass_backdrop.dart';
 import '../shader_program.dart';
 import 'appearance.dart';
+import 'glyphs.dart';
 import 'decoration.dart';
 import 'item.dart';
+import 'minimize.dart';
 import 'physics.dart';
 import 'style.dart';
 import 'tab_content.dart';
@@ -104,6 +108,16 @@ class GlassTabBar extends StatefulWidget {
     this.indicator,
     this.lens,
     this.padding,
+    this.search,
+    this.accessory,
+    this.minimized = false,
+    this.onExpand,
+    this.reduceTransparency = false,
+    this.searchController,
+    this.searchFocusNode,
+    this.searchPlaceholder = 'Search',
+    this.onSearchChanged,
+    this.onSearchSubmitted,
     this.debugView = GlassTabBarDebugView.none,
     this.debugShareBackdrop = true,
     this.debugInspector,
@@ -198,10 +212,74 @@ class GlassTabBar extends StatefulWidget {
   /// does, 4pt past its top and bottom edges whatever the padding.
   final EdgeInsetsGeometry? padding;
 
-  /// The bar's height with [padding] (UIKit's, 62pt, without).
-  static double heightWith(EdgeInsetsGeometry? padding) =>
+  /// A search tab, as UIKit's `UISearchTab`: a glass circle of its own at
+  /// the bar's trailing end, with the platter at its leading end (from three
+  /// tabs on, the platter fills the room left). It is selected when
+  /// [selectedIndex] is [items]' length: its icon then takes the selected
+  /// color, and the platter shows no selection. Its icon defaults to a
+  /// magnifying glass.
+  final GlassTabItem? search;
+
+  /// UIKit's bottom accessory (`UITabAccessory`), such as a now-playing
+  /// control: a 48pt glass capsule 8pt above the bar, as wide as the bar,
+  /// that moves into the bar's row when it minimizes. Its content is drawn
+  /// as it is.
+  final Widget? accessory;
+
+  /// Whether the bar is minimized, as UIKit's minimizes on scrolling down
+  /// (`tabBarMinimizeBehavior`): the platter collapses into a 48pt circle
+  /// at its leading end showing the selected tab's icon, the search circle
+  /// shrinks to 48pt, and the accessory sits between them. Animated with
+  /// UIKit's springs.
+  final bool minimized;
+
+  /// Called when the minimized bar is tapped, for its owner to expand it.
+  final VoidCallback? onExpand;
+
+  /// The search field's text. With it, selecting the [search] tab opens the
+  /// bar into a search field, as UIKit's does when the search tab's page has
+  /// a search controller: the platter collapses into a circle with the last
+  /// tab's icon (tap it to go back), and the search circle grows into a
+  /// field. While the field has the keyboard it narrows for a close button,
+  /// which ends the search's editing and clears it.
+  final TextEditingController? searchController;
+
+  /// The search field's focus, to open the keyboard from code. The bar
+  /// makes its own when null.
+  final FocusNode? searchFocusNode;
+
+  /// Shown in the empty search field. UIKit's: "Search".
+  final String searchPlaceholder;
+
+  /// Called as the search text changes, and when it is submitted.
+  final ValueChanged<String>? onSearchChanged;
+  final ValueChanged<String>? onSearchSubmitted;
+
+  /// Draws the glass as UIKit's with Reduce Transparency on: nearly opaque,
+  /// heavily blurred, without refraction. Flutter does not report that
+  /// setting, so pass it in (for example from a platform channel reading
+  /// `UIAccessibility.isReduceTransparencyEnabled`).
+  ///
+  /// Increase Contrast and Reduce Motion the bar follows by itself, from
+  /// [MediaQuery]: with Increase Contrast its glass is filled nearly white,
+  /// its tabs drawn in their colors as they are (the selected one's darker,
+  /// as UIKit's); with Reduce Motion the selection slides without lifting
+  /// into a lens, and nothing swells or flexes.
+  final bool reduceTransparency;
+
+  /// The height of the bottom accessory, and its gap above the bar.
+  static const double accessoryHeight = 48;
+  static const double accessoryGap = 8;
+
+  /// The bar's height with [padding] (UIKit's, 62pt, without), and an
+  /// [accessory] above it if there is one.
+  static double heightWith(
+    EdgeInsetsGeometry? padding, {
+    bool accessory = false,
+  }) =>
       GlassTabBarPhysics.tabHeight +
-      (padding ?? const EdgeInsets.all(GlassTabBarPhysics.inset)).vertical;
+      (padding ?? const EdgeInsets.all(GlassTabBarPhysics.inset)).vertical +
+      (accessory ? accessoryHeight + accessoryGap : 0);
 
   GlassTabBarStyle get _style => GlassTabBarStyle(
     selectedColor: selectedColor,
@@ -252,7 +330,7 @@ class GlassTabBar extends StatefulWidget {
 }
 
 class _GlassTabBarState extends State<GlassTabBar>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   late final GlassTabBarPhysics _physics = GlassTabBarPhysics(
     count: widget.items.length,
     selectedIndex: _slot(widget.selectedIndex),
@@ -260,9 +338,43 @@ class _GlassTabBarState extends State<GlassTabBar>
 
   // Tabs are laid out in slots from the left: in a right-to-left
   // Directionality, the first tab takes the last slot. A slot and an index
-  // map to each other the same way.
+  // map to each other the same way. (The search tab, index items.length, has
+  // no slot: it is a circle of its own.)
   bool _rtl = false;
   int _slot(int index) => _rtl ? widget.items.length - 1 - index : index;
+
+  bool get _searchSelected =>
+      widget.search != null && widget.selectedIndex >= widget.items.length;
+
+  final GlassTabBarMinimize _minimize = GlassTabBarMinimize();
+
+  // Whether the bar is opened into its search field, and the field's focus.
+  bool get _searchOpen =>
+      widget.search != null &&
+      widget.searchController != null &&
+      _searchSelected;
+  FocusNode? _ownFocus;
+  FocusNode get _searchFocus =>
+      widget.searchFocusNode ?? (_ownFocus ??= FocusNode());
+
+  void _focusChanged() {
+    if (mounted) {
+      _minimize.setFocus(_searchFocus.hasFocus, _frameTime);
+      _wake();
+    }
+  }
+
+  // Back to the last tab from the search field.
+  void _exitSearch() {
+    _searchFocus.unfocus();
+    widget.onSelected(_slot(_physics.selectedIndex));
+  }
+
+  void _closeSearch() {
+    widget.searchController?.clear();
+    widget.onSearchChanged?.call('');
+    _searchFocus.unfocus();
+  }
 
   // Whether the tabs were last built for the dark appearance: their colors
   // resolve for it, and the shader's selected tint goes with them.
@@ -292,7 +404,7 @@ class _GlassTabBarState extends State<GlassTabBar>
 
   void _tick(Duration _) {
     final double now = _frameTime;
-    if (!(_physics.tick(now) | _appearance.tick(now))) {
+    if (!(_physics.tick(now) | _appearance.tick(now) | _minimize.tick(now))) {
       _ticker.stop();
     }
     if (_appearance.isDark != _contentDark) {
@@ -371,6 +483,7 @@ class _GlassTabBarState extends State<GlassTabBar>
           SchedulerBinding.instance.addPostFrameCallback((_) {
             final int selected = _slot(widget.selectedIndex);
             if (mounted &&
+                !_searchSelected &&
                 _pointer == null &&
                 _physics.selectedIndex != selected) {
               _physics.select(selected);
@@ -393,6 +506,7 @@ class _GlassTabBarState extends State<GlassTabBar>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     if (!_counting) {
       _counting = true;
       SchedulerBinding.instance.addPersistentFrameCallback((_) => _frames++);
@@ -401,6 +515,10 @@ class _GlassTabBarState extends State<GlassTabBar>
       const Duration(milliseconds: 50),
       (_) => _sample(),
     );
+    _minimize
+      ..set(widget.minimized, 0, animate: false)
+      ..setSearch(_searchOpen, 0, animate: false);
+    _searchFocus.addListener(_focusChanged);
     GlassTabBar.precache().then((_) {
       if (mounted) {
         _frame.notify();
@@ -423,7 +541,9 @@ class _GlassTabBarState extends State<GlassTabBar>
     final bool rtl = Directionality.maybeOf(context) == TextDirection.rtl;
     if (rtl != _rtl) {
       _rtl = rtl;
-      _physics.select(_slot(widget.selectedIndex));
+      if (!_searchSelected) {
+        _physics.select(_slot(widget.selectedIndex));
+      }
     }
     _configureAppearance();
     _wake();
@@ -432,22 +552,53 @@ class _GlassTabBarState extends State<GlassTabBar>
   void _configureAppearance() {
     _appearance
       ..adaptive = widget.adaptive
-      ..system = widget.brightness ?? MediaQuery.platformBrightnessOf(context);
+      ..system = widget.brightness ?? MediaQuery.platformBrightnessOf(context)
+      ..contrast = MediaQuery.highContrastOf(context)
+      ..reduceTransparency = widget.reduceTransparency;
+    // iOS reports Reduce Motion as its own flag, which MediaQuery does not
+    // carry.
+    _physics.reduceMotion =
+        MediaQuery.disableAnimationsOf(context) ||
+        View.of(context).platformDispatcher.accessibilityFeatures.reduceMotion;
+  }
+
+  @override
+  void didChangeAccessibilityFeatures() {
+    if (mounted) {
+      _configureAppearance();
+      _wake();
+    }
   }
 
   @override
   void didUpdateWidget(GlassTabBar oldWidget) {
     super.didUpdateWidget(oldWidget);
     _configureAppearance();
-    final int selected = _slot(widget.selectedIndex);
-    if (selected != _physics.selectedIndex) {
-      _physics.select(selected);
+    if (!_searchSelected) {
+      final int selected = _slot(widget.selectedIndex);
+      if (selected != _physics.selectedIndex) {
+        _physics.select(selected);
+      }
     }
+    if (widget.minimized != oldWidget.minimized) {
+      _minimize.set(widget.minimized, _frameTime);
+    }
+    if (widget.searchFocusNode != oldWidget.searchFocusNode) {
+      (oldWidget.searchFocusNode ?? _ownFocus)?.removeListener(_focusChanged);
+      _searchFocus.addListener(_focusChanged);
+    }
+    if (!_searchOpen && _searchFocus.hasFocus) {
+      _searchFocus.unfocus();
+    }
+    _minimize.setSearch(_searchOpen, _frameTime);
     _wake();
   }
 
   @override
   void dispose() {
+    _searchFocus.removeListener(_focusChanged);
+    _ownFocus?.dispose();
+    WidgetsBinding.instance.removeObserver(this);
     _sampler?.cancel();
     _ticker.dispose();
     _frame.dispose();
@@ -482,8 +633,35 @@ class _GlassTabBarState extends State<GlassTabBar>
       for (var slot = 0; slot < widget.items.length; slot++)
         widget.items[_slot(slot)],
     ];
-    final GlassTabBarStyle style = widget._style;
     _contentDark = _appearance.isDark;
+    final bool contrast = MediaQuery.highContrastOf(context);
+    final Color normal = _contentDark
+        ? const Color(0xFFF3F3F3)
+        : const Color(0xFF191919);
+    // With Increase Contrast, UIKit draws the other tabs in their color as it
+    // is rather than through the glass.
+    final GlassTabBarStyle style = contrast && widget.unselectedColor == null
+        ? GlassTabBarStyle(
+            selectedColor: widget.selectedColor,
+            unselectedColor: normal,
+            badgeColor: widget.badgeColor,
+            labelStyle: widget.labelStyle,
+          )
+        : widget._style;
+    Color tintOf(GlassTabItem item) => GlassTabBarStyle.resolve(
+      item.selectedColor ?? widget.selectedColor ?? GlassTabBarStyle.systemBlue,
+      dark: _contentDark,
+      contrast: contrast,
+    );
+    Widget icon(Widget icon, Color color) => IconTheme.merge(
+      data: IconThemeData(color: color, size: 26),
+      child: icon,
+    );
+    final GlassTabItem? search = widget.search;
+    // The tab the minimized bar shows: the selected one, or the one last
+    // selected while the search tab is.
+    final GlassTabItem shown =
+        items[_physics.selectedIndex.clamp(0, items.length - 1)];
     Widget layer(GlassTabItem item, TabLayer layer) => widget.debugHideContent
         ? const SizedBox()
         : ExcludeSemantics(
@@ -495,7 +673,10 @@ class _GlassTabBarState extends State<GlassTabBar>
             ),
           );
     return SizedBox(
-      height: GlassTabBar.heightWith(widget.padding),
+      height: GlassTabBar.heightWith(
+        widget.padding,
+        accessory: widget.accessory != null,
+      ),
       child: _TabBarLayout(
         physics: _physics,
         appearance: _appearance,
@@ -510,15 +691,8 @@ class _GlassTabBarState extends State<GlassTabBar>
         contentDark: _contentDark,
         hasOriginal: anyOriginal(items, style),
         labelWidth: _widestLabel(context, items, style),
-        tints: <Color>[
-          for (final GlassTabItem item in items)
-            GlassTabBarStyle.resolve(
-              item.selectedColor ??
-                  widget.selectedColor ??
-                  GlassTabBarStyle.systemBlue,
-              dark: _contentDark,
-            ),
-        ],
+        tints: <Color>[for (final GlassTabItem item in items) tintOf(item)],
+        contrast: contrast,
         glass: (widget.glass ?? const GlassDecoration()).withColor(
           widget.glassColor,
         ),
@@ -532,7 +706,22 @@ class _GlassTabBarState extends State<GlassTabBar>
         padding:
             (widget.padding ?? const EdgeInsets.all(GlassTabBarPhysics.inset))
                 .resolve(Directionality.maybeOf(context) ?? TextDirection.ltr),
-        // One child per tab and layer: each layer's tabs in slot order.
+        tabCount: items.length,
+        hasSearch: search != null,
+        hasAccessory: widget.accessory != null,
+        minimize: _minimize,
+        searchSelected: _searchSelected,
+        onSearch: () => widget.onSelected(widget.items.length),
+        onExpand: widget.onExpand,
+        onSearchClose: _closeSearch,
+        onSearchExit: _exitSearch,
+        onSearchPress: (bool down) {
+          _minimize.pressSearch(down, _frameTime);
+          _wake();
+        },
+        hasField: search != null && widget.searchController != null,
+        // One child per tab and layer: each layer's tabs in slot order; then
+        // the search tab's icon, the minimized bar's icon, and the accessory.
         children: <Widget>[
           for (var slot = 0; slot < items.length; slot++)
             Semantics(
@@ -545,8 +734,140 @@ class _GlassTabBarState extends State<GlassTabBar>
             ),
           for (final TabLayer l in TabLayer.values.skip(1))
             for (final GlassTabItem item in items) layer(item, l),
+          if (search != null)
+            Semantics(
+              button: true,
+              selected: _searchSelected,
+              label: search.label,
+              onTap: () => widget.onSelected(widget.items.length),
+              // Selected, it takes the tint; opened into its field, it is
+              // the field's magnifying glass, in the label's color.
+              child: _searchSelected && !_searchOpen
+                  ? icon(search.selectedIcon ?? search.icon, tintOf(search))
+                  : icon(search.icon, search.unselectedColor ?? normal),
+            ),
+          Semantics(
+            button: true,
+            label: shown.label,
+            onTap: _searchOpen ? _exitSearch : widget.onExpand,
+            // While searching, it is the last tab, not the selected one.
+            child: _searchOpen
+                ? icon(shown.icon, normal)
+                : icon(shown.selectedIcon ?? shown.icon, tintOf(shown)),
+          ),
+          if (widget.accessory case final Widget accessory)
+            DefaultTextStyle.merge(
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+                color: _contentDark
+                    ? const Color(0xFFFFFFFF)
+                    : const Color(0xFF000000),
+              ),
+              child: IconTheme.merge(
+                data: IconThemeData(
+                  color: _contentDark
+                      ? const Color(0xFFFFFFFF)
+                      : const Color(0xFF000000),
+                  size: 20,
+                ),
+                child: accessory,
+              ),
+            ),
+          if (search != null && widget.searchController != null) ...<Widget>[
+            // Only while open, for screen readers and focus.
+            ExcludeSemantics(
+              excluding: !_searchOpen,
+              child: ExcludeFocus(
+                excluding: !_searchOpen,
+                child: _SearchField(
+                  controller: widget.searchController!,
+                  focusNode: _searchFocus,
+                  placeholder: widget.searchPlaceholder,
+                  dark: _contentDark,
+                  cursorColor: tintOf(search),
+                  onChanged: widget.onSearchChanged,
+                  onSubmitted: widget.onSearchSubmitted,
+                ),
+              ),
+            ),
+            ExcludeSemantics(
+              excluding: !_searchOpen,
+              child: Semantics(
+                button: true,
+                label: 'Close',
+                onTap: _closeSearch,
+                child: icon(
+                  const BarGlyph.close(),
+                  _contentDark
+                      ? const Color(0xFFFFFFFF)
+                      : const Color(0xFF000000),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
+    );
+  }
+}
+
+/// The search field's content: UIKit's magnifying glass 13pt from its
+/// leading end, and the text 41.7pt from it, 17pt.
+class _SearchField extends StatelessWidget {
+  const _SearchField({
+    required this.controller,
+    required this.focusNode,
+    required this.placeholder,
+    required this.dark,
+    required this.cursorColor,
+    this.onChanged,
+    this.onSubmitted,
+  });
+
+  final TextEditingController controller;
+  final FocusNode focusNode;
+  final String placeholder;
+  final bool dark;
+  final Color cursorColor;
+  final ValueChanged<String>? onChanged;
+  final ValueChanged<String>? onSubmitted;
+
+  @override
+  Widget build(BuildContext context) {
+    // UIKit's label color, and its placeholder's: the secondary label's
+    // color at about 76% over the glass (as its vibrancy comes out).
+    final Color text = dark ? const Color(0xFFFFFFFF) : const Color(0xFF000000);
+    final Color secondary = dark
+        ? const Color(0xC2EBEBF5)
+        : const Color(0xC23C3C43);
+    return Row(
+      children: <Widget>[
+        const SizedBox(width: 13),
+        SizedBox(
+          width: 20.67,
+          child: Align(
+            // The search tab's own icon slides here (see _paintExtras).
+            child: const SizedBox(),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: CupertinoTextField.borderless(
+            controller: controller,
+            focusNode: focusNode,
+            placeholder: placeholder,
+            padding: EdgeInsets.zero,
+            style: TextStyle(fontSize: 17, color: text),
+            placeholderStyle: TextStyle(fontSize: 17, color: secondary),
+            cursorColor: cursorColor,
+            textInputAction: TextInputAction.search,
+            onChanged: onChanged,
+            onSubmitted: onSubmitted,
+          ),
+        ),
+        const SizedBox(width: 12),
+      ],
     );
   }
 }
@@ -576,8 +897,33 @@ class _TabBarLayout extends MultiChildRenderObjectWidget {
     required this.lens,
     required this.textDirection,
     required this.padding,
+    required this.tabCount,
+    required this.hasSearch,
+    required this.hasAccessory,
+    required this.minimize,
+    required this.searchSelected,
+    required this.onSearch,
+    required this.onExpand,
+    required this.onSearchClose,
+    required this.onSearchExit,
+    required this.onSearchPress,
+    required this.hasField,
+    required this.contrast,
     required super.children,
   });
+
+  final VoidCallback onSearchClose;
+  final VoidCallback onSearchExit;
+  final ValueChanged<bool> onSearchPress;
+  final bool hasField;
+  final bool contrast;
+  final int tabCount;
+  final bool hasSearch;
+  final bool hasAccessory;
+  final GlassTabBarMinimize minimize;
+  final bool searchSelected;
+  final VoidCallback onSearch;
+  final VoidCallback? onExpand;
 
   final GlassTabBarPhysics physics;
   final GlassAppearance appearance;
@@ -621,6 +967,18 @@ class _TabBarLayout extends MultiChildRenderObjectWidget {
       lens: lens,
       textDirection: textDirection,
       padding: padding,
+      tabCount: tabCount,
+      hasSearch: hasSearch,
+      hasAccessory: hasAccessory,
+      minimize: minimize,
+      searchSelected: searchSelected,
+      onSearch: onSearch,
+      onExpand: onExpand,
+      onSearchClose: onSearchClose,
+      onSearchExit: onSearchExit,
+      onSearchPress: onSearchPress,
+      hasField: hasField,
+      contrast: contrast,
     );
   }
 
@@ -645,7 +1003,18 @@ class _TabBarLayout extends MultiChildRenderObjectWidget {
       ..indicator = indicator
       ..lens = lens
       ..textDirection = textDirection
-      ..padding = padding;
+      ..padding = padding
+      ..tabCount = tabCount
+      ..hasSearch = hasSearch
+      ..hasAccessory = hasAccessory
+      ..searchSelected = searchSelected
+      ..onSearch = onSearch
+      ..onExpand = onExpand
+      ..onSearchClose = onSearchClose
+      ..onSearchExit = onSearchExit
+      ..onSearchPress = onSearchPress
+      ..hasField = hasField
+      ..contrast = contrast;
   }
 }
 
@@ -686,7 +1055,98 @@ class RenderGlassTabBar extends RenderBox
     this._lens = const GlassDecoration(),
     this._textDirection = TextDirection.ltr,
     this._padding = const EdgeInsets.all(GlassTabBarPhysics.inset),
-  });
+    int tabCount = 0,
+    this._hasSearch = false,
+    this._hasAccessory = false,
+    GlassTabBarMinimize? minimize,
+    this._searchSelected = false,
+    this.onSearch,
+    this.onExpand,
+    this.onSearchClose,
+    this.onSearchExit,
+    this.onSearchPress,
+    this._contrast = false,
+    this._hasField = false,
+  }) : _count = tabCount,
+       _minimize = minimize ?? GlassTabBarMinimize();
+
+  final GlassTabBarMinimize _minimize;
+
+  /// Called when the search tab's circle is tapped.
+  VoidCallback? onSearch;
+
+  /// Called when the minimized bar is tapped.
+  VoidCallback? onExpand;
+
+  /// Called as the finger comes down on the search circle, and up.
+  ValueChanged<bool>? onSearchPress;
+
+  /// Called when the search field's close button is tapped, and when the
+  /// collapsed platter is tapped while the field is open (back to the tabs).
+  VoidCallback? onSearchClose;
+  VoidCallback? onSearchExit;
+
+  /// Whether the search tab opens into a search field (children for its
+  /// content and its close button follow the accessory).
+  bool get hasField => _hasField;
+  bool _hasField;
+  set hasField(bool value) {
+    if (value != _hasField) {
+      _hasField = value;
+      markNeedsLayout();
+    }
+  }
+
+  /// How many tabs the platter holds (each a child per [TabLayer]; any
+  /// children after them are the search tab's icon, the minimized bar's
+  /// icon and the accessory).
+  int get tabCount => _count;
+  int _count;
+  set tabCount(int value) {
+    if (value != _count) {
+      _count = value;
+      markNeedsLayout();
+    }
+  }
+
+  bool get hasSearch => _hasSearch;
+  bool _hasSearch;
+  set hasSearch(bool value) {
+    if (value != _hasSearch) {
+      _hasSearch = value;
+      markNeedsLayout();
+    }
+  }
+
+  bool get hasAccessory => _hasAccessory;
+  bool _hasAccessory;
+  set hasAccessory(bool value) {
+    if (value != _hasAccessory) {
+      _hasAccessory = value;
+      markNeedsLayout();
+    }
+  }
+
+  /// Increase Contrast: the selected tabs drawn in their color as it is.
+  bool get contrast => _contrast;
+  bool _contrast;
+  set contrast(bool value) {
+    if (value != _contrast) {
+      _contrast = value;
+      markNeedsPaint();
+    }
+  }
+
+  /// Whether the search tab is the selected one: the platter then shows no
+  /// selection at rest.
+  bool get searchSelected => _searchSelected;
+  bool _searchSelected;
+  set searchSelected(bool value) {
+    if (value != _searchSelected) {
+      _searchSelected = value;
+      markNeedsPaint();
+    }
+  }
 
   final GlassTabBarPhysics _physics;
   final GlassAppearance _appearance;
@@ -903,6 +1363,15 @@ class RenderGlassTabBar extends RenderBox
   final LayerHandle<BackdropFilterLayer> _inspectorPass =
       LayerHandle<BackdropFilterLayer>();
 
+  // The platter's frost, drawn into the backdrop before the passes capture
+  // it: two blurs of one capture of its own.
+  final BackdropKey _frostCapture = BackdropKey();
+  final LayerHandle<ClipPathLayer> _frostClip = LayerHandle<ClipPathLayer>();
+  final LayerHandle<BackdropFilterLayer> _frostHeavy =
+      LayerHandle<BackdropFilterLayer>();
+  final LayerHandle<BackdropFilterLayer> _frostLight =
+      LayerHandle<BackdropFilterLayer>();
+
   bool get _drawsGlass =>
       (_debugView == GlassTabBarDebugView.none ||
           _debugView == GlassTabBarDebugView.sampling) &&
@@ -961,6 +1430,7 @@ class RenderGlassTabBar extends RenderBox
   }
 
   void _clearGlassLayers() {
+    _clearFrost();
     _barClip.layer = null;
     _barPass.layer = null;
     _lensClip.layer = null;
@@ -970,32 +1440,210 @@ class RenderGlassTabBar extends RenderBox
     _glowClip.layer = null;
   }
 
-  int get _tabCount => childCount ~/ tabLayerCount;
+  int get _tabCount => _count;
+
+  // The child at [index], or null.
+  RenderBox? _childAt(int index) {
+    RenderBox? child = firstChild;
+    for (var i = 0; i < index && child != null; i++) {
+      child = childAfter(child);
+    }
+    return child;
+  }
+
+  int get _extrasStart => _count * tabLayerCount;
+  int get _searchIconIndex => _extrasStart;
+  int get _minimizedIconIndex => _extrasStart + (_hasSearch ? 1 : 0);
+  int get _accessoryIndex => _minimizedIconIndex + 1;
+  int get _fieldIndex => _accessoryIndex + (_hasAccessory ? 1 : 0);
+  RenderBox? get _searchIcon => _hasSearch ? _childAt(_searchIconIndex) : null;
+  RenderBox? get _minimizedIcon => _childAt(_minimizedIconIndex);
+  RenderBox? get _accessory => _hasAccessory ? _childAt(_accessoryIndex) : null;
+  RenderBox? get _searchField => _hasField ? _childAt(_fieldIndex) : null;
+  RenderBox? get _closeIcon => _hasField ? _childAt(_fieldIndex + 1) : null;
+
+  // The tab row's top in the bar: under the accessory, if there is one.
+  double get _barRowTop => _hasAccessory
+      ? GlassTabBar.accessoryHeight + GlassTabBar.accessoryGap
+      : 0;
+  double get _barRowHeight => GlassTabBarPhysics.tabHeight + _padding.vertical;
+
+  // Where the physics' origin (the platter's top left at rest) sits in the
+  // bar, and the search tab's circle.
+  Offset _platterOrigin = Offset.zero;
+  Rect _searchCircle = Rect.zero;
+
+  // UIKit's minimized bar: 48pt circles, 7pt in from the row's ends (in its
+  // 62pt circles' place), the accessory between them 8pt from each. Its
+  // search field: from 12pt after the circle to the row's end, and with the
+  // keyboard, 12pt short of a close button there.
+  static const double _minimizedSize = 48;
+  static const double _minimizedGap = 8;
+  static const double _fieldGap = 12;
+
+  // The search field's layout while it has the keyboard (its content is laid
+  // out once, at this width).
+  Rect _fieldFocused = Rect.zero;
+
+  /// The glass shapes as drawn now, in the bar's coordinates: the platter
+  /// and its selection (collapsing into [circle] as the bar minimizes or
+  /// searches), the search tab's circle (growing into its field), the
+  /// accessory and the field's close button (each empty when there is none).
+  ({
+    Rect platter,
+    Rect lens,
+    Rect search,
+    Rect accessory,
+    Rect close,
+    Rect circle,
+    Rect searchCircle,
+    Rect field,
+  })
+  _shapes() {
+    final double row = _barRowHeight;
+    final double mid = _barRowTop + row / 2;
+    const double d = _minimizedSize;
+    final double inset = (GlassTabBar.height - d) / 2;
+    final bool rtl = _textDirection == TextDirection.rtl;
+    Rect mirror(Rect r) => rtl
+        ? Rect.fromLTRB(
+            size.width - r.right,
+            r.top,
+            size.width - r.left,
+            r.bottom,
+          )
+        : r;
+    final Rect circle = mirror(Rect.fromLTWH(inset, mid - d / 2, d, d));
+    final Rect searchMin = mirror(
+      Rect.fromLTWH(size.width - inset - d, mid - d / 2, d, d),
+    );
+    final GlassTabBarMinimize m = _minimize;
+    Rect toward(Rect from, double c, double w, double h) => Rect.fromCenter(
+      center: Offset.lerp(from.center, circle.center, c)!,
+      width: ui.lerpDouble(from.width, d, w)!,
+      height: ui.lerpDouble(from.height, d, h)!,
+    );
+    var accessory = Rect.zero;
+    if (_hasAccessory) {
+      final double to = _hasSearch
+          ? size.width - inset - d - _minimizedGap
+          : size.width - inset;
+      final Rect inline = mirror(
+        Rect.fromLTRB(inset + d + _minimizedGap, mid - d / 2, to, mid + d / 2),
+      );
+      final Rect above = Rect.fromLTWH(
+        0,
+        0,
+        size.width,
+        GlassTabBar.accessoryHeight,
+      );
+      final double span = m.accessorySpan.value;
+      final double drop = m.accessoryDrop.value;
+      final double l = ui.lerpDouble(above.left, inline.left, span)!;
+      final double r = ui.lerpDouble(above.right, inline.right, span)!;
+      final double t = ui.lerpDouble(above.top, inline.top, drop)!;
+      accessory = Rect.fromLTRB(l, t, r, t + GlassTabBar.accessoryHeight);
+    }
+    var search = Rect.zero, close = Rect.zero, searchCircle = Rect.zero;
+    var fieldRect = Rect.zero;
+    if (_hasSearch) {
+      // The circle shrinks with the bar minimizing, and swells pressed.
+      final Rect resting = Rect.lerp(_searchCircle, searchMin, m.size.value)!;
+      searchCircle = Rect.fromCenter(
+        center: resting.center,
+        width: resting.width * m.searchPress.value,
+        height: resting.height * m.searchPress.value,
+      );
+      search = searchCircle;
+      if (_hasField) {
+        final double left = inset + d + _fieldGap;
+        final Rect open = mirror(
+          Rect.fromLTRB(left, mid - d / 2, size.width - inset, mid + d / 2),
+        );
+        final Rect focused = mirror(
+          Rect.fromLTRB(
+            left,
+            mid - d / 2,
+            size.width - inset - d - _fieldGap,
+            mid + d / 2,
+          ),
+        );
+        _fieldFocused = focused;
+        final Rect field = Rect.lerp(open, focused, m.focus.value)!;
+        fieldRect = field;
+        search = Rect.lerp(searchCircle, field, m.searchOpen.value)!;
+        final double f = m.focus.value.clamp(0.0, 1.5);
+        close = Rect.fromCenter(
+          center: searchMin.center,
+          width: d * f,
+          height: d * f,
+        );
+      }
+    }
+    return (
+      platter: toward(
+        _physics.platterRect.shift(_platterOrigin),
+        m.platterCenter.value,
+        m.platterWidth.value,
+        m.platterHeight.value,
+      ),
+      lens: toward(
+        _physics.lensRect.shift(_platterOrigin),
+        m.center.value,
+        m.size.value,
+        m.size.value,
+      ),
+      search: search,
+      accessory: accessory,
+      close: close,
+      circle: circle,
+      searchCircle: searchCircle,
+      field: fieldRect,
+    );
+  }
 
   @override
   void performLayout() {
     _contentDirty = true;
     final int count = _tabCount;
-    size = constraints.constrain(
-      Size(
-        GlassTabBarPhysics.naturalWidth(
-              count,
-              _labelWidth,
-              horizontal: _padding.horizontal,
-            ) ??
-            (constraints.hasBoundedWidth ? constraints.maxWidth : 398),
-        GlassTabBarPhysics.tabHeight + _padding.vertical,
-      ),
+    final double row = _barRowHeight;
+    final double top = _barRowTop;
+    final double? natural = GlassTabBarPhysics.naturalWidth(
+      count,
+      _labelWidth,
+      horizontal: _padding.horizontal,
+      search: _hasSearch,
     );
+    final double full = constraints.hasBoundedWidth
+        ? constraints.maxWidth
+        : 398;
+    // A bar with a search tab or an accessory spans its width; one of up
+    // to three tabs alone hugs them.
+    final bool spans = natural == null || _hasSearch || _hasAccessory;
+    size = constraints.constrain(Size(spans ? full : natural, top + row));
+    final double platterWidth = _hasSearch
+        ? natural ?? math.max(size.width - row - _minimizedGap, 0)
+        : natural ?? size.width;
+    final bool rtl = _textDirection == TextDirection.rtl;
+    final double x = _hasSearch
+        ? (rtl ? size.width - platterWidth : 0)
+        : (size.width - platterWidth) / 2;
+    _platterOrigin = Offset(x, top);
+    _searchCircle = Rect.fromLTWH(rtl ? 0 : size.width - row, top, row, row);
     if (count == 0) {
       return;
     }
-    _physics.layout(size, count, padding: _padding);
+    _physics.layout(
+      Size(platterWidth, row),
+      count,
+      padding: _padding,
+      search: _hasSearch,
+    );
     final double width = _physics.pillWidth;
     final tight = BoxConstraints.tight(Size(width, _rowHeight));
     var i = 0;
     RenderBox? child = firstChild;
-    while (child != null) {
+    while (child != null && i < _extrasStart) {
       child.layout(tight);
       (child.parentData! as _TabParentData).offset = Offset(
         _physics.tabCenter(i % count) - width / 2,
@@ -1004,18 +1652,183 @@ class RenderGlassTabBar extends RenderBox
       child = childAfter(child);
       i++;
     }
+    // The icons, the accessory and the field sit where the glass is drawn
+    // each frame.
+    _searchIcon?.layout(
+      BoxConstraints.loose(Size.square(row)),
+      parentUsesSize: true,
+    );
+    _minimizedIcon?.layout(
+      BoxConstraints.loose(const Size.square(_minimizedSize)),
+      parentUsesSize: true,
+    );
+    final double inline =
+        size.width -
+        2 * ((GlassTabBar.height - _minimizedSize) / 2) -
+        (_minimizedSize + _minimizedGap) * (_hasSearch ? 2 : 1);
+    _accessory?.layout(
+      BoxConstraints(
+        maxWidth: math.max(math.min(size.width, inline) - 32, 0),
+        maxHeight: GlassTabBar.accessoryHeight,
+      ),
+      parentUsesSize: true,
+    );
+    final shapes = _shapes();
+    _searchField?.layout(BoxConstraints.tight(_fieldFocused.size));
+    _closeIcon?.layout(
+      BoxConstraints.loose(const Size.square(_minimizedSize)),
+      parentUsesSize: true,
+    );
+    // Where they sit at rest (they are painted where the glass is drawn,
+    // which these follow while it moves): for hit testing and semantics.
+    void place(RenderBox? child, Rect rect) {
+      if (child != null) {
+        (child.parentData! as _TabParentData).offset =
+            rect.center - child.size.center(Offset.zero);
+      }
+    }
+
+    place(_searchIcon, shapes.search);
+    place(_minimizedIcon, shapes.circle);
+    place(_accessory, shapes.accessory);
+    place(_closeIcon, shapes.close);
+    if (_searchField case final RenderBox field) {
+      (field.parentData! as _TabParentData).offset = _fieldOrigin(shapes);
+    }
+  }
+
+  // Where the field's content sits: at the field's leading end.
+  Offset _fieldOrigin(
+    ({
+      Rect platter,
+      Rect lens,
+      Rect search,
+      Rect accessory,
+      Rect close,
+      Rect circle,
+      Rect searchCircle,
+      Rect field,
+    })
+    shapes,
+  ) {
+    final bool rtl = _textDirection == TextDirection.rtl;
+    final Rect f = shapes.search;
+    return Offset(
+      rtl ? f.right - _fieldFocused.width : f.left,
+      f.center.dy - _fieldFocused.height / 2,
+    );
   }
 
   @override
-  bool hitTestSelf(Offset position) => size.contains(position);
+  bool hitTestSelf(Offset position) => _glassAt(position) != null;
+
+  // The glass at [position]: 0 the platter (while expanded, its whole row),
+  // 1 the search circle or field, 2 the accessory, 3 the field's close
+  // button; null for none.
+  int? _glassAt(Offset position) {
+    final shapes = _shapes();
+    bool inside(Rect r) =>
+        !r.isEmpty &&
+        RRect.fromRectAndRadius(
+          r,
+          Radius.circular(r.shortestSide / 2),
+        ).contains(position);
+    if (_hasAccessory && inside(shapes.accessory)) {
+      return 2;
+    }
+    if (_hasField && _minimize.searching && inside(shapes.close)) {
+      return 3;
+    }
+    if (_hasSearch && inside(shapes.search)) {
+      return 1;
+    }
+    final bool platter = _minimize.collapsed
+        ? inside(shapes.platter)
+        : (_platterOrigin & _physics.size).contains(position);
+    return platter ? 0 : null;
+  }
 
   @override
-  bool hitTestChildren(BoxHitTestResult result, {required Offset position}) =>
-      false;
+  bool hitTestChildren(BoxHitTestResult result, {required Offset position}) {
+    final int? glass = _glassAt(position);
+    final shapes = _shapes();
+    RenderBox? child;
+    Offset at = Offset.zero;
+    if (glass == 2 && _accessory != null) {
+      child = _accessory;
+      at = shapes.accessory.center - child!.size.center(Offset.zero);
+    } else if (glass == 1 && _minimize.searching && _searchField != null) {
+      child = _searchField;
+      at = _fieldOrigin(shapes);
+    }
+    if (child == null) {
+      return false;
+    }
+    final RenderBox target = child;
+    return result.addWithPaintOffset(
+      offset: at,
+      position: position,
+      hitTest: (BoxHitTestResult result, Offset transformed) =>
+          target.hitTest(result, position: transformed),
+    );
+  }
+
+  // The pointer whose events go to the platter's physics, and one tapping
+  // the search circle, the field's close button or the collapsed platter.
+  int? _forwarded;
+  int? _tapped;
+  int? _tappedGlass;
 
   @override
   void handleEvent(PointerEvent event, BoxHitTestEntry entry) {
-    onPointer(event);
+    if (event is PointerDownEvent) {
+      final int? glass = _glassAt(event.localPosition);
+      if (glass == 0 && !_minimize.collapsed) {
+        _forwarded = event.pointer;
+      } else if (glass == 0 ||
+          glass == 3 ||
+          (glass == 1 && !_minimize.searching)) {
+        _tapped = event.pointer;
+        _tappedGlass = glass;
+        if (glass == 1) {
+          onSearchPress?.call(true);
+        }
+        return;
+      } else {
+        return;
+      }
+    }
+    if (event.pointer == _forwarded) {
+      // In the physics' coordinates, from the platter's origin.
+      onPointer(
+        event.transformed(
+          Matrix4.translationValues(-_platterOrigin.dx, -_platterOrigin.dy, 0)
+            ..multiply(event.transform ?? Matrix4.identity()),
+        ),
+      );
+      if (event is PointerUpEvent || event is PointerCancelEvent) {
+        _forwarded = null;
+      }
+    } else if (event.pointer == _tapped) {
+      if (event is PointerUpEvent &&
+          _glassAt(event.localPosition) == _tappedGlass) {
+        switch (_tappedGlass) {
+          case 1:
+            onSearch?.call();
+          case 3:
+            onSearchClose?.call();
+          default:
+            // The collapsed platter: back to the tabs.
+            (_minimize.searching ? onSearchExit : onExpand)?.call();
+        }
+      }
+      if (event is PointerUpEvent || event is PointerCancelEvent) {
+        if (_tappedGlass == 1) {
+          onSearchPress?.call(false);
+        }
+        _tapped = null;
+      }
+    }
   }
 
   @override
@@ -1032,10 +1845,10 @@ class RenderGlassTabBar extends RenderBox
     }
     if (!_drawsGlass || program == null) {
       _clearGlassLayers();
-      _paintField(context.canvas, offset);
+      _paintField(context.canvas, offset + _platterOrigin);
       context.pushTransform(
         needsCompositing,
-        offset,
+        offset + _platterOrigin,
         _physics.platterTransform,
         _paintTabs,
       );
@@ -1052,20 +1865,41 @@ class RenderGlassTabBar extends RenderBox
     ui.FragmentProgram program,
   ) {
     final bool diagnostic = _debugView == GlassTabBarDebugView.sampling;
-    while (_passes.length < 3) {
+    while (_passes.length < 4) {
       _passes.add(_BackdropUniforms(program.fragmentShader()));
     }
     final _CaptureSpace space = _CaptureSpace(
       getTransformTo(null),
       _devicePixelRatio,
     );
-    final Rect platter = _physics.platterRect;
-    final Rect lens = _physics.lensRect;
-    final Offset? touch = _physics.touch;
+    final shapes = _shapes();
+    final Rect platter = shapes.platter;
+    final Rect lens = shapes.lens;
+    final Offset? touch = _physics.touch == null
+        ? null
+        : _physics.touch! + _platterOrigin;
+
+    // How much the tabs and the selection show: the tabs fade (and blur) as
+    // the bar collapses, and the selection with them; while the search tab
+    // is selected, the selection shows only lifted (pressed).
+    final double collapsed = _minimize.fade.value.clamp(0.0, 1.0);
+    final double contentAlpha = 1 - collapsed;
+    final double selectionAlpha =
+        (_searchSelected ? (_lift ?? _physics.liftProgress) : 1.0) *
+        contentAlpha;
 
     // The same geometry for every pass, in capture pixels.
     final Rect platterPixels = space.rect(platter);
     final Rect lensPixels = space.rect(lens);
+    final Rect searchPixels = _hasSearch
+        ? space.rect(shapes.search)
+        : Rect.zero;
+    final Rect accessoryPixels = _hasAccessory
+        ? space.rect(shapes.accessory)
+        : Rect.zero;
+    final Rect closePixels = shapes.close.isEmpty
+        ? Rect.zero
+        : space.rect(shapes.close);
     final Offset finger = touch == null ? Offset.zero : space.point(touch);
     final Rect inspector = _inspectorRect;
     final Rect inspectorPixels = space.rect(inspector);
@@ -1087,9 +1921,13 @@ class RenderGlassTabBar extends RenderBox
 
     // The tabs in the selected style, which the lens draws itself.
     final ui.Image atlas = _ensureContentAtlas();
-    final Offset barOrigin = space.point(Offset.zero);
-    final Offset platterCenter = size.center(Offset.zero);
+    // The tabs' content is laid out in the physics' coordinates. As the
+    // platter collapses it stays in place, fading and blurring, and the
+    // platter's shape clips it, as UIKit's does.
+    final Offset barOrigin = space.point(_platterOrigin);
+    final Offset platterCenter = _physics.size.center(Offset.zero);
     final Offset drift = _physics.platterDrift;
+    final Size squeeze = Size(_physics.platterScaleX, _physics.platterScaleY);
     final int count = _tabCount;
 
     // The fingertip glow, for the lens's view of it: a gaussian of the
@@ -1105,7 +1943,7 @@ class RenderGlassTabBar extends RenderBox
     final double glowVariance = glowRadius * glowRadius / (2 * glowPeak);
     final Offset glowPixels = glowCenter == null
         ? Offset.zero
-        : space.point(glowCenter);
+        : space.point(glowCenter + _platterOrigin);
 
     // The appearance's color inputs.
     final GlassAppearance appearance = _appearance;
@@ -1164,8 +2002,8 @@ class RenderGlassTabBar extends RenderBox
           drift.dy,
         )
         ..platterScale.set(
-          _physics.platterScaleX,
-          _physics.platterScaleY,
+          squeeze.width,
+          squeeze.height,
           _rowHeight,
           _atlasSlot,
         )
@@ -1192,21 +2030,43 @@ class RenderGlassTabBar extends RenderBox
         ..selected.set(
           _contentDark ? 0 : -0.5,
           _rowTop,
-          0,
+          _contrast ? 1 : 0,
           _hasOriginal ? 1 : 0,
         )
-        ..setTints(glassTint, restTint, lensTint);
-      u.shader.setImageSampler(1, atlas);
+        ..setTints(glassTint, restTint, lensTint)
+        ..setExtra(
+          searchPixels,
+          accessoryPixels,
+          closePixels,
+          contentAlpha,
+          selectionAlpha,
+          appearance.chroma,
+          appearance.refraction,
+          _blurSigma * collapsed,
+        );
+      // Filtered: the lens magnifies the content (the capture the engine
+      // samples at the nearest pixel; the shader filters it).
+      u.shader.setImageSampler(1, atlas, filterQuality: FilterQuality.low);
       return ui.ImageFilter.shader(u.shader);
     }
 
     // The decorations' shadows, with the glass's shapes as drawn: the
     // selection's fade as the lens lifts (the resting selection with the
     // lift, the lens's material four times as fast, as UIKit's).
-    final RRect platterShape = RRect.fromRectAndRadius(
-      platter.shift(offset),
-      Radius.circular(platter.shortestSide / 2),
-    );
+    // All the glass: the platter, and the search circle and the accessory.
+    final List<Rect> glass = <Rect>[
+      platter,
+      if (_hasSearch) shapes.search,
+      if (_hasAccessory) shapes.accessory,
+      if (shapes.close.width > 1) shapes.close,
+    ];
+    final List<RRect> glassShapes = <RRect>[
+      for (final Rect r in glass)
+        RRect.fromRectAndRadius(
+          r.shift(offset),
+          Radius.circular(r.shortestSide / 2),
+        ),
+    ];
     final RRect lensShape = RRect.fromRectAndRadius(
       lens.shift(offset),
       Radius.circular(lens.shortestSide / 2),
@@ -1219,7 +2079,19 @@ class RenderGlassTabBar extends RenderBox
 
     // The glass's drop shadows go under it, into the backdrop it captures.
     if (!diagnostic) {
-      _paintShadows(canvas(), platterShape, _glass.shadows, 1);
+      for (final RRect shape in glassShapes) {
+        _paintShadows(canvas(), shape, _glass.shadows, 1);
+      }
+    }
+
+    // Pass 0, the platter's frost, into the backdrop under it (where the
+    // bar's glass covers it): UIKit's platter frosts what is below it, then
+    // refracts that. The bar's frost and refraction read it from their
+    // capture.
+    if (_optics & GlassTabBarOptics.platter != 0) {
+      _paintFrost(context, offset, glass, platterScale, passFilter(3));
+    } else {
+      _clearFrost();
     }
 
     // Pass 1, the bar: takes the capture, before any glass. Its shadows
@@ -1228,7 +2100,9 @@ class RenderGlassTabBar extends RenderBox
     _barClip.layer = context.pushClipRect(
       needsCompositing,
       offset,
-      platter.inflate(shadows ? _shadowMargin : 2),
+      glass
+          .reduce((Rect a, Rect b) => a.expandToInclude(b))
+          .inflate(shadows ? _shadowMargin : 2),
       (PaintingContext context, Offset offset) {
         final BackdropFilterLayer layer =
             (_barPass.layer ??= BackdropFilterLayer())
@@ -1246,7 +2120,9 @@ class RenderGlassTabBar extends RenderBox
     // The fingertip glow, over the platter and its tabs: under the lens,
     // whose shader sees it through its optics.
     if (!diagnostic) {
-      _paintInnerShadows(canvas(), platterShape, _glass.innerShadows, 1);
+      for (final RRect shape in glassShapes) {
+        _paintInnerShadows(canvas(), shape, _glass.innerShadows, 1);
+      }
       _paintShadows(canvas(), lensShape, _indicator.shadows, resting);
       _paintShadows(canvas(), lensShape, _lens.shadows, lifted);
     }
@@ -1257,6 +2133,14 @@ class RenderGlassTabBar extends RenderBox
     final BackdropKey lensCapture = _shareBackdrop
         ? _sharedCapture
         : _lensOwnCapture;
+    if (selectionAlpha <= 0 && !diagnostic) {
+      _lensClip.layer = null;
+      _lensPass.layer = null;
+      _paintExtras(context, offset, shapes);
+      _inspectorClip.layer = null;
+      _inspectorPass.layer = null;
+      return;
+    }
     _lensClip.layer = context.pushClipRect(
       needsCompositing,
       offset,
@@ -1274,6 +2158,7 @@ class RenderGlassTabBar extends RenderBox
     if (!diagnostic) {
       _paintInnerShadows(canvas(), lensShape, _indicator.innerShadows, resting);
       _paintInnerShadows(canvas(), lensShape, _lens.innerShadows, lifted);
+      _paintExtras(context, offset, shapes);
       _inspectorClip.layer = null;
       _inspectorPass.layer = null;
       return;
@@ -1302,6 +2187,268 @@ class RenderGlassTabBar extends RenderBox
   }
 
   static void _paintNothing(PaintingContext context, Offset offset) {}
+
+  // UIKit's platter frosts what is below it, then refracts that: its
+  // glassBackground blurs its quarter-scale capture and mixes that into the
+  // capture itself, half at the platter's edge and fully 31pt in
+  // (inputBlurDistance and inputBlurOpacity), so a point refracted from deep
+  // inside comes out deeply frosted. Here the capture is not scaled down: the
+  // heavy blur is drawn first, natively, and the backdrop shader's frost
+  // pass draws a light one (for the capture's filtering) over it, fading
+  // from half at the edge to none at the middle line. The heavy sigma is in
+  // points, fitted to UIKit's frost over stripes. (Through a ShaderMask,
+  // which would be simpler, Impeller misplaces a backdrop filter.)
+  static const double _frostHeavySigma = 2.9;
+
+  // With Reduce Transparency, UIKit blurs far more (its glassBackground's
+  // inputBlurRadius goes from 0.67 to 36.9) and fully: a sigma that leaves
+  // 40pt blocks as faint as UIKit's do, and no light blur.
+  static const double _reducedFrostSigma = 20;
+
+  // The frost lies within the platter by this many pixels, under glass the
+  // bar draws opaque (as the shader's kFrostInset).
+  static const double _frostInset = 2;
+
+  void _paintFrost(
+    PaintingContext context,
+    Offset offset,
+    List<Rect> glass,
+    double scale,
+    ui.ImageFilter light,
+  ) {
+    final double inset = _frostInset / _devicePixelRatio;
+    final clip = Path();
+    for (final Rect r in glass) {
+      clip.addRRect(
+        RRect.fromRectAndRadius(
+          r.deflate(inset),
+          Radius.circular(r.shortestSide / 2 - inset),
+        ),
+      );
+    }
+    final bool reduced = _appearance.refraction == 0;
+    final double sigma =
+        (reduced ? _reducedFrostSigma : _frostHeavySigma) * scale;
+    final BackdropFilterLayer heavyLayer =
+        (_frostHeavy.layer ??= BackdropFilterLayer())
+          ..filter = ui.ImageFilter.blur(sigmaX: sigma, sigmaY: sigma)
+          ..backdropKey = _frostCapture;
+    final BackdropFilterLayer lightLayer =
+        (_frostLight.layer ??= BackdropFilterLayer())
+          ..filter = light
+          ..backdropKey = _frostCapture;
+    _frostClip.layer = context.pushClipPath(
+      needsCompositing,
+      offset,
+      glass.reduce((Rect a, Rect b) => a.expandToInclude(b)),
+      clip,
+      (PaintingContext context, Offset offset) {
+        context.pushLayer(heavyLayer, _paintNothing, offset);
+        if (!reduced) {
+          context.pushLayer(lightLayer, _paintNothing, offset);
+        }
+      },
+      oldLayer: _frostClip.layer,
+    );
+  }
+
+  // The search tab's icon in its circle, the selected tab's icon in the
+  // minimized bar's circle (fading in as it minimizes), and the accessory's
+  // content in its capsule.
+  void _paintExtras(
+    PaintingContext context,
+    Offset offset,
+    ({
+      Rect platter,
+      Rect lens,
+      Rect search,
+      Rect accessory,
+      Rect close,
+      Rect circle,
+      Rect searchCircle,
+      Rect field,
+    })
+    shapes,
+  ) {
+    final GlassTabBarMinimize m = _minimize;
+    // The accessory as it is.
+    if (_accessory case final RenderBox accessory when accessory.hasSize) {
+      context.paintChild(
+        accessory,
+        offset + shapes.accessory.center - accessory.size.center(Offset.zero),
+      );
+    }
+    // The selected tab's icon slides from its tab into the circle, coming
+    // in as the tabs go out (UIKit moves it there and crossfades it with the
+    // tab's own).
+    final Offset tabIcon =
+        _platterOrigin +
+        Offset(
+          _physics.tabCenter(_physics.selectedIndex),
+          _rowTop + GlassTabBarPhysics.inset + 20,
+        );
+    _sliding(
+      context,
+      offset,
+      _minimizedIcon,
+      Offset.lerp(tabIcon, shapes.circle.center, m.platterCenter.value)!,
+      1,
+      m.fade.value,
+      0,
+      null,
+      _minimizedLayers,
+    );
+    // The search circle's magnifying glass rides the field's leading edge
+    // as the circle grows into it, and shrinks to the field's, where the
+    // field's text comes in after it.
+    final bool rtl = _textDirection == TextDirection.rtl;
+    final double open = m.searchOpen.value;
+    final double inset = ui.lerpDouble(
+      shapes.searchCircle.width / 2,
+      _fieldIconInset,
+      open,
+    )!;
+    _sliding(
+      context,
+      offset,
+      _searchIcon,
+      _hasField
+          ? Offset(
+              rtl ? shapes.search.right - inset : shapes.search.left + inset,
+              shapes.search.center.dy,
+            )
+          : shapes.search.center,
+      _hasField ? 1 + (_fieldIconScale - 1) * open : 1,
+      1,
+      0,
+      null,
+      _searchIconLayers,
+    );
+    final double searchFade = m.searchFade.value.clamp(0.0, 1.0);
+    if (_searchField case final RenderBox field when !shapes.search.isEmpty) {
+      _sliding(
+        context,
+        offset,
+        field,
+        _fieldOrigin(shapes) + field.size.center(Offset.zero),
+        1,
+        searchFade,
+        _blurSigma * (1 - searchFade),
+        RRect.fromRectAndRadius(
+          shapes.search,
+          Radius.circular(shapes.search.shortestSide / 2),
+        ),
+        _fieldLayers,
+      );
+    } else {
+      _fieldLayers.clear();
+    }
+    _sliding(
+      context,
+      offset,
+      _closeIcon,
+      shapes.close.center,
+      1,
+      m.focus.value,
+      0,
+      null,
+      _closeLayers,
+    );
+  }
+
+  // The field's magnifying glass: centered 23.3pt in from its leading end,
+  // 17.5pt to the search tab's 22.3pt.
+  static const double _fieldIconInset = 23.3;
+  static const double _fieldIconScale = 17.5 / 22.3;
+
+  // Paints [child] centered at [center], scaled, at [shown] opacity,
+  // blurred by [blur] (a gaussian sigma), and clipped to [clip].
+  void _sliding(
+    PaintingContext context,
+    Offset offset,
+    RenderBox? child,
+    Offset center,
+    double scale,
+    double shown,
+    double blur,
+    RRect? clip,
+    _MorphLayers layers,
+  ) {
+    if (child == null || !child.hasSize || shown <= 0.004) {
+      layers.clear();
+      return;
+    }
+    final Offset at = center - child.size.center(Offset.zero);
+    final Matrix4 transform = Matrix4.identity()
+      ..translateByDouble(center.dx, center.dy, 0, 1)
+      ..scaleByDouble(scale, scale, 1, 1)
+      ..translateByDouble(-center.dx, -center.dy, 0, 1);
+    void paintChild(PaintingContext context, Offset offset) {
+      if (blur < 0.05) {
+        layers.blur.layer = null;
+        context.paintChild(child, offset + at);
+        return;
+      }
+      final ImageFilterLayer layer = layers.blur.layer ??= ImageFilterLayer();
+      layer.imageFilter = ui.ImageFilter.blur(
+        sigmaX: blur,
+        sigmaY: blur,
+        tileMode: TileMode.decal,
+      );
+      context.pushLayer(
+        layer,
+        (PaintingContext context, Offset offset) =>
+            context.paintChild(child, offset + at),
+        offset,
+      );
+    }
+
+    void faded(PaintingContext context, Offset offset) {
+      layers.opacity.layer = context.pushOpacity(
+        offset,
+        (shown.clamp(0.0, 1.0) * 255).round(),
+        paintChild,
+        oldLayer: layers.opacity.layer,
+      );
+    }
+
+    layers.transform.layer = context.pushTransform(
+      needsCompositing,
+      offset,
+      transform,
+      (PaintingContext context, Offset offset) {
+        if (clip == null) {
+          layers.clip.layer = null;
+          faded(context, offset);
+          return;
+        }
+        layers.clip.layer = context.pushClipRRect(
+          needsCompositing,
+          offset,
+          clip.outerRect,
+          clip,
+          faded,
+          oldLayer: layers.clip.layer,
+        );
+      },
+      oldLayer: layers.transform.layer,
+    );
+  }
+
+  // UIKit's crossfade blurs what goes out up to a radius of 4pt: about this
+  // gaussian sigma (its radius 2 at quarter scale was a 2.22pt sigma).
+  static const double _blurSigma = 3.3;
+
+  final _MorphLayers _minimizedLayers = _MorphLayers();
+  final _MorphLayers _searchIconLayers = _MorphLayers();
+  final _MorphLayers _fieldLayers = _MorphLayers();
+  final _MorphLayers _closeLayers = _MorphLayers();
+
+  void _clearFrost() {
+    _frostClip.layer = null;
+    _frostHeavy.layer = null;
+    _frostLight.layer = null;
+  }
 
   static Paint _shadowPaint(BoxShadow shadow, double opacity) {
     final paint = Paint()
@@ -1458,7 +2605,7 @@ class RenderGlassTabBar extends RenderBox
       ..strokeWidth = hair
       ..color = const Color(0xFF000000);
     for (final Rect r in <Rect>[_physics.platterRect, _physics.lensRect]) {
-      final Rect inset = r.deflate(0.75).shift(offset);
+      final Rect inset = r.deflate(0.75).shift(offset + _platterOrigin);
       canvas.drawRRect(
         RRect.fromRectAndRadius(inset, Radius.circular(inset.shortestSide / 2)),
         line,
@@ -1466,7 +2613,7 @@ class RenderGlassTabBar extends RenderBox
     }
     final Offset? touch = _physics.touch;
     if (touch != null) {
-      final Offset t = touch + offset;
+      final Offset t = touch + offset + _platterOrigin;
       canvas
         ..drawLine(t - const Offset(10, 0), t + const Offset(10, 0), line)
         ..drawLine(t - const Offset(0, 10), t + const Offset(0, 10), line);
@@ -1507,7 +2654,7 @@ class RenderGlassTabBar extends RenderBox
       final context = _AtlasContext(layer, bounds);
       var i = 0;
       RenderBox? child = firstChild;
-      while (child != null) {
+      while (child != null && i < _extrasStart) {
         context.paintChild(
           child,
           Offset(
@@ -1586,7 +2733,7 @@ class RenderGlassTabBar extends RenderBox
   }) {
     var i = 0;
     RenderBox? child = firstChild;
-    while (child != null) {
+    while (child != null && i < _extrasStart) {
       if (TabLayer.values[i ~/ count].selected == selected) {
         context.paintChild(
           child,
@@ -1697,7 +2844,8 @@ class _BackdropUniforms {
       glassTint = _tintSlots(shader, 0),
       restTint = _tintSlots(shader, 1),
       lensTint = _tintSlots(shader, 2),
-      selected = shader.getUniformVec4('uSelected');
+      selected = shader.getUniformVec4('uSelected'),
+      extra = shader.getUniformVec4Array('uExtra');
 
   final ui.FragmentShader shader;
   final ui.UniformVec4Slot pass;
@@ -1720,6 +2868,26 @@ class _BackdropUniforms {
   final List<ui.UniformVec4Slot> restTint;
   final List<ui.UniformVec4Slot> lensTint;
   final ui.UniformVec4Slot selected;
+  final ui.UniformArray<ui.UniformVec4Slot> extra;
+
+  /// The glass beside the platter (capture pixels; empty rects for none),
+  /// and how much the tabs' content and the selection show.
+  void setExtra(
+    Rect search,
+    Rect accessory,
+    Rect close,
+    double content,
+    double selection,
+    double chroma,
+    double refraction,
+    double blur,
+  ) {
+    extra[0].setRect(search);
+    extra[1].setRect(accessory);
+    extra[2].setRect(close);
+    extra[3].set(content, selection, chroma, refraction);
+    extra[4].set(blur, 0, 0, 0);
+  }
 
   // A tint's slots: at its gradient's start (over white glass, with its
   // alpha, and over black glass), at its end, and its axis.
@@ -1786,4 +2954,19 @@ extension on ui.UniformVec4Slot {
   // A rect as its center and half size.
   void setRect(Rect r) =>
       set(r.center.dx, r.center.dy, r.width / 2, r.height / 2);
+}
+
+/// The layers a crossfading extra is painted through.
+class _MorphLayers {
+  final LayerHandle<TransformLayer> transform = LayerHandle<TransformLayer>();
+  final LayerHandle<ClipRRectLayer> clip = LayerHandle<ClipRRectLayer>();
+  final LayerHandle<OpacityLayer> opacity = LayerHandle<OpacityLayer>();
+  final LayerHandle<ImageFilterLayer> blur = LayerHandle<ImageFilterLayer>();
+
+  void clear() {
+    transform.layer = null;
+    clip.layer = null;
+    opacity.layer = null;
+    blur.layer = null;
+  }
 }

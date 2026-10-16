@@ -9,9 +9,12 @@
 // parameters read from the live layer tree and each stage measured on its
 // own over position-coded backdrops.
 //
-// - The platter (regular glass) refracts inward near its edge, frosts (more
-//   toward its middle line), and lifts luma toward white while keeping 73%
-//   of the chroma.
+// - The platter (regular glass) frosts what is below it (more toward its
+//   middle line), refracts that inward near its edge, and lifts luma toward
+//   white while keeping 73% of the chroma. The frost is a real blur, drawn
+//   before these passes into the backdrop under the platter (the bar's
+//   frost pass), so the capture holds it there: a pixel the platter covers
+//   reads already frosted.
 // - The lens looks at what is below it: the platter where it covers it, the
 //   bare backdrop past its edge. Below the lens's material lie the warp,
 //   which pushes samples outward by up to 9pt at full lift (the one optical
@@ -35,7 +38,7 @@
 #include <flutter/runtime_effect.glsl>
 
 uniform vec2 uSize;        // capture size in pixels (set by the engine)
-uniform vec4 uPass;        // pass (0 bar, 1 lens, 2 inspector), diagnostic, pixels per point, ovalization
+uniform vec4 uPass;        // pass (0 bar, 1 lens, 2 inspector, 3 frost), diagnostic, pixels per point, ovalization
 uniform vec4 uPlatter;     // platter: center.xy, half size.xy
 uniform vec4 uLens;        // lens as drawn: center.xy, half size.xy
 uniform vec4 uOptics;      // lift progress, lens scale, platter scale, stages (debug: bit mask)
@@ -64,7 +67,17 @@ uniform vec4 uTints[15];
 #define GLASS_TINT uTints[0], uTints[1], uTints[2], uTints[3], uTints[4]
 #define REST_TINT uTints[5], uTints[6], uTints[7], uTints[8], uTints[9]
 #define LENS_TINT uTints[10], uTints[11], uTints[12], uTints[13], uTints[14]
-uniform vec4 uSelected;    // selected symbols: offset added to half of what is below them and the tint; content rows' top in the bar (points); content drawn as it is (flag)
+uniform vec4 uSelected;    // selected symbols: offset added to half of what is below them and the tint; content rows' top in the bar (points); selected symbols in their color as it is (Increase Contrast, flag); content drawn as it is (flag)
+// Glass beside the platter, of the same glass (UIKit's search tab or its
+// search field, the bottom accessory, and the search field's close
+// button): each center.xy and half size.zw in capture pixels, none at zero
+// size. [3]: how much the tabs' content and the selection show (both fade
+// as the bar collapses), the face's chroma gain and how much the glass
+// refracts (both less for Increase Contrast and Reduce Transparency).
+// [4]: the tabs' content blur as it fades (a gaussian sigma in points).
+uniform vec4 uExtra[5];
+#define GLASS_SHAPES 3
+#define CONTENT uExtra[3]
 
 uniform sampler2D uCapture;
 uniform sampler2D uContentAtlas;  // the tabs' content: a row per layer, a slot per tab
@@ -88,17 +101,20 @@ const float kLensTone = 0.97;
 // (1:2:3:2:1). Mixed in fully at the edge, not at all 14pt in.
 const float kAberrationDepth = 14.0;
 const mat2 kAberration = mat2(-1.499, 2.235, 5.925, 0.706);
-// Platter glassBackground: inner refraction, and frost. The frost mixes a
-// heavily blurred backdrop into a lightly filtered one (its quarter-scale
-// capture), fully at the platter's middle line and half at its edge
-// (inputBlurDistance/Opacity: 1 at 31pt in, 0.5 at 1pt in); the two blurs
-// are gaussian sigmas in points (as this shader samples them), fitted to
-// its frost over stripes.
+// Platter glassBackground: inner refraction. Its frost is in the capture
+// already, within the platter less this many pixels: the bar draws it
+// there before its other passes, a heavy blur (natively) and over it a
+// light one (this shader's frost pass), at what the platter holds of the
+// light one: half at its edge, none 31pt in (UIKit's inputBlurDistance and
+// inputBlurOpacity, which mix its heavy blur into its quarter-scale
+// capture), along a power of the depth. The light blur's sigma is in
+// points; it and the power are fitted to UIKit's frost over stripes.
 const float kPlatterInner = 49.6;
 const float kPlatterInnerHeight = 15.5;
-const float kFrostSharp = 1.0;
-const float kFrostDeep = 2.9;
+const float kFrostInset = 2.0;
+const float kFrostLight = 0.46;
 const float kFrostFullDepth = 31.0;
+const float kFrostRamp = 0.72;
 // Its face color matrix (the luma mapped from a black to a white point, the
 // chroma kept, a fill mixed in; inputs in uFace) sits under the filter's
 // 0.97 SDR holding tone.
@@ -143,6 +159,12 @@ const float kPlatterShadowReach = 39.06;
 const vec3 kLensShadow = vec3(7.0, 5.49, 0.05);
 const float kLensShadowStrength = 0.1086;
 const float kLensShadowReach = 9.21;
+// Inside, the lens's material darkens what it reads where its shadow's
+// edge is not: most just inside its top edge, and none past 15pt in (by
+// this much over what is below, wherever the shadow there would be none).
+// Fitted to UIKit's lifted lens over white, gray and a position code; its
+// glassBackground's inputSDRShadowOpacity (0.111) is the likely source.
+const float kLensTopShade = 0.06;
 // The press wash (a white layer over the platter through a vibrant color
 // matrix): chroma x1.2 and a 0.05 lift, at 0.8448 when fully pressed.
 const float kWash = 0.8448;
@@ -196,6 +218,26 @@ vec2 outward(vec2 p, vec4 s, float oval) {
   return length(n) > 0.0 ? normalize(n) : g;
 }
 
+// The glass shape nearest p: the platter, or one beside it.
+vec4 glassAt(vec2 p) {
+  vec4 s = uPlatter;
+  float d = capsule(p, uPlatter);
+  for (int i = 0; i < GLASS_SHAPES; i++) {
+    if (uExtra[i].z > 0.0) {
+      float e = capsule(p, uExtra[i]);
+      if (e < d) {
+        d = e;
+        s = uExtra[i];
+      }
+    }
+  }
+  return s;
+}
+
+float glassDistance(vec2 p) {
+  return capsule(p, glassAt(p));
+}
+
 // UIKit's glass displacement profile: the sag of a circular arc, 1 at the
 // edge, 0 at `height` in.
 float sag(float depth, float height) {
@@ -220,11 +262,50 @@ vec3 capture(vec2 p) {
   return texture(uCapture, texel(p, uSize)).rgb;
 }
 
-// Gaussian frost around p: a Vogel spiral out to 2.5 sigma.
-vec3 frost(vec2 p, float sigma, int taps) {
+// The capture at p, between its four nearest pixels: the engine samples it
+// at the nearest one only.
+vec3 filtered(vec2 p) {
+  vec2 q = p - 0.5;
+  vec2 i = floor(q);
+  vec2 f = q - i;
+  vec2 c = i + 0.5;
+  return mix(mix(capture(c), capture(c + vec2(1.0, 0.0)), f.x),
+             mix(capture(c + vec2(0.0, 1.0)), capture(c + vec2(1.0)), f.x), f.y);
+}
+
+// p, moved into the glass's frost if it lies past it.
+vec2 inFrost(vec2 p) {
+  vec4 g = glassAt(p);
+  float over = capsule(p, g) + kFrostInset + 0.5;
+  return over > 0.0 ? p - outward(p, g, 0.0) * over : p;
+}
+
+// A small gaussian blur around p (sigma up to about 2 pixels): the pixels
+// within 2 of it, but the corners.
+vec3 lightFrost(vec2 p, float sigma) {
+  float e = -0.5 / (sigma * sigma);
   vec3 sum = vec3(0.0);
   float total = 0.0;
-  for (int i = 0; i < 64; i++) {
+  for (int y = -2; y <= 2; y++) {
+    for (int x = -2; x <= 2; x++) {
+      if (abs(float(x)) + abs(float(y)) > 3.0) {
+        continue;
+      }
+      float w = exp(float(x * x + y * y) * e);
+      sum += capture(p + vec2(float(x), float(y))) * w;
+      total += w;
+    }
+  }
+  return sum / total;
+}
+
+// Gaussian blur around p: a Vogel spiral out to 2.5 sigma. `frosted`: of
+// the platter's frost, kept within it, and smooth enough there to read each
+// tap at its nearest pixel; elsewhere each tap is filtered.
+vec3 frost(vec2 p, float sigma, int taps, bool frosted) {
+  vec3 sum = vec3(0.0);
+  float total = 0.0;
+  for (int i = 0; i < 32; i++) {
     if (i >= taps) {
       break;
     }
@@ -232,7 +313,8 @@ vec3 frost(vec2 p, float sigma, int taps) {
     float r = sqrt(t) * 2.5;
     float a = float(i) * 2.39996323;
     float w = exp(-0.5 * r * r);
-    sum += capture(p + vec2(cos(a), sin(a)) * r * sigma) * w;
+    vec2 at = p + vec2(cos(a), sin(a)) * r * sigma;
+    sum += (frosted ? capture(inFrost(at)) : filtered(at)) * w;
     total += w;
   }
   return sum / total;
@@ -241,7 +323,7 @@ vec3 frost(vec2 p, float sigma, int taps) {
 // The platter's face over its frosted backdrop c.
 vec3 face(vec3 c) {
   float l = dot(c, kLuma);
-  vec3 f = uFace.x + (uFace.y - uFace.x) * l + (c - l);
+  vec3 f = uFace.x + (uFace.y - uFace.x) * l + (c - l) * CONTENT.z;
   return clamp(kPlatterTone * mix(f, vec3(uFace.w), uFace.z), 0.0, 1.0);
 }
 
@@ -271,18 +353,15 @@ vec3 vibrant(vec3 c, vec3 m) {
   return clamp(m.x * (c - l) + m.y * l + m.z, 0.0, 1.0);
 }
 
-// The platter's glass at p (inside it), blurred by `extra` points more (for
-// the resting selection's own blur).
+// The platter's glass at p (inside it): its frost, refracted, blurred by
+// `extra` points more (for the resting selection's own blur).
 vec3 platter(vec2 p, int taps, float extra) {
   float k = uPass.z * uOptics.z;
-  float depth = max(-capsule(p, uPlatter), 0.0);
-  vec2 n = outward(p, uPlatter, uPass.w);
-  vec2 q = p - n * kPlatterInner * k * sag(depth, kPlatterInnerHeight * k);
-  float deep = clamp(0.5 + 0.5 * (depth / k - 1.0) / (kFrostFullDepth - 1.0), 0.5, 1.0);
-  float sharp = sqrt(kFrostSharp * kFrostSharp + extra * extra) * k;
-  float heavy = sqrt(kFrostDeep * kFrostDeep + extra * extra) * k;
-  vec3 light = frost(q, sharp, extra > 0.0 ? taps : 8);
-  vec3 frosted = mix(light, frost(q, heavy, taps), deep);
+  vec4 g = glassAt(p);
+  float depth = max(-capsule(p, g), 0.0);
+  vec2 n = outward(p, g, uPass.w);
+  vec2 q = p - n * kPlatterInner * k * CONTENT.w * sag(depth, kPlatterInnerHeight * k);
+  vec3 frosted = extra > 0.0 ? frost(q, extra * k, taps, true) : filtered(inFrost(q));
   // A painted color goes over the frosted backdrop in place of the face.
   return tint(uTints[1].w > 0.5 ? frosted : face(frosted), p, GLASS_TINT);
 }
@@ -322,6 +401,15 @@ float shade(vec2 p, vec4 shape, float k, vec3 shadow, float reach) {
 }
 
 
+// The lens material's darkening of what it reads at q (see kLensTopShade).
+float topShade(vec2 q) {
+  if (!stage(kShadowStage)) {
+    return 1.0;
+  }
+  float k = uPass.z * uOptics.y;
+  return 1.0 - kLensTopShade * (1.0 - shade(q, uLens, k, kLensShadow, 1e4));
+}
+
 // The press wash over color c, which UIKit clips to white.
 vec3 wash(vec3 c, float amount) {
   float l = dot(c, kLuma);
@@ -335,6 +423,18 @@ float glowAt(vec2 p) {
   return uGlow.w > 0.0 ? uGlow.w * exp(-dot(d, d) * uGlow.z) : 0.0;
 }
 
+// How much the glass shades p outside it: the platter, and the glass
+// beside it.
+float glassShade(vec2 p, float k) {
+  float s = shade(p, uPlatter, k, kPlatterShadow, kPlatterShadowReach);
+  for (int i = 0; i < GLASS_SHAPES; i++) {
+    if (uExtra[i].z > 0.0) {
+      s = max(s, shade(p, uExtra[i], k, kPlatterShadow, kPlatterShadowReach));
+    }
+  }
+  return s;
+}
+
 // The platter shadow's strength over this backdrop, once per pixel.
 float gPlatterShadow = 0.0;
 
@@ -343,7 +443,7 @@ float gPlatterShadow = 0.0;
 vec3 litPlatter(vec2 p, int taps, float extra) {
   vec3 c = platter(p, taps, extra);
   if (stage(kRimStage)) {
-    c = rim(c, p, uPlatter, uPass.z * uOptics.z, kPlatterRimCurvature, uRim.xyz, 1.0);
+    c = rim(c, p, glassAt(p), uPass.z * uOptics.z, kPlatterRimCurvature, uRim.xyz, 1.0);
   }
   if (stage(kPressStage)) {
     c = wash(c, kWash * uTouch.w);
@@ -358,15 +458,14 @@ vec3 litPlatter(vec2 p, int taps, float extra) {
 // times near its rim, as UIKit's resampling, stage after stage, smooths it.
 // Past the platter, the backdrop lies under the platter's shadow.
 vec3 below(vec2 p, vec2 j1, vec2 j2, int taps) {
-  if (stage(kPlatterStage) && capsule(p, uPlatter) < 0.0) {
+  if (stage(kPlatterStage) && glassDistance(p) < 0.0) {
     return litPlatter(p, taps, 0.0);
   }
   vec2 a = 0.5 * j1, b = 0.5 * j2;
-  vec3 c = 0.25 * (capture(p - a - b) + capture(p + a - b) + capture(p - a + b) +
-                   capture(p + a + b));
+  vec3 c = 0.25 * (filtered(p - a - b) + filtered(p + a - b) + filtered(p - a + b) +
+                   filtered(p + a + b));
   if (gPlatterShadow > 0.0) {
-    c *= 1.0 - gPlatterShadow * shade(p, uPlatter, uPass.z * uOptics.z,
-                                      kPlatterShadow, kPlatterShadowReach);
+    c *= 1.0 - gPlatterShadow * glassShade(p, uPass.z * uOptics.z);
   }
   return c;
 }
@@ -422,9 +521,9 @@ vec3 base(vec2 q, float lift, int taps) {
   vec3 w = below(s, j1, j2, taps);
   if (lift < 1.0 && stage(kRestStage)) {
     float k = uPass.z * uOptics.z;
-    vec3 behind = stage(kPlatterStage) && capsule(s, uPlatter) < 0.0
-                      ? litPlatter(s, 32, kRestBlur)
-                      : frost(s, kRestBlur * k, 32);
+    vec3 behind = stage(kPlatterStage) && glassDistance(s) < 0.0
+                      ? litPlatter(s, 16, kRestBlur)
+                      : frost(s, kRestBlur * k, 16, false);
     // A painted color goes over the glass behind, in place of the
     // selection's own matrix.
     vec3 rest = tint(uTints[6].w > 0.5 ? behind : vibrant(behind, uPill.xyz), q, REST_TINT);
@@ -443,9 +542,7 @@ vec3 base(vec2 q, float lift, int taps) {
 // `original` gets the content drawn as it is (badges, images in their own
 // colors), from the atlas's rows 2 and 3. UIKit renders templates through
 // vibrant color matrices, so of those only the shapes and tints count.
-vec4 glyphs(vec2 x, float grow, float row, out vec4 original) {
-  vec2 b = (x - uContent.xy) / uPass.z;
-  vec2 u = uPlatterXf.xy + (b - uPlatterXf.xy - uPlatterXf.zw) / uPlatterS.xy;
+vec4 glyphsAt(vec2 u, float grow, float row, out vec4 original) {
   float first = uTabs.x, spacing = uTabs.y, count = uTabs.z, pitch = uTabs.w;
   float width = uPlatterS.w, height = uPlatterS.z, top = uSelected.y;
   float nearest = spacing > 0.0 ? floor((u.x - first) / spacing + 0.5) : 0.0;
@@ -480,12 +577,44 @@ vec4 glyphs(vec2 x, float grow, float row, out vec4 original) {
   return sum;
 }
 
+// The same at x (capture pixels), mapped into the tabs' layout through the
+// platter's shape, faded and, while it fades, blurred (a 3x3 gaussian over
+// the layout, sigma uExtra[4].x points), as UIKit's crossfade blurs it.
+vec4 glyphs(vec2 x, float grow, float row, out vec4 original) {
+  vec2 b = (x - uContent.xy) / uPass.z;
+  vec2 u = uPlatterXf.xy + (b - uPlatterXf.xy - uPlatterXf.zw) / uPlatterS.xy;
+  float alpha = CONTENT.x;
+  original = vec4(0.0);
+  if (alpha <= 0.0) {
+    return vec4(0.0);
+  }
+  float sigma = uExtra[4].x;
+  if (sigma < 0.05) {
+    vec4 sum = glyphsAt(u, grow, row, original);
+    original *= alpha;
+    return sum * alpha;
+  }
+  vec4 sum = vec4(0.0);
+  for (int dy = -1; dy <= 1; dy++) {
+    for (int dx = -1; dx <= 1; dx++) {
+      float w = (dx == 0 ? 0.5 : 0.25) * (dy == 0 ? 0.5 : 0.25);
+      vec4 o;
+      // Taps at 1.41 sigma give the 3x3 tent the gaussian's variance.
+      sum += w * glyphsAt(u + vec2(float(dx), float(dy)) * sigma * 1.41, grow, row, o);
+      original += w * o;
+    }
+  }
+  original *= alpha;
+  return sum * alpha;
+}
+
 // Selected content over what is below it: template content of coverage
 // t.a becomes half of what is below plus its tint, plus uSelected.x (UIKit's
 // selected vibrant matrix); the rest goes over it as it is.
 vec3 selectedOver(vec4 t, vec4 original, vec3 under) {
   vec3 tint = t.a > 0.0 ? t.rgb / t.a : vec3(0.0);
-  vec3 c = mix(under, clamp(0.5 * under + tint + uSelected.x, 0.0, 1.0), t.a);
+  vec3 lit = uSelected.z > 0.5 ? tint : clamp(0.5 * under + tint + uSelected.x, 0.0, 1.0);
+  vec3 c = mix(under, lit, t.a);
   return c * (1.0 - original.a) + original.rgb;
 }
 
@@ -562,7 +691,8 @@ void main() {
   if (pass < 0.5) {
     // ---- Bar pass: the platter's glass, and the backdrop around it under
     // the shadows.
-    float d = capsule(p, uPlatter);
+    vec4 g = glassAt(p);
+    float d = capsule(p, g);
     float a = coverage(d, 1.0);
     bool shadows = stage(kShadowStage) && !diagnostic;
     if (a <= 0.0 && !shadows) {
@@ -572,13 +702,18 @@ void main() {
     float kp = px * uOptics.z;
     vec3 c = vec3(0.0);
     if (a > 0.0) {
-      c = stage(kPlatterStage) ? platter(p, 64, 0.0) : capture(p);
+      c = stage(kPlatterStage) ? platter(p, 0, 0.0) : capture(p);
       if (stage(kRimStage)) {
-        c = rim(c, p, uPlatter, kp, kPlatterRimCurvature, uRim.xyz, 1.0);
+        c = rim(c, p, g, kp, kPlatterRimCurvature, uRim.xyz, 1.0);
       }
-      // The normal tabs (under the lens, the lens covers them).
+      // The normal tabs (under the lens, the lens covers them), on the
+      // platter only, not on glass beside it that grows over it.
       vec4 original;
       vec4 normal = glyphs(p, 1.0, 1.0, original);
+      if (capsule(p, uPlatter) > d + 0.001) {
+        normal = vec4(0.0);
+        original = vec4(0.0);
+      }
       c = symbolsOver(normal, original, c);
       if (stage(kPressStage)) {
         c = wash(c, kWash * uTouch.w);
@@ -595,15 +730,11 @@ void main() {
     }
     float shaded = 0.0;
     if (a < 1.0) {
-      float s = shade(p, uPlatter, kp, kPlatterShadow, kPlatterShadowReach);
-      shaded = uRim.w * s;
+      shaded = uRim.w * glassShade(p, kp);
     }
-    if (a <= 0.0 && shaded <= 0.0) {
-      fragColor = vec4(0.0);
-      return;
-    }
-    vec3 outside = a < 1.0 ? capture(p) * (1.0 - shaded) : vec3(0.0);
-    fragColor = vec4(mix(outside, c, a), 1.0);
+    // The shadow darkens what is below, as black over it: the same as
+    // reading it, without the read.
+    fragColor = vec4(c * a, a + (1.0 - a) * shaded);
     return;
   }
 
@@ -620,7 +751,7 @@ void main() {
       shadow = kLensShadowStrength * fade * shade(p, uLens, k, kLensShadow, kLensShadowReach);
     }
     if (a <= 0.0) {
-      fragColor = vec4(0.0, 0.0, 0.0, shadow);
+      fragColor = vec4(0.0, 0.0, 0.0, shadow) * CONTENT.y;
       return;
     }
     float depth = max(-d, 0.0);
@@ -638,7 +769,8 @@ void main() {
       // content (lensed again) over it, all dispersed near the edge. A tap
       // past the lens's outline reads the unwarped backdrop, as UIKit's warp
       // is clipped to the outline.
-      vec3 glass = contentInMaterial(p, lift, tint(base(innerSource(p), lift, 32) * tone, p, LENS_TINT));
+      vec2 inner = innerSource(p);
+      vec3 glass = contentInMaterial(p, lift, tint(base(inner, lift, 32) * tone * topShade(inner), p, LENS_TINT));
       float spread = clamp(1.0 - depth / (kAberrationDepth * k), 0.0, 1.0);
       if (spread > 0.0 && stage(kDispersionStage)) {
         vec2 v = kAberration * ((p - uLens.xy) / uLens.zw) * k;
@@ -651,7 +783,7 @@ void main() {
           vec3 s = i == 3 ? glass
                           : contentInMaterial(at, lift,
                                 capsule(at, uLens) < 0.0
-                                    ? tint(base(innerSource(at), lift, 16) * tone, at, LENS_TINT)
+                                    ? tint(base(innerSource(at), lift, 16) * tone * topShade(innerSource(at)), at, LENS_TINT)
                                     : below(at, vec2(1.0, 0.0), vec2(0.0, 1.0), 16));
           dispersed += w * s;
         }
@@ -676,7 +808,16 @@ void main() {
         c = mix(c, vec3(0.1, 1.0, 0.2), mark);
       }
     }
-    fragColor = vec4(c * a, a + (1.0 - a) * shadow);
+    fragColor = vec4(c * a, a + (1.0 - a) * shadow) * CONTENT.y;
+    return;
+  }
+
+  if (pass > 2.5) {
+    // ---- Frost pass: the platter's light blur, over its heavy one.
+    float k = px * uOptics.z;
+    float depth = max(-glassDistance(p), 0.0) / k;
+    float light = 0.5 - 0.5 * pow(clamp((depth - 1.0) / (kFrostFullDepth - 1.0), 0.0, 1.0), kFrostRamp);
+    fragColor = light > 0.0 ? premul(lightFrost(p, kFrostLight * k), light) : vec4(0.0);
     return;
   }
 

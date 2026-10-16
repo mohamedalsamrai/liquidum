@@ -6,6 +6,7 @@ import 'package:flutter/widgets.dart';
 
 import 'glass_backdrop.dart';
 import 'tab_bar/decoration.dart';
+import 'tab_bar/glyphs.dart';
 import 'tab_bar/item.dart';
 import 'tab_bar/tab_bar.dart';
 
@@ -27,7 +28,41 @@ class GlassTab {
        _selectedIconData = selectedIcon,
        _icon = null,
        _selectedIcon = null,
-       tintIcon = true;
+       tintIcon = true,
+       isSearch = false,
+       searchController = null,
+       placeholder = null,
+       onSearchChanged = null,
+       onSearchSubmitted = null;
+
+  /// A search tab, as UIKit's `UISearchTab`: a glass circle of its own at
+  /// the bar's trailing end, beside the other tabs (up to four, as in
+  /// UIKit). Its page is shown when it is tapped, like any tab's.
+  ///
+  /// With a [controller], selecting it also opens the bar into a search
+  /// field, as UIKit's does when the search tab's page has a search
+  /// controller: the other tabs collapse into a circle (tap it to go back)
+  /// and the circle grows into a field whose text is the controller's.
+  const GlassTab.search({
+    required this.page,
+    this.label = 'Search',
+    IconData? icon,
+    this.color,
+    TextEditingController? controller,
+    this.placeholder,
+    ValueChanged<String>? onChanged,
+    ValueChanged<String>? onSubmitted,
+  }) : _iconData = icon,
+       _selectedIconData = null,
+       // UIKit's magnifying glass, unless another icon is given.
+       _icon = icon == null ? const BarGlyph.search() : null,
+       _selectedIcon = null,
+       badge = null,
+       tintIcon = true,
+       isSearch = true,
+       searchController = controller,
+       onSearchChanged = onChanged,
+       onSearchSubmitted = onSubmitted;
 
   /// A tab whose icons are widgets: an SVG, an image, any widget. The bar
   /// uses them for their shape and colors them itself, whatever colors they
@@ -42,7 +77,12 @@ class GlassTab {
     this.color,
     this.tintIcon = true,
   }) : _iconData = null,
-       _selectedIconData = null;
+       _selectedIconData = null,
+       isSearch = false,
+       searchController = null,
+       placeholder = null,
+       onSearchChanged = null,
+       onSearchSubmitted = null;
 
   final IconData? _iconData;
   final IconData? _selectedIconData;
@@ -62,6 +102,16 @@ class GlassTab {
 
   /// Whether the bar colors the icon (see [GlassTab.custom]).
   final bool tintIcon;
+
+  /// Whether this is the search tab (see [GlassTab.search]).
+  final bool isSearch;
+
+  /// The search tab's field: its text, the text shown while it is empty
+  /// ("Search" by default), and its changes and submissions.
+  final TextEditingController? searchController;
+  final String? placeholder;
+  final ValueChanged<String>? onSearchChanged;
+  final ValueChanged<String>? onSearchSubmitted;
 
   GlassTabItem get _item => GlassTabItem(
     icon: _icon ?? Icon(_iconData),
@@ -118,6 +168,9 @@ class GlassTabScaffold extends StatefulWidget {
     this.backgroundColor,
     this.barMargin,
     this.barPadding,
+    this.accessory,
+    this.minimizeOnScroll = false,
+    this.reduceTransparency = false,
     this.initialIndex = 0,
     this.onTabChanged,
     this.controller,
@@ -184,6 +237,22 @@ class GlassTabScaffold extends StatefulWidget {
   /// 4pt all round (a 62pt bar).
   final EdgeInsetsGeometry? barPadding;
 
+  /// A bottom accessory, as UIKit's `UITabAccessory` (for example a
+  /// now-playing control): a glass capsule 8pt above the bar, as wide as
+  /// it. Its content is drawn as it is.
+  final Widget? accessory;
+
+  /// Whether the bar minimizes as a page scrolls down, and expands as it
+  /// scrolls back up or is tapped, as UIKit's `tabBarMinimizeBehavior`
+  /// `.onScrollDown`: it collapses into a circle with the selected tab's
+  /// icon, and the [accessory] moves beside it.
+  final bool minimizeOnScroll;
+
+  /// Draws the bar as iOS does with Reduce Transparency on: nearly opaque,
+  /// without refraction. Flutter does not report that setting, so pass it
+  /// in. (Increase Contrast and Reduce Motion the bar follows by itself.)
+  final bool reduceTransparency;
+
   /// The tab shown first.
   final int initialIndex;
 
@@ -235,11 +304,87 @@ class _GlassTabScaffoldState extends State<GlassTabScaffold> {
 
   int get _index => _controller.index.clamp(0, widget.tabs.length - 1);
 
+  // The search tab's index among the tabs, if there is one: the bar shows it
+  // apart, after the others.
+  int? get _search {
+    final int i = widget.tabs.indexWhere((GlassTab t) => t.isSearch);
+    return i < 0 ? null : i;
+  }
+
+  // A tab's index in the bar (the search tab's is the others' count), and
+  // back.
+  int _toBar(int index) {
+    final int? search = _search;
+    if (search == null) {
+      return index;
+    }
+    if (index == search) {
+      return widget.tabs.length - 1;
+    }
+    return index > search ? index - 1 : index;
+  }
+
+  int _fromBar(int index) {
+    final int? search = _search;
+    if (search == null) {
+      return index;
+    }
+    if (index >= widget.tabs.length - 1) {
+      return search;
+    }
+    return index >= search ? index + 1 : index;
+  }
+
+  // The search field's focus: while it has the keyboard, the bar rides above
+  // it.
+  final FocusNode _searchFocus = FocusNode();
+
+  // Whether the bar is minimized, and how far the page has scrolled in one
+  // direction since it last turned.
+  bool _minimized = false;
+  double _scrolled = 0;
+
+  bool _onScroll(ScrollUpdateNotification notification) {
+    if (!widget.minimizeOnScroll ||
+        notification.metrics.axis != Axis.vertical) {
+      return false;
+    }
+    final double delta = notification.scrollDelta ?? 0;
+    if (delta == 0) {
+      return false;
+    }
+    if ((delta > 0) != (_scrolled > 0)) {
+      _scrolled = 0;
+    }
+    _scrolled += delta;
+    final ScrollMetrics m = notification.metrics;
+    // Down (the content moving up) minimizes; up, or back at the top,
+    // expands.
+    final bool atTop = m.pixels <= m.minScrollExtent;
+    final bool minimize = atTop
+        ? false
+        : _scrolled > _turn
+        ? true
+        : _scrolled < -_turn
+        ? false
+        : _minimized;
+    if (minimize != _minimized) {
+      setState(() => _minimized = minimize);
+    }
+    return false;
+  }
+
+  // How far a page scrolls before the bar turns.
+  static const double _turn = 8;
+
   @override
   void initState() {
     super.initState();
     _controller.addListener(_changed);
+    _searchFocus.addListener(_focusChanged);
   }
+
+  void _focusChanged() => setState(() {});
 
   @override
   void didUpdateWidget(GlassTabScaffold oldWidget) {
@@ -253,12 +398,18 @@ class _GlassTabScaffoldState extends State<GlassTabScaffold> {
       _controller.addListener(_changed);
     }
     _built.removeWhere((int i) => i >= widget.tabs.length);
+    if (!widget.minimizeOnScroll) {
+      _minimized = false;
+    }
   }
 
   @override
   void dispose() {
     _controller.removeListener(_changed);
     _own?.dispose();
+    _searchFocus
+      ..removeListener(_focusChanged)
+      ..dispose();
     for (final HeroController hero in _heroes) {
       hero.dispose();
     }
@@ -266,7 +417,7 @@ class _GlassTabScaffoldState extends State<GlassTabScaffold> {
   }
 
   void _changed() {
-    setState(() {});
+    setState(() => _minimized = false);
     widget.onTabChanged?.call(_index);
   }
 
@@ -291,7 +442,18 @@ class _GlassTabScaffoldState extends State<GlassTabScaffold> {
           math.max(21, inset.bottom - 13),
         );
     final double barSpace =
-        margin.bottom + GlassTabBar.heightWith(widget.barPadding);
+        margin.bottom +
+        GlassTabBar.heightWith(
+          widget.barPadding,
+          accessory: widget.accessory != null,
+        );
+    final int? search = _search;
+    final GlassTab? searchTab = search == null ? null : widget.tabs[search];
+    // Above the keyboard while the search field has it, 8pt clear of it.
+    final double keyboard = media.viewInsets.bottom;
+    final double barBottom = _searchFocus.hasFocus && keyboard > 0
+        ? keyboard + 8
+        : margin.bottom;
     final int index = _index;
     _built.add(index);
 
@@ -318,17 +480,20 @@ class _GlassTabScaffoldState extends State<GlassTabScaffold> {
                       bottom: math.max(inset.bottom, barSpace),
                     ),
                   ),
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: <Widget>[
-                      for (var i = 0; i < widget.tabs.length; i++)
-                        _TabPage(
-                          active: i == index,
-                          child: _built.contains(i)
-                              ? _page(i, i == index)
-                              : null,
-                        ),
-                    ],
+                  child: NotificationListener<ScrollUpdateNotification>(
+                    onNotification: _onScroll,
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: <Widget>[
+                        for (var i = 0; i < widget.tabs.length; i++)
+                          _TabPage(
+                            active: i == index,
+                            child: _built.contains(i)
+                                ? _page(i, i == index)
+                                : null,
+                          ),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -337,19 +502,28 @@ class _GlassTabScaffoldState extends State<GlassTabScaffold> {
           Positioned(
             left: margin.left,
             right: margin.right,
-            bottom: margin.bottom,
+            bottom: barBottom,
             // Centered: with up to three tabs, the bar is only as wide as its
             // tabs, as UIKit's.
             child: Center(
               child: GlassTabBar(
                 items: <GlassTabItem>[
-                  for (final GlassTab t in widget.tabs) t._item,
+                  for (final GlassTab t in widget.tabs)
+                    if (!t.isSearch) t._item,
                 ],
-                selectedIndex: index,
-                onSelected: (int i) => _controller.index = i,
-                onReselected: (int i) => _navigators[i].currentState?.popUntil(
-                  (Route<dynamic> route) => route.isFirst,
-                ),
+                search: searchTab?._item,
+                searchController: searchTab?.searchController,
+                searchFocusNode: _searchFocus,
+                searchPlaceholder: searchTab?.placeholder ?? 'Search',
+                onSearchChanged: searchTab?.onSearchChanged,
+                onSearchSubmitted: searchTab?.onSearchSubmitted,
+                accessory: widget.accessory,
+                minimized: _minimized,
+                onExpand: () => setState(() => _minimized = false),
+                selectedIndex: _toBar(index),
+                onSelected: (int i) => _controller.index = _fromBar(i),
+                onReselected: (int i) => _navigators[_fromBar(i)].currentState
+                    ?.popUntil((Route<dynamic> route) => route.isFirst),
                 selectedColor: widget.selectedColor,
                 unselectedColor: widget.unselectedColor,
                 badgeColor: widget.badgeColor,
@@ -363,6 +537,7 @@ class _GlassTabScaffoldState extends State<GlassTabScaffold> {
                 indicator: widget.indicator,
                 lens: widget.lens,
                 padding: widget.barPadding,
+                reduceTransparency: widget.reduceTransparency,
               ),
             ),
           ),

@@ -1,0 +1,103 @@
+Refinements after the six stages, 2026-10-16. UIKit = iOS 26.5 simulator,
+iPhone 17 Pro Max, 3 px/pt. RMS is in luma levels (0-255) against UIKit.
+
+Frost (platter glass): blurred once, then refracted
+  UIKit's glassBackground mixes its heavy blur into its light filtering by
+  the depth of the point it samples (after refraction), not the point it
+  draws: mixing by the sample's depth halves the error in the refracted edge
+  bands (stripes, rows 2620-2645 and 2780-2806: 7.5/8.1 -> 3.9/4.4).
+  So the frost is now drawn before the glass, into the backdrop under the
+  platter: a native blur (Impeller, sigma 2.9pt) and over it this shader's
+  light blur (sigma 0.46pt) at 0.5 - 0.5 t^0.72 of the way in (t the depth
+  from 1pt to 31pt), both from one capture of their own. The glass passes
+  then read the frost from their capture, filtered (the engine samples it at
+  the nearest pixel), and refract it.
+  Fit (stripes, middle rows, face gain fixed at the shader's 0.296): light
+  0.46pt, heavy 2.91pt, ramp power 0.72, rms 0.59 levels.
+  Whole platter, between the glyphs (edge top | middle | edge bottom | all):
+    hstripe8  before 13.04 3.15  8.80 6.39   after 10.71 1.86  4.51 4.56
+    vstripe8  before 15.42 4.33 16.38 9.11   after 11.43 2.68 12.92 6.79
+    grid      before  7.39 3.58  7.58 4.97   after  5.50 2.04  6.06 3.49
+    blocks    before  4.65 1.15  5.05 2.73   after  4.60 1.05  4.93 2.65
+    saw       before  8.62 2.68 11.60 5.83   after  8.45 2.69 11.56 5.79
+  The sparse in-shader blur ghosted fine lines (1-frost-uikit-before-after:
+  UIKit, before, after, the resting pill and the lifted glyph over a grid).
+  On Android (Impeller GLES) the frost lines up with the backdrop within
+  0.65px.
+
+Sampling
+  Capture reads are filtered between the four nearest pixels; the content
+  atlas is sampled with FilterQuality.low.
+
+Speed (honest): the frost needs a second backdrop capture.
+  Android emulator, host GPU, 6 bars, raster: before 22 ms, after 30 ms (it
+  counts render passes, not shader work: holding the lens changed nothing
+  before). Software GPU, 1 bar: inconclusive. Texture reads per pixel at
+  rest: platter 78 -> about 10, lens 110 -> about 30; lifted lens about 550
+  -> 170. Whether that outweighs the extra capture on a real phone is not
+  measured yet.
+
+Lens top band
+  UIKit's lifted lens is darker inside its top edge by a constant 3.3% over
+  white, gray and a position code (all sample the same backdrop row there),
+  fading over 15pt: the complement of its shadow's edge, at the point its
+  material reads (its glassBackground's inputSDRShadowOpacity, 0.111, is
+  the likely source). Modeled as 1 - 0.06 (1 - shadow edge).
+  Band rows 2609-2650, straight part: white rms 5.12 -> 1.23, gray 3.68 ->
+  2.92 (2-lens-top-band: UIKit, before, after; white, then gray).
+
+Search tab, bottom accessory, minimizing (3-search-accessory-minimize)
+  From UIKit's view frames every frame:
+  - search tab: a 62pt circle at the trailing end, 8pt from the platter;
+    the platter at the leading end; with a search tab, 2 tabs hug (188pt),
+    3 and 4 fill (328pt), pills 113.33 and 85.5pt (overlap 20 and 22pt).
+  - accessory: 48pt high, 8pt above the bar, the bar's width.
+  - minimized: 48pt circles 7pt in from the row's ends, the accessory
+    between them 8pt from each, all on the row's middle line.
+  - springs (response s, damping): platter size 0.591/0.861, its center
+    0.393/0.862; accessory span 0.36/0.72 from +0.10s, drop 0.42/0.76 from
+    +0.15s; expanding, its rise 0.30/0.72 at once and span from +0.067s.
+    Each fits UIKit's within 0.3% of the move.
+
+Scroll-edge effect
+  None behind UIKit's tab bar: stripes as cell backgrounds or as cell
+  content keep black at 0 above and below the bar; white only darkens by
+  the platter's shadow.
+
+Accessibility (4-accessibility: UIKit above Liquidum, then Reduce Motion)
+  Increase Contrast (UIKit's filter inputs): face fill white 0.8, face
+  saturation 1.1 -> 0.8, shadow fill 0.12; tabs drawn as they are; the
+  selected color fixed: system blue #1E6EF4 (dark #5CB8FF), other colors
+  in OKLab L x0.796, C x0.82 (light; within 3 levels), 0.788 L + 0.274,
+  C x0.894 (dark; within 13 levels).
+    over blocks rms 5.48, over white 1.02.
+  Reduce Transparency: no refraction, blur radius 0.67 -> 36.9 fully,
+  face luma 0.9 flat, saturation 0.9, fill white 0.8.
+    over blocks rms 5.91, over white 1.99 (white: 242 in both).
+  Reduce Motion: the resting pill slides under the finger, never lifts or
+  flexes (UIKit's lens stays 107.5 x 54 throughout a drag).
+
+Minimizing, closer (5-minimize-crossfade: UIKit left, Liquidum right, the
+same 33ms steps)
+  UIKit crossfades two snapshots (_UIMagicMorphTransformView): the tabs go
+  out, opacity 1 - p and gaussianBlur radius 4p, the minimized circle's icon
+  comes in the reverse; p is a spring, response 0.255s, damping 0.86 (fits
+  within 0.4%), from 0.09s after the selection starts collapsing. The tabs
+  stay where they are, clipped by the shrinking glass; the selected icon
+  slides into the circle. The platter's own shape collapses faster than its
+  selection: width 0.353/0.772, height 0.44/0.78, center 0.311/0.828
+  (expanding: 0.295/0.811, 0.45/0.81, 0.30/0.80). Radius 4pt is taken as a
+  3.3pt sigma (the resting selection's radius 2 at quarter scale fitted
+  2.22pt).
+
+Search field (6-search-field: the opening at 33ms steps, then open and
+with the keyboard, UIKit above Liquidum)
+  With a search controller on the search tab's page, UIKit opens the bar into
+  _UITabHostedSearchContainer: the tabs collapse into the 48pt circle (the
+  last tab's icon, in the normal color; a tap goes back), the search circle
+  grows into a 48pt field from 12pt after the circle to 7pt from the row's
+  end (88 to 412pt on the reference screen), in about 0.25s. Its magnifying
+  glass (17.5pt, 1.5pt strokes) sits 13pt in and its placeholder, "Search"
+  at 17pt, 41.7pt in. With the keyboard the field ends 12pt short of a 48pt
+  close button (264pt wide); the close button ends the editing. Pressed, the
+  search circle swells to 79pt.
