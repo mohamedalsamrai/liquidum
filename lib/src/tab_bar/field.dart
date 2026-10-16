@@ -33,8 +33,8 @@ class GlassShape {
   ///
   /// A capsule's own normals are straight up or down along its sides and
   /// only turn around the ends; the blend makes them turn continuously all
-  /// the way round, as CoreAnimation's SDF layers do with their
-  /// `gradientOvalization` (0.5 on the iOS 26 tab bar lens).
+  /// the way round, as UIKit's glass shapes do (an ovalization of 0.5 on the
+  /// iOS 26 tab bar lens).
   Offset normal(Offset p, {double ovalization = 0}) {
     final Offset own = _gradient(p);
     if (ovalization <= 0) {

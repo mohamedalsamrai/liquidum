@@ -93,6 +93,10 @@ class GlassAppearance {
     _pending.add((null, luma));
   }
 
+  /// Whether a reading of [luma] would change nothing: it is the luma in
+  /// effect, and no other reading is still waiting to take effect.
+  bool wouldKeep(double luma) => _sampled && _pending.isEmpty && luma == _luma;
+
   /// Whether the appearance follows the backdrop. When false, it keeps the
   /// [system]'s, and only the glass's colors follow the backdrop's luma.
   set adaptive(bool value) {
@@ -165,10 +169,10 @@ class GlassAppearance {
 
   // ----------------------------------------------------------------- values
 
-  // The platter's face color matrix (glassBackground): luma mapped from
-  // [black, white], chroma kept, then a fill color mixed in; all under the
-  // 0.97 SDR holding tone. black = 1.032 L - 0.15 (0.1 to 0.85), white =
-  // that + 0.6 (to 1.03 light, 0.9 dark); light fills white at
+  // The platter's face color matrix (in the bar's glass filter): luma
+  // mapped from [black, white], chroma kept, then a fill color mixed in; all
+  // under the 0.97 SDR holding tone. black = 1.032 L - 0.15 (0.1 to 0.85),
+  // white = that + 0.6 (to 1.03 light, 0.9 dark); light fills white at
   // 0.75 - 0.517 L (0.25 to 0.6), dark fills black at 0.25 + 0.367 L (to
   // 0.5).
   static double _black(double l) => (1.032 * l - 0.15).clamp(0.1, 0.85);

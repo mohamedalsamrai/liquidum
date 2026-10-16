@@ -9,9 +9,11 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 
+import '../frame_sampler.dart';
 import '../glass_backdrop.dart';
 import '../shader_program.dart';
 import 'appearance.dart';
+import 'debug.dart';
 import 'glyphs.dart';
 import 'decoration.dart';
 import 'item.dart';
@@ -20,60 +22,6 @@ import 'physics.dart';
 import 'style.dart';
 import 'tab_content.dart';
 import 'tint.dart';
-
-/// What [GlassTabBar] draws for its glass while it is being built up.
-enum GlassTabBarDebugView {
-  /// The glass: the bar's pass and the lens's pass over one shared backdrop
-  /// capture (neutral placeholders until the optics are in).
-  none,
-
-  /// The glass field flat: platter, pill and lens silhouettes.
-  field,
-
-  /// The lens's surface normals as colors.
-  normals,
-
-  /// The sampling architecture made visible: the bar's glass hatched (so a
-  /// pass reading rendered glass would show it), the lens pass marking what
-  /// it shows from outside itself, an inspector with the capture both passes
-  /// read, and the glass field, sampling region and finger drawn twice (by
-  /// the shaders in capture pixels, and by the canvas in layout
-  /// coordinates) so that any mismatch shows.
-  sampling,
-}
-
-/// The optical stages of the glass, as bits of [GlassTabBar.debugOptics].
-abstract final class GlassTabBarOptics {
-  /// The lens's warp: samples pushed outward near its edge.
-  static const int warp = 1;
-
-  /// The lens's inner refraction, and its material's tone.
-  static const int inner = 2;
-
-  /// The lens's chromatic dispersion.
-  static const int dispersion = 4;
-
-  /// The platter's material (refraction, frost, color); without it, the
-  /// backdrop is seen bare.
-  static const int platter = 8;
-
-  /// The resting selection's tint.
-  static const int rest = 16;
-
-  /// The lifted content: the selected tab grown and lensed by the lens.
-  static const int content = 32;
-
-  /// The lit rims of the platter and the lens.
-  static const int rim = 64;
-
-  /// The shadows of the platter and the lens.
-  static const int shadow = 128;
-
-  /// The press: the wash over the platter and the fingertip glow.
-  static const int press = 256;
-
-  static const int all = 511;
-}
 
 /// An iOS 26 tab bar: a glass platter holding the tabs, and a lens that
 /// selects one. Press and slide to carry the lens between tabs; release to
@@ -118,13 +66,6 @@ class GlassTabBar extends StatefulWidget {
     this.searchPlaceholder = 'Search',
     this.onSearchChanged,
     this.onSearchSubmitted,
-    this.debugView = GlassTabBarDebugView.none,
-    this.debugShareBackdrop = true,
-    this.debugInspector,
-    this.debugHold,
-    this.debugHideContent = false,
-    this.debugOptics = GlassTabBarOptics.all,
-    this.debugLift,
   });
 
   /// Height of the bar, as on iOS 26.
@@ -288,34 +229,6 @@ class GlassTabBar extends StatefulWidget {
     labelStyle: labelStyle,
   );
 
-  final GlassTabBarDebugView debugView;
-
-  /// Whether the lens reads the same backdrop capture as the bar, taken
-  /// before any of the bar's glass. Turn off only to see what the lens would
-  /// read otherwise: the bar's rendered glass.
-  final bool debugShareBackdrop;
-
-  /// Where [GlassTabBarDebugView.sampling] draws its inspector, in the bar's
-  /// coordinates. Defaults to a panel above the bar.
-  final Rect? debugInspector;
-
-  /// Holds a press at this point, in the bar's coordinates, from the first
-  /// frame on: the lens stays lifted there without a real touch, for still
-  /// comparisons.
-  final Offset? debugHold;
-
-  /// Draws no tab content, so the glass's optics can be looked at alone.
-  final bool debugHideContent;
-
-  /// The optical stages drawn (a [GlassTabBarOptics] mask), to compare them
-  /// one at a time.
-  final int debugOptics;
-
-  /// Draws the glass's optics at this lift progress (0 to 1) instead of the
-  /// lens's, to compare the transition between resting and lifted at fixed
-  /// points.
-  final double? debugLift;
-
   static final ShaderProgram _field = ShaderProgram('field.frag');
   static final ShaderProgram _backdrop = ShaderProgram('backdrop.frag');
 
@@ -385,13 +298,10 @@ class _GlassTabBarState extends State<GlassTabBar>
 
   // The adaptive appearance, fed by readings of the backdrop under the bar:
   // UIKit reads it about every frame; this, every 50ms while frames are
-  // being drawn.
+  // being drawn, and once after the last.
   final GlassAppearance _appearance = GlassAppearance();
-  Timer? _sampler;
+  late final FrameSampler _sampler;
   bool _sampling = false;
-  int _sampledFrame = -1;
-  static int _frames = 0;
-  static bool _counting = false;
 
   // The raw vsync time: on the same clock as pointer event time stamps, so
   // touches take effect at the moment they happened.
@@ -414,14 +324,14 @@ class _GlassTabBarState extends State<GlassTabBar>
   }
 
   Future<void> _sample() async {
-    if (_sampling || !mounted || _frames == _sampledFrame) {
+    if (_sampling || !mounted) {
       return;
     }
     final RenderObject? box = context.findRenderObject();
     if (box is! RenderBox || !box.attached || !box.hasSize) {
       return;
     }
-    final GlassBackdropState? backdrop = GlassBackdrop.under(
+    final GlassBackdropState? backdrop = glassBackdropUnder(
       MatrixUtils.transformRect(
         box.getTransformTo(null),
         Offset.zero & box.size,
@@ -431,7 +341,6 @@ class _GlassTabBarState extends State<GlassTabBar>
       return;
     }
     _sampling = true;
-    _sampledFrame = _frames;
     try {
       final double? luma = await backdrop.meanLuma(
         GlassAppearance.sampleArea(
@@ -441,7 +350,10 @@ class _GlassTabBarState extends State<GlassTabBar>
           ),
         ),
       );
-      if (mounted && luma != null) {
+      // A reading that changes nothing is dropped: taking it would run the
+      // bar's frames for its latency, and those frames would call for the
+      // next reading, which would never stop.
+      if (mounted && luma != null && !_appearance.wouldKeep(luma)) {
         _appearance.sample(luma);
         _wake();
       }
@@ -507,13 +419,9 @@ class _GlassTabBarState extends State<GlassTabBar>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    if (!_counting) {
-      _counting = true;
-      SchedulerBinding.instance.addPersistentFrameCallback((_) => _frames++);
-    }
-    _sampler = Timer.periodic(
-      const Duration(milliseconds: 50),
-      (_) => _sample(),
+    _sampler = FrameSampler(
+      interval: const Duration(milliseconds: 50),
+      sample: _sample,
     );
     _minimize
       ..set(widget.minimized, 0, animate: false)
@@ -524,16 +432,10 @@ class _GlassTabBarState extends State<GlassTabBar>
         _frame.notify();
       }
     });
-    final Offset? hold = widget.debugHold;
-    if (hold != null) {
-      SchedulerBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          _physics.pointerDown(hold);
-          _wake();
-        }
-      });
-    }
   }
+
+  // Whether a debug press was looked for (see GlassTabBarDebugOptions.hold).
+  bool _held = false;
 
   @override
   void didChangeDependencies() {
@@ -546,6 +448,16 @@ class _GlassTabBarState extends State<GlassTabBar>
       }
     }
     _configureAppearance();
+    final Offset? hold = GlassTabBarDebug.of(context).hold;
+    if (!_held && hold != null) {
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _physics.pointerDown(hold);
+          _wake();
+        }
+      });
+    }
+    _held = true;
     _wake();
   }
 
@@ -599,7 +511,7 @@ class _GlassTabBarState extends State<GlassTabBar>
     _searchFocus.removeListener(_focusChanged);
     _ownFocus?.dispose();
     WidgetsBinding.instance.removeObserver(this);
-    _sampler?.cancel();
+    _sampler.dispose();
     _ticker.dispose();
     _frame.dispose();
     super.dispose();
@@ -662,7 +574,8 @@ class _GlassTabBarState extends State<GlassTabBar>
     // selected while the search tab is.
     final GlassTabItem shown =
         items[_physics.selectedIndex.clamp(0, items.length - 1)];
-    Widget layer(GlassTabItem item, TabLayer layer) => widget.debugHideContent
+    final GlassTabBarDebugOptions debug = GlassTabBarDebug.of(context);
+    Widget layer(GlassTabItem item, TabLayer layer) => debug.hideContent
         ? const SizedBox()
         : ExcludeSemantics(
             child: TabContent(
@@ -682,11 +595,11 @@ class _GlassTabBarState extends State<GlassTabBar>
         appearance: _appearance,
         frame: _frame,
         onPointer: _handlePointer,
-        debugView: widget.debugView,
-        shareBackdrop: widget.debugShareBackdrop,
-        inspector: widget.debugInspector,
-        optics: widget.debugOptics,
-        lift: widget.debugLift,
+        debugView: debug.view,
+        shareBackdrop: debug.shareBackdrop,
+        inspector: debug.inspector,
+        optics: debug.optics,
+        lift: debug.lift,
         devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
         contentDark: _contentDark,
         hasOriginal: anyOriginal(items, style),
@@ -946,8 +859,8 @@ class _TabBarLayout extends MultiChildRenderObjectWidget {
   final EdgeInsets padding;
 
   @override
-  RenderGlassTabBar createRenderObject(BuildContext context) {
-    return RenderGlassTabBar(
+  _RenderGlassTabBar createRenderObject(BuildContext context) {
+    return _RenderGlassTabBar(
       physics: physics,
       appearance: appearance,
       frame: frame,
@@ -985,7 +898,7 @@ class _TabBarLayout extends MultiChildRenderObjectWidget {
   @override
   void updateRenderObject(
     BuildContext context,
-    RenderGlassTabBar renderObject,
+    _RenderGlassTabBar renderObject,
   ) {
     renderObject
       ..onPointer = onPointer
@@ -1031,11 +944,11 @@ class _TabParentData extends ContainerBoxParentData<RenderBox> {}
 /// never sees the bar's glass, the tabs, or itself. The tabs under the lens
 /// are not painted here but lifted into it: the lens's shader draws them
 /// from an atlas of the tabs in the selected style, grown and lensed.
-class RenderGlassTabBar extends RenderBox
+class _RenderGlassTabBar extends RenderBox
     with
         ContainerRenderObjectMixin<RenderBox, _TabParentData>,
         RenderBoxContainerDefaultsMixin<RenderBox, _TabParentData> {
-  RenderGlassTabBar({
+  _RenderGlassTabBar({
     required this._physics,
     required this._appearance,
     required this._frame,
@@ -2188,11 +2101,11 @@ class RenderGlassTabBar extends RenderBox
 
   static void _paintNothing(PaintingContext context, Offset offset) {}
 
-  // UIKit's platter frosts what is below it, then refracts that: its
-  // glassBackground blurs its quarter-scale capture and mixes that into the
-  // capture itself, half at the platter's edge and fully 31pt in
-  // (inputBlurDistance and inputBlurOpacity), so a point refracted from deep
-  // inside comes out deeply frosted. Here the capture is not scaled down: the
+  // UIKit's platter frosts what is below it, then refracts that: its glass
+  // filter blurs its quarter-scale capture and mixes that into the capture
+  // itself, half at the platter's edge and fully 31pt in (measured in the
+  // simulator), so a point refracted from deep inside comes out deeply
+  // frosted. Here the capture is not scaled down: the
   // heavy blur is drawn first, natively, and the backdrop shader's frost
   // pass draws a light one (for the capture's filtering) over it, fading
   // from half at the edge to none at the middle line. The heavy sigma is in
@@ -2200,8 +2113,8 @@ class RenderGlassTabBar extends RenderBox
   // which would be simpler, Impeller misplaces a backdrop filter.)
   static const double _frostHeavySigma = 2.9;
 
-  // With Reduce Transparency, UIKit blurs far more (its glassBackground's
-  // inputBlurRadius goes from 0.67 to 36.9) and fully: a sigma that leaves
+  // With Reduce Transparency, UIKit blurs far more (its glass filter's blur
+  // radius goes from 0.67 to 36.9) and fully: a sigma that leaves
   // 40pt blocks as faint as UIKit's do, and no light blur.
   static const double _reducedFrostSigma = 20;
 
@@ -2567,7 +2480,7 @@ class RenderGlassTabBar extends RenderBox
 
   final LayerHandle<ClipRRectLayer> _glowClip = LayerHandle<ClipRRectLayer>();
 
-  // UIKit's gradientOvalization for the glass's distance field.
+  // The ovalization of UIKit's glass shapes, for the glass's distance field.
   static const double _ovalization = 0.5;
   static const double _inspectorZoom = 2;
 

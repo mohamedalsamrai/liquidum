@@ -34,8 +34,8 @@ class Glass extends SingleChildRenderObjectWidget {
   static Future<void> precache() => _GlassProgram.load();
 
   @override
-  RenderGlass createRenderObject(BuildContext context) {
-    return RenderGlass(
+  RenderObject createRenderObject(BuildContext context) {
+    return _RenderGlass(
       material: material,
       radius: radius,
       devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
@@ -43,16 +43,16 @@ class Glass extends SingleChildRenderObjectWidget {
   }
 
   @override
-  void updateRenderObject(BuildContext context, RenderGlass renderObject) {
-    renderObject
+  void updateRenderObject(BuildContext context, RenderObject renderObject) {
+    (renderObject as _RenderGlass)
       ..material = material
       ..radius = radius
       ..devicePixelRatio = MediaQuery.devicePixelRatioOf(context);
   }
 }
 
-class RenderGlass extends RenderProxyBox {
-  RenderGlass({
+class _RenderGlass extends RenderProxyBox {
+  _RenderGlass({
     required this._material,
     this._radius,
     required this._devicePixelRatio,

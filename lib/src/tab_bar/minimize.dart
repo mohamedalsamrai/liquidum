@@ -33,10 +33,9 @@ class GlassTabBarMinimize {
     dampingRatio: 0.828,
   );
 
-  /// The crossfade from the tabs to the circle's icon (UIKit's
-  /// _UIMagicMorphTransformView): what goes out fades and blurs (radius 4pt
-  /// at the end), what comes in the reverse, both squeezed into the
-  /// platter's shape.
+  /// The crossfade from the tabs to the circle's icon, as UIKit morphs
+  /// between them: what goes out fades and blurs (radius 4pt at the end),
+  /// what comes in the reverse, both squeezed into the platter's shape.
   final GlassSpring fade = GlassSpring(response: 0.255, dampingRatio: 0.86);
 
   /// The accessory's span, from the bar's width to the room left in its row.

@@ -16,10 +16,10 @@ import 'spring.dart';
 /// drifts toward the finger.
 ///
 /// The model and its numbers come from UIKit's own tab bar on the iOS 26.5
-/// simulator: its lens and flex state logged every frame under scripted
-/// touches (398×62pt bar, four tabs), and its settings read at runtime
-/// (`_UILiquidLensViewSpec`, `_UIFlexInteractionSpec`). Where UIKit's lens
-/// trails the finger through a spring, this lens follows it exactly.
+/// simulator: its lens and the bar's flex measured every frame under
+/// scripted touches (398×62pt bar, four tabs), with their springs. Where
+/// UIKit's lens trails the finger through a spring, this lens follows it
+/// exactly.
 class GlassTabBarPhysics {
   GlassTabBarPhysics({required int count, required int selectedIndex})
     : assert(count > 0),
@@ -256,9 +256,9 @@ class GlassTabBarPhysics {
     tolerance: 0.02,
   );
 
-  // Lift progress: the clear optics (UIKit's liftProgress, 631.65/50.27,
-  // critically damped in 0.25s). A quick tap keeps the lens lifted for
-  // [lensHangTime] after the finger leaves.
+  // Lift progress: the clear optics (UIKit's lens lift progress,
+  // 631.65/50.27, critically damped in 0.25s). A quick tap keeps the lens
+  // lifted for [lensHangTime] after the finger leaves.
   static const double lensHangTime = 0.22;
 
   // UIKit starts the lift a frame after the touch; the platter at once.
@@ -835,8 +835,8 @@ class GlassTabBarPhysics {
     height: _size.height * platterScaleY,
   );
 
-  /// 0 for the frosted resting pill, 1 for clear glass (UIKit's
-  /// liftProgress).
+  /// 0 for the frosted resting pill, 1 for clear glass (UIKit's lens lift
+  /// progress).
   double get liftProgress => _lift.value.clamp(0.0, 1.0);
 
   /// Same as [liftProgress].

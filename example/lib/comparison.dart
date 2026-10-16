@@ -30,6 +30,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:liquidum/liquidum.dart';
+import 'package:liquidum/liquidum_debug.dart';
 
 import 'native_tab_bar.dart';
 import 'sf_symbol.dart';
@@ -425,33 +426,37 @@ class _ComparisonAppState extends State<ComparisonApp>
             bottom: barMargin,
             // Centered: with up to three tabs the bar hugs them.
             child: Center(
-              child: GlassTabBar(
-                items: <GlassTabItem>[
-                  for (var i = 0; i < _tabs.length; i++)
-                    GlassTabItem(
-                      icon: _tabs[i].glassItem.icon,
-                      label: _tabs[i].label,
-                      badge: i < widget.badges.length ? widget.badges[i] : null,
-                    ),
-                ],
-                // UIKit ignores its unselected tint; so does the comparison.
-                selectedColor: widget.tint,
-                glassColor: widget.glass,
-                indicatorColor: widget.indicator,
-                lensColor: widget.lens,
-                selectedIndex: _selected,
-                onSelected: (int i) => setState(() => _selected = i),
-                debugView: widget.view,
-                debugShareBackdrop: widget.shareBackdrop,
-                debugHold: widget.hold == null
-                    ? null
-                    : Offset(widget.hold!, 31),
-                debugHideContent: widget.bare,
-                debugOptics: widget.optics,
-                debugLift: widget.lift,
-                reduceTransparency: widget.reduceTransparency,
-                // Above the marker band and the clock code.
-                debugInspector: const Rect.fromLTWH(0, -380, 398, 300),
+              child: GlassTabBarDebug(
+                options: GlassTabBarDebugOptions(
+                  view: widget.view,
+                  shareBackdrop: widget.shareBackdrop,
+                  hold: widget.hold == null ? null : Offset(widget.hold!, 31),
+                  hideContent: widget.bare,
+                  optics: widget.optics,
+                  lift: widget.lift,
+                  // Above the marker band and the clock code.
+                  inspector: const Rect.fromLTWH(0, -380, 398, 300),
+                ),
+                child: GlassTabBar(
+                  items: <GlassTabItem>[
+                    for (var i = 0; i < _tabs.length; i++)
+                      GlassTabItem(
+                        icon: _tabs[i].glassItem.icon,
+                        label: _tabs[i].label,
+                        badge: i < widget.badges.length
+                            ? widget.badges[i]
+                            : null,
+                      ),
+                  ],
+                  // UIKit ignores its unselected tint; so does the comparison.
+                  selectedColor: widget.tint,
+                  glassColor: widget.glass,
+                  indicatorColor: widget.indicator,
+                  lensColor: widget.lens,
+                  selectedIndex: _selected,
+                  onSelected: (int i) => setState(() => _selected = i),
+                  reduceTransparency: widget.reduceTransparency,
+                ),
               ),
             ),
           ),

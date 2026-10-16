@@ -2,10 +2,11 @@ import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
 
-/// SF Symbols' magnifying glass and xmark as UIKit draws them in its tab
-/// bar's search tab and field (iOS 26.5, measured from screenshots): a ring
-/// of 0.735 of the glyph's size with a round-capped handle to its corner,
-/// and a cross of round-capped strokes. Colored from the [IconTheme].
+/// A magnifying glass and a cross, sized like those in the iOS 26 tab bar's
+/// search tab and search field (measured from screenshots in the iOS 26.5
+/// simulator): a ring of 0.735 of the glyph's size with a round-capped
+/// handle to its corner, and a cross of round-capped strokes. Colored from
+/// the [IconTheme].
 class BarGlyph extends StatelessWidget {
   /// The search tab's magnifying glass in its circle: 22.3pt, 2pt strokes.
   const BarGlyph.search({super.key, this.size = 22.3, this.stroke = 2})

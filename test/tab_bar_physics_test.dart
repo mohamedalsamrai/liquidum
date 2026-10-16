@@ -1,6 +1,9 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liquidum/liquidum.dart';
+import 'package:liquidum/liquidum_debug.dart';
+import 'package:liquidum/src/tab_bar/field.dart';
+import 'package:liquidum/src/tab_bar/spring.dart';
 
 // The iOS 26.5 simulator's tab bar: 398×62pt, four tabs. Expected values are
 // UIKit's, logged every frame from its lens and flex state.

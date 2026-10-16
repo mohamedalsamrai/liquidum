@@ -1,9 +1,9 @@
 name: liquidum
 description: >-
-  The iOS 26 Liquid Glass tab bar for Flutter, measured against UIKit: real
+  An iOS 26-style glass tab bar for Flutter, measured against UIKit: real
   refraction, a lifting lens, adaptive glass, a search tab, an accessory and
   minimizing.
-version: 0.1.0
+version: 0.2.0
 repository: https://github.com/mohamedalsamrai/liquidum
 issue_tracker: https://github.com/mohamedalsamrai/liquidum/issues
 topics:
@@ -17,6 +17,10 @@ screenshots:
     path: doc/images/hero.png
   - description: A search tab, a bottom accessory, and the bar minimized.
     path: doc/images/bar-features.png
+
+platforms:
+  android:
+  ios:
 
 environment:
   sdk: ^3.12.2

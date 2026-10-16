@@ -1,3 +1,30 @@
+## 0.2.0
+
+* License: Liquidum is now under the MIT License, free for any use,
+  commercial included.
+* Breaking: the `debug*` parameters of `GlassTabBar` are replaced by a
+  `GlassTabBarDebug` widget above the bar, whose `GlassTabBarDebugOptions`
+  hold the same settings. `GlassTabBarPhysics`, `GlassAppearance`,
+  `GlassTabBarDebugView` and `GlassTabBarOptics` moved to
+  `package:liquidum/liquidum_debug.dart`, which is not covered by semantic
+  versioning. `GlassSpring`, `GlassShape`, `GlassField`,
+  `GlassBackdropState`, `GlassBackdrop.under` and the render objects
+  (`RenderGlass`, `RenderGlassTabBar`) are no longer public.
+* Backdrop sampling follows drawn frames: no timers or snapshots while idle
+  or in the background. Over a still backdrop the bar now stops reading it;
+  before, each reading drew frames that called for the next one, up to 20
+  readings a second for as long as the bar was shown.
+
+## 0.1.1
+
+* License: the Licensed Work now covers version 0.0.1 and later, each
+  version changes to the Apache License 2.0 four years after it is
+  published, and the non-commercial definition is clearer (indirect
+  revenue, freelance and client work). Code and behavior are unchanged.
+* README: clearer description, a license summary at the top, and a note
+  that Liquidum is not affiliated with Apple.
+* Source comments reworded; research notes moved to `doc/comparison`.
+
 ## 0.1.0
 
 * `GlassTab.search`: a search tab in its own glass circle, as UIKit's

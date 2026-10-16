@@ -1,7 +1,7 @@
 import 'dart:ui';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:liquidum/liquidum.dart';
+import 'package:liquidum/liquidum_debug.dart';
 
 // Expected values are UIKit's (iOS 26.5 simulator), read from its tab bar's
 // filters over flat and stepped backdrops.
@@ -109,5 +109,21 @@ void main() {
       GlassAppearance.sampleArea(bar),
       const Rect.fromLTRB(0, 860.6, 440, 956),
     );
+  });
+
+  test('a reading that changes nothing is known as such', () {
+    final a = GlassAppearance()..tick(0);
+    // Before the first reading, any reading changes something.
+    expect(a.wouldKeep(1), isFalse);
+    var t = settle(a, 0.6, 0);
+    expect(a.wouldKeep(0.6), isTrue);
+    expect(a.wouldKeep(0.61), isFalse);
+    // While another reading waits to take effect, the old luma is no
+    // longer the one that will hold.
+    a.sample(0.1);
+    expect(a.wouldKeep(0.6), isFalse);
+    expect(a.wouldKeep(0.1), isFalse);
+    t = settle(a, 0.1, t);
+    expect(a.wouldKeep(0.1), isTrue);
   });
 }

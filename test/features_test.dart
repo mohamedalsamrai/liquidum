@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liquidum/liquidum.dart';
+import 'package:liquidum/liquidum_debug.dart';
 import 'package:liquidum/src/tab_bar/minimize.dart';
 import 'package:liquidum/src/tab_bar/style.dart';
 
@@ -181,11 +182,8 @@ void main() {
   });
 
   test('Increase Contrast darkens a selected color as UIKit does', () {
-    Color c(int argb) => GlassTabBarStyle.resolve(
-      Color(argb),
-      dark: false,
-      contrast: true,
-    );
+    Color c(int argb) =>
+        GlassTabBarStyle.resolve(Color(argb), dark: false, contrast: true);
     // UIKit's (iOS 26.5): red (191, 35, 26), green (29, 147, 59).
     final Color red = c(0xFFFF3B30), green = c(0xFF34C759);
     expect((red.r * 255 - 191).abs(), lessThan(3));
