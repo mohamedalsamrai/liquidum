@@ -3,7 +3,7 @@ description: >-
   An iOS 26-style glass tab bar for Flutter, measured against UIKit: real
   refraction, a lifting lens, adaptive glass, a search tab, an accessory and
   minimizing.
-version: 0.2.1
+version: 0.2.2
 repository: https://github.com/mohamedalsamrai/liquidum
 issue_tracker: https://github.com/mohamedalsamrai/liquidum/issues
 topics:
