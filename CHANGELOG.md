@@ -1,5 +1,7 @@
 ## 0.2.0
 
+* License: Liquidum is now under the MIT License, free for any use,
+  commercial included.
 * Breaking: the `debug*` parameters of `GlassTabBar` are replaced by a
   `GlassTabBarDebug` widget above the bar, whose `GlassTabBarDebugOptions`
   hold the same settings. `GlassTabBarPhysics`, `GlassAppearance`,

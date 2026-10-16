@@ -5,7 +5,7 @@
 **An iOS 26-style glass tab bar for Flutter.**
 It looks and moves like the native iOS 26 bar, and it takes a few lines to use.
 
-Free for non-commercial use. Commercial use needs a license ([BUSL-1.1](#license)).
+Open source under the [MIT License](LICENSE).
 
 Liquidum is an independent project, not affiliated with or endorsed by Apple Inc.
 
@@ -14,7 +14,7 @@ Liquidum is an independent project, not affiliated with or endorsed by Apple Inc
 ![Renderer](https://img.shields.io/badge/renderer-Impeller-7257A8)
 ![Platforms](https://img.shields.io/badge/platforms-iOS%20%7C%20Android-lightgrey)
 ![Status](https://img.shields.io/badge/status-0.2.0%20preview-orange)
-[![License](https://img.shields.io/badge/license-BUSL--1.1-blue)](LICENSE)
+[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 <img src="doc/images/hero.png" alt="Liquidum's glass tab bar over colorful content: light, dark, and with a custom gradient and dark glass" width="860">
 
@@ -416,23 +416,8 @@ Judge motion in profile or release mode: debug builds are much slower.
 
 ## License
 
-Liquidum's source is open to read, under the
-[Business Source License 1.1](LICENSE). It is not an open-source license.
+Liquidum is open source under the [MIT License](LICENSE): free to use, in
+personal and commercial apps alike.
 
-- **Non-commercial use is free, in production too.** A project is
-  non-commercial only if it is not sold, does not make money directly or
-  indirectly (sales, subscriptions, in-app purchases, ads, sponsorships,
-  donations, affiliate programs, or supporting the sale of other products
-  or services), and is not made by, for, or on behalf of a company, other
-  for-profit business, or self-employed person in the course of their
-  business. Personal, educational and research projects qualify only if
-  they meet these conditions.
-- **Commercial use needs a commercial license.** That includes freelance
-  and client work. [Contact the author](https://github.com/mohamedalsamrai).
-- **Each version becomes open source later.** Four years after a version
-  is published, it changes to the Apache License 2.0.
-- **Not affiliated with Apple.** Liquidum is an independent project, not
-  affiliated with or endorsed by Apple Inc. Apple, iOS and UIKit are
-  trademarks of their respective owners.
-
-Each version is licensed under the LICENSE file published with it.
+Liquidum is an independent project, not affiliated with or endorsed by Apple
+Inc. Apple, iOS and UIKit are trademarks of their respective owners.
