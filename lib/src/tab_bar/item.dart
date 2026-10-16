@@ -1,9 +1,10 @@
 import 'package:flutter/widgets.dart';
 
-import 'style.dart';
+import 'tab_bar.dart';
 
 /// A tab in a [GlassTabBar]: its icon, label and badge, and colors of its
-/// own where they should differ from the bar's [GlassTabBarStyle].
+/// own where they should differ from the bar's ([GlassTabBar.selectedColor]
+/// and the others).
 @immutable
 class GlassTabItem {
   const GlassTabItem({
@@ -34,13 +35,13 @@ class GlassTabItem {
   /// a count or a short word. None when null.
   final String? badge;
 
-  /// This tab's badge color, instead of [GlassTabBarStyle.badgeColor].
+  /// This tab's badge color, instead of [GlassTabBar.badgeColor].
   final Color? badgeColor;
 
-  /// This tab's [GlassTabBarStyle.selectedColor].
+  /// This tab's [GlassTabBar.selectedColor].
   final Color? selectedColor;
 
-  /// This tab's [GlassTabBarStyle.unselectedColor].
+  /// This tab's [GlassTabBar.unselectedColor].
   final Color? unselectedColor;
 
   /// Whether the bar colors the icon. Turn it off for icons with colors of

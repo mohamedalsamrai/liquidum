@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liquidum/liquidum.dart';
+import 'package:liquidum/liquidum_debug.dart';
 import 'package:liquidum/src/tab_bar/minimize.dart';
 import 'package:liquidum/src/tab_bar/style.dart';
 

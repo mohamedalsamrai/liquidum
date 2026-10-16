@@ -6,6 +6,8 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 
+import 'frame_sampler.dart';
+
 /// Marks the content that glass floats over, so glass can tell how bright it
 /// is (see [GlassBrightness]).
 ///
@@ -18,21 +20,21 @@ class GlassBackdrop extends StatefulWidget {
 
   static final Set<GlassBackdropState> _mounted = <GlassBackdropState>{};
 
-  /// The most recently mounted backdrop that lies under [rect], in global
-  /// logical coordinates.
-  static GlassBackdropState? under(Rect rect) {
-    GlassBackdropState? found;
-    for (final GlassBackdropState backdrop in _mounted) {
-      final Rect? bounds = backdrop._bounds;
-      if (bounds != null && bounds.overlaps(rect)) {
-        found = backdrop;
-      }
-    }
-    return found;
-  }
-
   @override
   State<GlassBackdrop> createState() => GlassBackdropState();
+}
+
+/// The most recently mounted backdrop that lies under [rect], in global
+/// logical coordinates.
+GlassBackdropState? glassBackdropUnder(Rect rect) {
+  GlassBackdropState? found;
+  for (final GlassBackdropState backdrop in GlassBackdrop._mounted) {
+    final Rect? bounds = backdrop._bounds;
+    if (bounds != null && bounds.overlaps(rect)) {
+      found = backdrop;
+    }
+  }
+  return found;
 }
 
 class GlassBackdropState extends State<GlassBackdrop> {
@@ -197,7 +199,9 @@ class _GlassBrightnessState extends State<GlassBrightness>
     vsync: this,
     duration: const Duration(milliseconds: 300),
   );
-  Timer? _timer;
+  // Reads the backdrop every 250ms while frames are being drawn.
+  late final FrameSampler _sampler;
+  bool _shown = false;
   bool _sampling = false;
   Brightness _system = Brightness.light;
   Brightness? _override;
@@ -205,13 +209,18 @@ class _GlassBrightnessState extends State<GlassBrightness>
   Brightness get _target => _override ?? _system;
 
   @override
+  void initState() {
+    super.initState();
+    _sampler = FrameSampler(interval: _interval, sample: _sample);
+  }
+
+  @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     _system = MediaQuery.platformBrightnessOf(context);
     _override = null;
-    final bool first = _timer == null;
-    _timer ??= Timer.periodic(_interval, (_) => _sample());
-    _show(animate: !first);
+    _show(animate: _shown);
+    _shown = true;
   }
 
   void _show({bool animate = true}) {
@@ -232,7 +241,7 @@ class _GlassBrightnessState extends State<GlassBrightness>
       box.getTransformTo(null),
       Offset.zero & box.size,
     );
-    final GlassBackdropState? backdrop = GlassBackdrop.under(rect);
+    final GlassBackdropState? backdrop = glassBackdropUnder(rect);
     if (backdrop == null) {
       return;
     }
@@ -266,7 +275,7 @@ class _GlassBrightnessState extends State<GlassBrightness>
 
   @override
   void dispose() {
-    _timer?.cancel();
+    _sampler.dispose();
     _dark.dispose();
     super.dispose();
   }

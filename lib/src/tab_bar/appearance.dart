@@ -93,6 +93,10 @@ class GlassAppearance {
     _pending.add((null, luma));
   }
 
+  /// Whether a reading of [luma] would change nothing: it is the luma in
+  /// effect, and no other reading is still waiting to take effect.
+  bool wouldKeep(double luma) => _sampled && _pending.isEmpty && luma == _luma;
+
   /// Whether the appearance follows the backdrop. When false, it keeps the
   /// [system]'s, and only the glass's colors follow the backdrop's luma.
   set adaptive(bool value) {

@@ -13,7 +13,7 @@ Liquidum is an independent project, not affiliated with or endorsed by Apple Inc
 ![Flutter](https://img.shields.io/badge/Flutter-3.44%2B-02569B?logo=flutter&logoColor=white)
 ![Renderer](https://img.shields.io/badge/renderer-Impeller-7257A8)
 ![Platforms](https://img.shields.io/badge/platforms-iOS%20%7C%20Android-lightgrey)
-![Status](https://img.shields.io/badge/status-0.1.1%20preview-orange)
+![Status](https://img.shields.io/badge/status-0.2.0%20preview-orange)
 [![License](https://img.shields.io/badge/license-BUSL--1.1-blue)](LICENSE)
 
 <img src="doc/images/hero.png" alt="Liquidum's glass tab bar over colorful content: light, dark, and with a custom gradient and dark glass" width="860">
