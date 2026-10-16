@@ -22,10 +22,11 @@ migrate_working_dir/
 .flutter-plugins-dependencies
 /build/
 /coverage/
-/hassa_example/
+/*_example/
 
 # Research evidence and the README's images, which pub.dev loads from the
-# repository; only the screenshot is shipped.
+# repository; only the screenshots are shipped.
 /doc/comparison/
 /doc/images/*
 !/doc/images/hero.png
+!/doc/images/bar-features.png

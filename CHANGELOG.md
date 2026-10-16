@@ -1,4 +1,4 @@
-## Unreleased
+## 0.1.0
 
 * `GlassTab.search`: a search tab in its own glass circle, as UIKit's
   `UISearchTab`; with a `controller`, it opens into a search field (the tabs

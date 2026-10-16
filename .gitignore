@@ -29,8 +29,3 @@ migrate_working_dir/
 .flutter-plugins-dependencies
 /build/
 /coverage/
-
-# The Hassa app's tab bar, built with Liquidum to test it in real use: the
-# app (its code, icons, images and font) and its comparison images and notes.
-/hassa_example/
-/doc/comparison/**/*hassa*
