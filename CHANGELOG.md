@@ -1,3 +1,13 @@
+## Unreleased
+
+* `Glass` is now UIKit's glass (`UIGlassEffect`), measured at 30 to 400pt:
+  the tab bar's material at any size, with the inputs UIKit gives each size
+  (refraction, frost, shadow, and for large glass its fixed appearance and
+  bleed), Apple's continuous corners, a `clear` style, `tint` and
+  `brightness`. Small glass turns light or dark with what is behind it.
+* Breaking: `GlassMaterial` and `Glass.material` are gone; use
+  `Glass(style: GlassStyle.regular or GlassStyle.clear)`.
+
 ## 0.2.2
 
 * License: Liquidum is now under the MIT License, free for any use,

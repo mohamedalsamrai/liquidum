@@ -372,17 +372,23 @@ The numbers are in [`doc/comparison/refinements`](doc/comparison/refinements).
   margin.
 - **`GlassBackdrop`** wraps the content that glass floats over. The bar
   measures it to adapt; the scaffold adds one for you.
-- **`Glass`** turns any widget into a glass surface, a capsule or a rounded
-  rectangle. Its `GlassMaterial` presets are `regular`, `regularDark`,
-  `clear`, `clearDark` and `identity`, and `GlassMaterial.lerp` animates
-  between them.
+- **`Glass`** is UIKit's glass (`UIGlassEffect`) behind any widget: the
+  same material as the bar, at any size, in a capsule or with rounded
+  corners. `style: GlassStyle.clear` makes the clearer glass for rich
+  content, `tint` tints it, and `brightness` forces light or dark. Up to
+  64pt tall it turns light or dark with what is behind it, as UIKit's does;
+  larger glass follows the system.
 
 ```dart
 Glass(
-  material: GlassMaterial.regular,
+  radius: 20, // a capsule by default
   child: Padding(padding: EdgeInsets.all(16), child: Text('Liquid glass')),
 )
 ```
+
+  It was rebuilt from UIKit's own inputs at 30 to 400pt and compared with
+  `UIGlassEffect` over the same backgrounds: see
+  [`doc/comparison/glass-widgets/stage1`](doc/comparison/glass-widgets/stage1).
 
 ## Examples
 

@@ -1,0 +1,93 @@
+Stage 1, the glass material (UIGlassEffect), 2026-10-25. UIKit = iOS 26.5
+simulator, iPhone 17 Pro Max, 3 px/pt. RMS in levels (0-255) between UIKit's
+glass and Liquidum's Glass at the same rects over the same backgrounds
+(example/lib/comparison.dart with shapes=<set>: UIKit's in a platform view,
+example/lib/native_glass.dart). "middle": more than 3pt inside the outline;
+"edge": the 3pt inside it; "around": the 30pt outside it (neighbours'
+shadows included in the dense sets).
+
+Method
+  UIKit's own inputs: each UIGlassEffect's glass group archived
+  (NSKeyedArchiver) and its glassBackground filter, CASDF effects and
+  vibrant matrices decoded, at 30 to 400pt, regular and clear, tinted, light
+  and dark, over white, black and color. The effect of single inputs was
+  isolated by overriding them on the live layers (simulator only), e.g. the
+  frost alone (refraction, face, bleed and shadow off) over stripes.
+
+The material is the tab bar's
+  A 300x62 capsule of regular glass has exactly the tab bar platter's
+  inputs: the bar's measured glass is UIGlassEffect's. Liquidum's Glass now
+  draws it with the bar's code (shaders/glass_material.glsl, shared by
+  backdrop.frag and glass.frag; the bar is pixel-identical before and after,
+  9 scenes, 0 pixels differing).
+
+UIKit's laws, by the shape's short side h (points), any corner radius
+  regular: inner refraction 0.8h (max 60) at 0.25h deep (max 20); outer
+    refraction 0.2h at h/8; frost: heavy over the middle line (h/2), blur
+    radius (h/2 + 4) / 21 (min 4/3, max 4); shadow opacity 0.5 - 5t light,
+    0.4 - 3t dark, t = clamp(h - 48, 0, 112) / 2240 (0.25 from 160pt).
+  clear: inner refraction h (max 60) at 0.36h (max 20); face fixed (black
+    0.075, white 1.15, chroma 1.06, no fill), no shadow, no bleed, blur
+    radius 1.
+  up to 64pt: the face follows the backdrop's luma and the appearance
+    switches with it, as the bar's (GlassAppearance), sampled over the glass
+    grown by 0.2h.
+  over 64pt ("large"): the system's appearance only; face fixed (light:
+    black 0.5, white 1.03, white fill 0.4, shadow fill 0.12; dark: 0.2, 0.6,
+    black fill 0.4); a bleed mixed over the glass at (h - 64) / 192 light,
+    / 120 dark (max at 160pt: 0.5, 0.8); the shadow darkened by its
+    vibrancy contribution (h - 64) / 96 (max 1): + 0.15 of it.
+  everything stops growing at 160pt but the frost's depth (h/2).
+  corners: Apple's continuous curve. Measured from UIKit's silhouettes (rim
+    hidden): circles are exact circles; capsules and rounded rects are
+    pulled in where an arc meets a straight side, by up to 0.017 r, over
+    0.52 r of the side and about 30 degrees of the arc (none at a capsule's
+    end). Modeled as an inset of the distance field (continuousInset), within
+    0.1pt. Outer band (the outline's last point) over gray, before/after:
+    62pt 17.2 -> 3.9, 100pt 28.9 -> 5.4, 120pt r40 30.2 -> 5.3.
+  refraction follows the shape's own distance gradient: no ovalization
+    (the bar's 0.5 belongs to its lens's warp). Clear over stripes 42-59 ->
+    7-8 levels inside.
+
+Frost by height (UIKit's frost alone, fitted over 8pt stripes)
+  light sigma / heavy sigma / ramp power: 56pt 0.92/2.63/1.13, 62pt
+  0.93/2.99/1.06, 66pt 0.97/3.32/1.03, 80pt 1.15/4.36/0.68, 90pt
+  1.36/4.12/0.51, 160pt 2.66/10.5/0.42. Liquidum keeps the bar's fit at
+  62pt and below, scales the heavy blur and the ramp by these ratios above,
+  and adds the light blur in quadrature. Stripe contrast UIKit/Liquidum at
+  3, 8, 13pt deep: within 0.83-1.36 up to 90pt (was 0.30-0.93).
+  Impeller blurs less than asked below sigma 3 (0.75 at 1, 0.90 at 2,
+  measured over stripes); clear glass asks 1.88 for UIKit's 1.67.
+
+Bleed (large glass)
+  Linear: UIKit's glass = no-bleed glass + opacity x (bleed - no-bleed),
+  within 0.7 levels. Its bleed layer is not a blur of the backdrop (a
+  black/white split stays sharp; with its blur radius at 0 it is min(G +
+  12/255, 0.969) over gray), and over color is not yet understood. Modeled
+  as an affine color matrix of the glass, fitted at 100-400pt: the bleed
+  alone, light within 2-4 levels, dark 1-2.
+
+Results (middle / edge, levels)
+  over color blocks: 30-64pt 0.8-1.8 / 3.4-7.1; 66-160pt 2.9-4.7 / 9-14;
+    panels 200-400pt 5.2-5.4 / 12-14; clear 1.1-2.9 / 2.5-3.9
+  over gray: 0.1-0.9 (2.5 for two capsules whose UIKit reading includes the
+    shadows of the shapes above them)
+  over dark: 0.1-1.2 / 0.5-4.3
+  tints (blue, red, half blue, clear blue): 0.2-0.6 / 1.6-2.9
+  shadows, apart over white: all within 1 level at 1-44pt below.
+  clear over 8pt stripes: 7.2-7.8 / 6-13 (the outermost 2pt brighter than
+    UIKit's, which dims it near the edge).
+
+Open
+  - Large glass's bleed: its real composition (inputs BleedAmount,
+    BleedHeight, BleedDistance0/1, DarkenBlend), for panels (Stage 7).
+  - Panels keep slightly less chroma and texture than UIKit's (about 5
+    levels inside).
+  - The rim's outermost point on circles (7.7 levels over gray) and clear
+    glass's first 2pt.
+  - The interactive press (isInteractive: swell, stretch, fingertip glow)
+    moves to Stage 3, with the glass buttons, which use the same flex
+    interaction.
+  - The bar's own capsules could take the continuous corners and the
+    platter's refraction its gradient without ovalization; not changed yet
+    (the bar is kept identical), to compare with UIKit's bar first.

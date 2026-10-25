@@ -15,6 +15,9 @@ import UIKit
     if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "NativeTabBar") {
       NativeTabBarFactory.register(with: registrar)
     }
+    if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "NativeGlass") {
+      NativeGlassFactory.register(with: registrar)
+    }
     if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "SymbolRenderer") {
       SymbolRenderer.register(with: registrar)
     }
@@ -170,4 +173,56 @@ final class NativeTabBar: NSObject, FlutterPlatformView, UITabBarControllerDeleg
   ) {
     channel.invokeMethod("selected", arguments: tabBarController.selectedIndex)
   }
+}
+
+/// Apple's glass (`UIGlassEffect`) in shapes laid out from Flutter, for
+/// comparison with Liquidum's `Glass` over the same content.
+final class NativeGlassFactory: NSObject, FlutterPlatformViewFactory {
+  static func register(with registrar: FlutterPluginRegistrar) {
+    registrar.register(NativeGlassFactory(), withId: "liquidum/native_glass")
+  }
+
+  func create(
+    withFrame frame: CGRect, viewIdentifier viewId: Int64, arguments args: Any?
+  ) -> FlutterPlatformView {
+    NativeGlass(frame: frame, arguments: args as? [String: Any] ?? [:])
+  }
+
+  func createArgsCodec() -> FlutterMessageCodec & NSObjectProtocol {
+    FlutterStandardMessageCodec.sharedInstance()
+  }
+}
+
+/// Each shape: `x`, `y`, `width`, `height` (points, in the view), `radius`
+/// (a capsule when absent), `style` ("regular" or "clear"), `tint` (ARGB) and
+/// `interactive`.
+final class NativeGlass: NSObject, FlutterPlatformView {
+  private let container: UIView
+
+  init(frame: CGRect, arguments: [String: Any]) {
+    container = UIView(frame: frame)
+    container.backgroundColor = .clear
+    super.init()
+    guard #available(iOS 26.0, *) else { return }
+    for shape in arguments["shapes"] as? [[String: Any]] ?? [] {
+      let effect = UIGlassEffect(style: shape["style"] as? String == "clear" ? .clear : .regular)
+      if let argb = shape["tint"] as? Int {
+        effect.tintColor = UIColor(
+          red: CGFloat(argb >> 16 & 0xff) / 255, green: CGFloat(argb >> 8 & 0xff) / 255,
+          blue: CGFloat(argb & 0xff) / 255, alpha: CGFloat(argb >> 24 & 0xff) / 255)
+      }
+      effect.isInteractive = shape["interactive"] as? Bool ?? false
+      let view = UIVisualEffectView(effect: effect)
+      func d(_ key: String) -> CGFloat { CGFloat(shape[key] as? Double ?? 0) }
+      view.frame = CGRect(x: d("x"), y: d("y"), width: d("width"), height: d("height"))
+      if let radius = shape["radius"] as? Double {
+        view.cornerConfiguration = .corners(radius: .fixed(radius))
+      } else {
+        view.cornerConfiguration = .capsule()
+      }
+      container.addSubview(view)
+    }
+  }
+
+  func view() -> UIView { container }
 }

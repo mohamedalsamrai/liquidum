@@ -83,6 +83,8 @@ uniform sampler2D uContentAtlas;  // the tabs' content: a row per layer, a slot 
 
 out vec4 fragColor;
 
+#include "glass_material.glsl"
+
 // ---- UIKit's numbers, in the glass's own points.
 
 // Lens: the warp's displacement at full lift and the height of the lens's
@@ -116,8 +118,7 @@ const float kFrostFullDepth = 31.0;
 const float kFrostRamp = 0.72;
 // Its face color matrix (the luma mapped from a black to a white point, the
 // chroma kept, a fill mixed in; inputs in uFace) sits under the filter's
-// 0.97 SDR holding tone.
-const float kPlatterTone = 0.97;
+// 0.97 SDR holding tone (kGlassTone).
 // The resting selection blurs the glass behind it again (a gaussian blur,
 // radius 2 at quarter scale), then applies a color matrix (uPill).
 const float kRestBlur = 2.22;
@@ -142,8 +143,6 @@ const float kMaterialFade = 4.0;
 // over the band, within 1-4% of UIKit's rim at every angle. Its vibrant
 // color matrix (uRim, uLensRim) pushes what is below toward a gain of its
 // chroma plus a weight of its luma and a lift.
-const vec2 kLight = vec2(0.70710678, 0.70710678);
-const float kRimHeight = 1.0;
 const float kPlatterRimCurvature = 0.7;
 const float kLensRimCurvature = 0.8;
 // Shadows (from the glass filter): outside the glass, what is below is
@@ -167,8 +166,6 @@ const float kLensTopShade = 0.06;
 // matrix): chroma x1.2 and a 0.05 lift, at 0.8448 when fully pressed.
 const float kWash = 0.8448;
 
-const vec3 kLuma = vec3(0.2126, 0.7152, 0.0722);
-
 // Stages, for comparing them one at a time (GlassTabBar's debugOptics).
 const float kWarpStage = 1.0;
 const float kInnerStage = 2.0;
@@ -188,33 +185,15 @@ bool stage(float bit) {
 
 // Signed distance to a capsule-cornered box (radius = half the short side).
 float capsule(vec2 p, vec4 s) {
-  vec2 h = s.zw;
-  float r = min(h.x, h.y);
-  vec2 q = abs(p - s.xy) - h + r;
-  return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
+  return roundBox(p, s, min(s.z, s.w));
 }
 
 // Outward direction of the capsule's distance, blended by `oval` toward the
-// direction of the point in the capsule's normalized coordinates (x / half
-// width, y / half height): the ovalization of UIKit's glass shapes, which
-// this matches to within 1.3 degrees (median) over its lens's displacement
-// field.
+// direction of the point in the capsule's normalized coordinates: UIKit's
+// ovalization, which this matches to within 1.3 degrees (median) over its
+// lens's displacement field.
 vec2 outward(vec2 p, vec4 s, float oval) {
-  vec2 d = p - s.xy;
-  vec2 h = s.zw;
-  float r = min(h.x, h.y);
-  vec2 q = abs(d) - h + r;
-  vec2 g;
-  if (q.x > 0.0 && q.y > 0.0) {
-    g = normalize(q);
-  } else {
-    g = q.x > q.y ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
-  }
-  g *= vec2(d.x < 0.0 ? -1.0 : 1.0, d.y < 0.0 ? -1.0 : 1.0);
-  vec2 o = d / h;
-  o = length(o) > 0.0 ? normalize(o) : g;
-  vec2 n = mix(g, o, oval);
-  return length(n) > 0.0 ? normalize(n) : g;
+  return roundOutward(p, s, min(s.z, s.w), oval);
 }
 
 // The glass shape nearest p: the platter, or one beside it.
@@ -237,65 +216,13 @@ float glassDistance(vec2 p) {
   return capsule(p, glassAt(p));
 }
 
-// UIKit's glass displacement profile: the sag of a circular arc, 1 at the
-// edge, 0 at `height` in.
-float sag(float depth, float height) {
-  float u = clamp(1.0 - depth / height, 0.0, 1.0);
-  return 1.0 - sqrt(1.0 - u * u);
-}
-
 // ---- Sampling.
-
-// Texture coordinates for a point in an image that is `size` big, top-left
-// origin. Impeller's GLES backend keeps the textures it renders to (the
-// capture, and the content atlas) upside down.
-vec2 texel(vec2 p, vec2 size) {
-  vec2 uv = p / size;
-#ifdef IMPELLER_TARGET_OPENGLES
-  uv.y = 1.0 - uv.y;
-#endif
-  return uv;
-}
-
-vec3 capture(vec2 p) {
-  return texture(uCapture, texel(p, uSize)).rgb;
-}
-
-// The capture at p, between its four nearest pixels: the engine samples it
-// at the nearest one only.
-vec3 filtered(vec2 p) {
-  vec2 q = p - 0.5;
-  vec2 i = floor(q);
-  vec2 f = q - i;
-  vec2 c = i + 0.5;
-  return mix(mix(capture(c), capture(c + vec2(1.0, 0.0)), f.x),
-             mix(capture(c + vec2(0.0, 1.0)), capture(c + vec2(1.0)), f.x), f.y);
-}
 
 // p, moved into the glass's frost if it lies past it.
 vec2 inFrost(vec2 p) {
   vec4 g = glassAt(p);
   float over = capsule(p, g) + kFrostInset + 0.5;
   return over > 0.0 ? p - outward(p, g, 0.0) * over : p;
-}
-
-// A small gaussian blur around p (sigma up to about 2 pixels): the pixels
-// within 2 of it, but the corners.
-vec3 lightFrost(vec2 p, float sigma) {
-  float e = -0.5 / (sigma * sigma);
-  vec3 sum = vec3(0.0);
-  float total = 0.0;
-  for (int y = -2; y <= 2; y++) {
-    for (int x = -2; x <= 2; x++) {
-      if (abs(float(x)) + abs(float(y)) > 3.0) {
-        continue;
-      }
-      float w = exp(float(x * x + y * y) * e);
-      sum += capture(p + vec2(float(x), float(y))) * w;
-      total += w;
-    }
-  }
-  return sum / total;
 }
 
 // Gaussian blur around p: a Vogel spiral out to 2.5 sigma. `frosted`: of
@@ -321,35 +248,7 @@ vec3 frost(vec2 p, float sigma, int taps, bool frosted) {
 
 // The platter's face over its frosted backdrop c.
 vec3 face(vec3 c) {
-  float l = dot(c, kLuma);
-  vec3 f = uFace.x + (uFace.y - uFace.x) * l + (c - l) * CONTENT.z;
-  return clamp(kPlatterTone * mix(f, vec3(uFace.w), uFace.z), 0.0, 1.0);
-}
-
-// UIKit's tinted glass at p: a color matrix over the glass c taking its
-// luma to a color between the tint over black glass and over white glass,
-// mixed in at the tint's alpha. A gradient's tint goes from its start's to
-// its end's along its axis. A painted one is its color over c, at its alpha.
-vec3 tint(vec3 c, vec2 p, vec4 bright1, vec4 dark1, vec4 bright2, vec4 dark2, vec4 axis) {
-  if (bright1.a <= 0.0 && bright2.a <= 0.0) {
-    return c;
-  }
-  vec2 v = axis.zw - axis.xy;
-  float span = dot(v, v);
-  float t = span > 0.0 ? clamp(dot(p - axis.xy, v) / span, 0.0, 1.0) : 0.0;
-  vec4 bright = mix(bright1, bright2, t);
-  if (dark1.w > 0.5) {
-    return mix(c, bright.rgb, bright.a);
-  }
-  vec3 dark = mix(dark1.rgb, dark2.rgb, t);
-  float l = dot(c, kLuma);
-  return mix(c, clamp(dark + (bright.rgb - dark) * l, 0.0, 1.0), bright.a);
-}
-
-// A vibrant color matrix (chroma gain, luma weight, lift) applied to c.
-vec3 vibrant(vec3 c, vec3 m) {
-  float l = dot(c, kLuma);
-  return clamp(m.x * (c - l) + m.y * l + m.z, 0.0, 1.0);
+  return glassFace(c, uFace, CONTENT.z);
 }
 
 // The platter's glass at p (inside it): its frost, refracted, blurred by
@@ -374,31 +273,13 @@ vec3 rim(vec3 c, vec2 p, vec4 shape, float k, float curvature, vec3 matrix, floa
   if (amount <= 0.0 || depth >= kRimHeight + 0.5 / k) {
     return c;
   }
-  float u = min(depth / kRimHeight, 1.0);
-  float alpha = abs(dot(outward(p, shape, 0.0), kLight)) * (1.0 - curvature * u);
-  // The band ends within half a pixel.
-  alpha *= clamp((kRimHeight - depth) * k * 2.0 + 0.5, 0.0, 1.0);
-  return mix(c, vibrant(c, matrix), alpha * amount);
-}
-
-// erfc(x) / 2 for a gaussian edge: Abramowitz and Stegun 7.1.26.
-float gaussEdge(float z) {
-  float x = abs(z) * 0.70710678;
-  float t = 1.0 / (1.0 + 0.3275911 * x);
-  float e = t * (0.254829592 + t * (-0.284496736 + t * (1.421413741 +
-            t * (-1.453152027 + t * 1.061405429)))) * exp(-x * x);
-  return z >= 0.0 ? 0.5 * e : 1.0 - 0.5 * e;
+  return rimLight(c, depth, outward(p, shape, 0.0), k, curvature, matrix, amount);
 }
 
 // How much a glass shaped `shape` (scaled by k) shades p outside it.
 float shade(vec2 p, vec4 shape, float k, vec3 shadow, float reach) {
-  float d = capsule(p - vec2(0.0, shadow.x * k), shape) / k;
-  if (d >= reach) {
-    return 0.0;
-  }
-  return gaussEdge((d - shadow.z) / shadow.y);
+  return shadeAt(capsule(p - vec2(0.0, shadow.x * k), shape) / k, shadow, reach);
 }
-
 
 // The lens material's darkening of what it reads at q (see kLensTopShade).
 float topShade(vec2 q) {
@@ -407,12 +288,6 @@ float topShade(vec2 q) {
   }
   float k = uPass.z * uOptics.y;
   return 1.0 - kLensTopShade * (1.0 - shade(q, uLens, k, kLensShadow, 1e4));
-}
-
-// The press wash over color c, which UIKit clips to white.
-vec3 wash(vec3 c, float amount) {
-  float l = dot(c, kLuma);
-  return clamp(c + amount * (0.2 * (c - l) + 0.05), 0.0, 1.0);
 }
 
 // The fingertip glow's alpha at p: a blurred disk, as a gaussian of the same
@@ -657,7 +532,6 @@ vec3 contentInMaterial(vec2 p, float lift, vec3 under) {
                    sag(depth, kContentMaterialHeight * k);
   return contentLensed(r, lift, under);
 }
-
 
 // ---- Diagnostics.
 

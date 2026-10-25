@@ -32,6 +32,7 @@ import 'package:flutter/services.dart';
 import 'package:liquidum/liquidum.dart';
 import 'package:liquidum/liquidum_debug.dart';
 
+import 'native_glass.dart';
 import 'native_tab_bar.dart';
 import 'sf_symbol.dart';
 import 'tabs.dart';
@@ -79,6 +80,10 @@ Future<void> main() async {
     ComparisonApp(
       apple: config[0] == 'apple',
       noBar: config[0] == 'none',
+      shapes: flags
+          .where((String f) => f.startsWith('shapes='))
+          .map((String f) => glassSets[f.substring(7)])
+          .firstOrNull,
       hold: hold,
       reduceTransparency: flags.contains('rt'),
       bare: flags.contains('bare'),
@@ -243,9 +248,14 @@ class ComparisonApp extends StatefulWidget {
     this.glass,
     this.indicator,
     this.lens,
+    this.shapes,
   });
 
   final bool apple;
+
+  /// Glass shapes in place of the bar (the `shapes=<set>` flag): UIKit's
+  /// `UIGlassEffect` or Liquidum's `Glass`.
+  final List<GlassSpec>? shapes;
 
   /// No bar at all, for native experiments over the bare background.
   final bool noBar;
@@ -390,21 +400,48 @@ class _ComparisonAppState extends State<ComparisonApp>
             child: CustomPaint(painter: _Background(_background, origin)),
           ),
         ),
-        Positioned(
-          left: 0,
-          right: 0,
-          bottom: markerBandBottom,
-          height: markerBandHeight,
-          child: CustomPaint(painter: _Marker(_finger)),
-        ),
-        Positioned(
-          left: 0,
-          top: origin.dy + clockTop,
-          width: 4 + 12 * 8,
-          height: 8,
-          child: CustomPaint(painter: _ClockCode(_clockMs)),
-        ),
-        if (widget.apple)
+        // (Not over glass shapes, which reach down there.)
+        if (widget.shapes == null) ...<Widget>[
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: markerBandBottom,
+            height: markerBandHeight,
+            child: CustomPaint(painter: _Marker(_finger)),
+          ),
+          Positioned(
+            left: 0,
+            top: origin.dy + clockTop,
+            width: 4 + 12 * 8,
+            height: 8,
+            child: CustomPaint(painter: _ClockCode(_clockMs)),
+          ),
+        ],
+        if (widget.shapes case final List<GlassSpec> shapes)
+          Positioned(
+            left: origin.dx,
+            top: origin.dy,
+            width: referenceScreen.width,
+            height: referenceScreen.height,
+            child: widget.apple
+                ? NativeGlass(shapes: shapes)
+                : Stack(
+                    children: <Widget>[
+                      for (final GlassSpec s in shapes)
+                        Positioned.fromRect(
+                          rect: s.rect,
+                          child: Glass(
+                            style: s.clear
+                                ? GlassStyle.clear
+                                : GlassStyle.regular,
+                            radius: s.radius,
+                            tint: s.tint,
+                          ),
+                        ),
+                    ],
+                  ),
+          )
+        else if (widget.apple)
           Positioned(
             left: 0,
             right: 0,

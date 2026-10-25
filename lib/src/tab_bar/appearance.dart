@@ -2,14 +2,18 @@ import 'dart:ui' show Brightness, Rect;
 
 import 'spring.dart';
 
-/// How a glass tab bar adapts to what is behind it, as UIKit's does (iOS
-/// 26.5 simulator, measured from its layers over stepped backdrops).
+/// How UIKit's glass adapts to what is behind it (iOS 26.5 simulator,
+/// measured from its layers over stepped backdrops): the tab bar's, and any
+/// glass up to 64pt in its short side.
 ///
 /// UIKit reads the backdrop's mean luma (Rec. 709 on its colors) around
-/// the bar, about every frame, and keeps a light or a dark
+/// the glass, about every frame, and keeps a light or a dark
 /// appearance with hysteresis. The glass's color inputs follow the luma and
 /// the appearance on a critically damped 0.5s spring; the resting
 /// selection's on a 0.24s one; the symbols and labels switch at once.
+///
+/// Larger glass (see [height]) does not read the backdrop: it takes the
+/// system's appearance and fixed inputs.
 class GlassAppearance {
   GlassAppearance({Brightness system = Brightness.light}) : _system = system {
     _dark = system == Brightness.dark;
@@ -18,6 +22,11 @@ class GlassAppearance {
   }
 
   // ---------------------------------------------------------------- samples
+
+  /// Where UIKit reads the backdrop under [glass] (a glass of its own, not
+  /// the bar): the glass grown by its margin, a fifth of its short side.
+  static Rect glassSampleArea(Rect glass) =>
+      glass.inflate(glass.shortestSide * 0.2);
 
   /// Where UIKit reads the backdrop: its mean luma over the bar's container
   /// (the screen's width, from the bar's top to the screen's bottom) grown
@@ -46,6 +55,27 @@ class GlassAppearance {
 
   /// Whether the glass is in its dark appearance.
   bool get isDark => _dark;
+
+  /// The glass's short side, in points: the shadow's opacity follows it,
+  /// and glass taller than 64pt has the fixed inputs of large glass. The
+  /// bar's, 62pt, by default.
+  double get height => _height;
+  double _height = 62;
+  set height(double value) {
+    if (value == _height) {
+      return;
+    }
+    final bool wasLarge = isLarge;
+    _height = value;
+    if (isLarge != wasLarge) {
+      _decide();
+    }
+    _snap();
+  }
+
+  /// Whether the glass is large: taller than 64pt, it keeps the system's
+  /// appearance whatever is behind it, and its inputs are fixed.
+  bool get isLarge => _height > 64;
 
   /// The backdrop's luma, as last sampled.
   double get luma => _luma;
@@ -154,7 +184,7 @@ class GlassAppearance {
 
   void _decide() {
     final bool darkMode = _system == Brightness.dark;
-    if (!_adaptive) {
+    if (!_adaptive || isLarge) {
       _dark = darkMode;
       return;
     }
@@ -182,18 +212,35 @@ class GlassAppearance {
       ? (0.25 + 0.367 * l).clamp(0.25, 0.5)
       : (0.75 - 0.517 * l).clamp(0.25, 0.6);
 
-  // The platter's shadow: opacity * (0.093 + 0.966 fill). Light: 0.46875,
-  // a black fill of 0.3, less over brighter backdrops, 0.05 over nearly
-  // white ones; dark: 0.38125, no fill.
-  static double _shadow(double l, bool dark) {
+  // The glass's shadow: opacity * (0.093 + 0.966 fill). Its opacity
+  // follows the glass's height, 0.46875 light and 0.38125 dark for the
+  // bar's 62pt. Light: a black fill of 0.3, less over brighter backdrops,
+  // 0.05 over nearly white ones; dark: no fill.
+  double _shadow(double l, bool dark) {
     if (dark) {
-      return 0.38125 * 0.093;
+      return _shadowOpacity(true) * 0.093;
     }
     final double fill = l > 0.935
         ? 0.05
         : 0.3 - 0.224 * (l - 0.385).clamp(0.0, 1.0);
-    return 0.46875 * (0.093 + 0.966 * fill);
+    return _shadowOpacity(false) * (0.093 + 0.966 * fill);
   }
+
+  // UIKit's shadow opacity by the glass's height: 0.5 light and 0.4 dark up
+  // to 48pt, less for taller glass, and 0.25 from 160pt on.
+  double _shadowOpacity(bool dark) {
+    final double t = (_height - 48).clamp(0.0, 112) / 2240;
+    return dark ? 0.4 - 3 * t : 0.5 - 5 * t;
+  }
+
+  // Large glass's shadow darkens with UIKit's shadow vibrancy contribution,
+  // (h - 64) / 96: 0.15 of it, fitted to its shadow at 100, 120 and 160pt.
+  double get _shadowVibrancy => ((_height - 64) / 96).clamp(0.0, 1.0);
+
+  // Large glass's fixed inputs (black, white, fill alpha, fill gray, shadow
+  // fill), light and dark.
+  static const List<double> _largeLight = <double>[0.5, 1.03, 0.4, 1, 0.12];
+  static const List<double> _largeDark = <double>[0.2, 0.6, 0.4, 0, 0];
 
   // The rims' vibrant color matrices, as (chroma gain, luma weight, lift):
   // what is below goes to gain (c - L) + weight L + lift.
@@ -233,18 +280,35 @@ class GlassAppearance {
   // 80% white over its face, and its shadow's fill is 0.12.
   bool get _filled => (_contrast || _reduceTransparency) && !_dark;
 
-  List<double> get _glassTargets => <double>[
-    if (_reduceTransparency && !_dark) 0.9 else _black(_stepped),
-    if (_reduceTransparency && !_dark) 0.9 else _white(_stepped, _dark),
-    if (_filled)
-      1 - 0.2 * (1 - _fillAlpha(_stepped, _dark))
-    else
-      _fillAlpha(_stepped, _dark),
-    if (_dark) 0 else 1,
-    if (_filled) 0.46875 * (0.093 + 0.966 * 0.12) else _shadow(_stepped, _dark),
-    ...(_dark ? _platterRimDark : _platterRimLight),
-    ...(_dark ? _lensRimDark : _lensRimLight),
-  ];
+  List<double> get _glassTargets {
+    if (isLarge) {
+      final List<double> v = _dark ? _largeDark : _largeLight;
+      return <double>[
+        v[0],
+        v[1],
+        v[2],
+        v[3],
+        _shadowOpacity(_dark) * (0.093 + 0.966 * v[4] + 0.15 * _shadowVibrancy),
+        ...(_dark ? _platterRimDark : _platterRimLight),
+        ...(_dark ? _lensRimDark : _lensRimLight),
+      ];
+    }
+    return <double>[
+      if (_reduceTransparency && !_dark) 0.9 else _black(_stepped),
+      if (_reduceTransparency && !_dark) 0.9 else _white(_stepped, _dark),
+      if (_filled)
+        1 - 0.2 * (1 - _fillAlpha(_stepped, _dark))
+      else
+        _fillAlpha(_stepped, _dark),
+      if (_dark) 0 else 1,
+      if (_filled)
+        _shadowOpacity(false) * (0.093 + 0.966 * 0.12)
+      else
+        _shadow(_stepped, _dark),
+      ...(_dark ? _platterRimDark : _platterRimLight),
+      ...(_dark ? _lensRimDark : _lensRimLight),
+    ];
+  }
 
   void _aim() {
     final List<double> glass = _glassTargets;

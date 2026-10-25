@@ -126,4 +126,41 @@ void main() {
     t = settle(a, 0.1, t);
     expect(a.wouldKeep(0.1), isTrue);
   });
+
+  test('glass of other sizes: its shadow by its height, large glass fixed', () {
+    // The bar's height keeps the bar's shadow opacity.
+    final bar = GlassAppearance()..tick(0);
+    settle(bar, 1, 0);
+    expect(bar.shadow, moreOrLessEquals(0.46875 * (0.093 + 0.966 * 0.05)));
+    // Smaller glass: UIKit's 0.5 up to 48pt.
+    final small = GlassAppearance()
+      ..height = 30
+      ..tick(0);
+    settle(small, 1, 0);
+    expect(small.shadow, moreOrLessEquals(0.5 * (0.093 + 0.966 * 0.05)));
+    // Large glass keeps the system's light appearance over black, with
+    // fixed inputs.
+    final large = GlassAppearance()
+      ..height = 120
+      ..tick(0);
+    settle(large, 0, 0);
+    expect(large.isLarge, isTrue);
+    expect(large.isDark, isFalse);
+    expect(large.face.$1, moreOrLessEquals(0.5));
+    expect(large.face.$2, moreOrLessEquals(1.03));
+    expect(large.face.$3, moreOrLessEquals(0.4));
+    // Its shadow darkens with UIKit's shadow vibrancy, (120 - 64) / 96.
+    expect(
+      large.shadow,
+      moreOrLessEquals(
+        (0.5 - 5 * 72 / 2240) * (0.093 + 0.966 * 0.12 + 0.15 * 56 / 96),
+      ),
+    );
+    // From 160pt on, nothing grows: the shadow's opacity stays at 0.25.
+    final huge = GlassAppearance()
+      ..height = 400
+      ..tick(0);
+    settle(huge, 1, 0);
+    expect(huge.shadow, moreOrLessEquals(0.25 * (0.093 + 0.966 * 0.12 + 0.15)));
+  });
 }
