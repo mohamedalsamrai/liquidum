@@ -48,6 +48,8 @@ UIKit's laws, by the shape's short side h (points), any corner radius
   refraction follows the shape's own distance gradient: no ovalization
     (the bar's 0.5 belongs to its lens's warp). Clear over stripes 42-59 ->
     7-8 levels inside.
+    (Since revised for glass with corners and glass over 64pt: see
+    stage2/metrics.txt, the glass's gradient.)
 
 Frost by height (UIKit's frost alone, fitted over 8pt stripes)
   light sigma / heavy sigma / ramp power: 56pt 0.92/2.63/1.13, 62pt

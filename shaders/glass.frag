@@ -15,7 +15,7 @@
 #include <flutter/runtime_effect.glsl>
 
 uniform vec2 uSize;      // capture size in pixels (set by the engine)
-uniform vec4 uPass;      // pass (0 glass, 1 frost), pixels per point, shape count, unused
+uniform vec4 uPass;      // pass (0 glass, 1 frost), pixels per point, shape count, ovalization
 uniform vec4 uOptics;    // inner refraction and its height (points), spacing (pixels), refraction (0 to 1)
 uniform vec4 uFace;      // face: luma black and white points, fill alpha, fill gray
 uniform vec4 uRim;       // rim matrix: chroma gain, luma weight, lift; shadow strength
@@ -54,6 +54,18 @@ const float kFrostInset = 2.0;
 // 26.5, whatever the spacing).
 const vec2 kTintReach = vec2(1.1, 9.0);
 
+// UIKit's glass takes its shapes' outward direction (for refraction, the
+// rim's light and how much two shapes face each other in a group) from a
+// rounder box than the shape: corners 5/3 as large, up to half the short
+// side, so near a corner it turns away well before the side meets the arc;
+// the distances are the shapes' own. And, with uPass.w, UIKit's gradient
+// ovalization (its SDF elements' 0.5 for regular glass over 64pt, or in a
+// group whose largest glass is; none for clear glass): the direction leans
+// halfway toward the point's in the box's normalized coordinates. Fitted to
+// UIKit's silhouettes of squares and rectangles of 40 to 114pt, corners 4
+// to 30 (unions), and to its glass over color (refraction) (iOS 26.5).
+const float kGradientRound = 5.0 / 3.0;
+
 int shapeCount() {
   return int(uPass.z + 0.5);
 }
@@ -63,9 +75,9 @@ int shapeCount() {
 // container's spacing): every pair of melting shapes is blended by a
 // quadratic smooth minimum as wide as the spacing times how much the two
 // surfaces face each other (fully when they face, half when perpendicular,
-// not at all side by side), and the group is the nearest of those blends
-// and of the shapes alone. Fitted to UIKit's silhouettes within 0.1pt (iOS
-// 26.5).
+// not at all side by side; directions as kGradientRound), and the group is
+// the nearest of those blends and of the shapes alone. Fitted to UIKit's
+// silhouettes within 0.1pt (iOS 26.5).
 //
 // slope: the group's gradient, which in a blend is shorter than 1 and
 // vanishes at a neck's saddle (the refraction follows it there, so it fades
@@ -93,7 +105,10 @@ float groupAt(vec2 p, out vec2 n, out vec2 slope, out float amount,
       break;
     }
     d[i] = continuousBox(p, uShapes[i], uShapeInfo[i].x);
-    g[i] = roundOutward(p, uShapes[i], uShapeInfo[i].x, 0.0);
+    g[i] = roundOutward(
+        p, uShapes[i],
+        min(uShapeInfo[i].x * kGradientRound, min(uShapes[i].z, uShapes[i].w)),
+        uPass.w);
     if (d[i] < best) {
       best = d[i];
       n = g[i];

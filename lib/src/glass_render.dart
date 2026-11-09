@@ -278,9 +278,16 @@ class _GlassPasses {
 
     void set(_GlassUniforms u, double pass) {
       u
-        // UIKit's glass filter refracts along its shape's distance gradient
-        // (no ovalization, unlike the lens's warp).
-        ..pass.set(pass, k, shapes.length.toDouble(), 0)
+        // UIKit's SDF elements' gradient ovalization: 0.5 for regular glass
+        // over 64pt, and for all of a group whose largest glass is (none at
+        // 64pt and below, nor for clear glass). The glass refracts along
+        // that gradient.
+        ..pass.set(
+          pass,
+          k,
+          shapes.length.toDouble(),
+          !isClear && large > 64 ? 0.5 : 0,
+        )
         ..optics.set(
           optics.inner,
           optics.innerHeight,

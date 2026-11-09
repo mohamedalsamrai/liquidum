@@ -13,8 +13,12 @@ Method
   layer trees and archived glass groups (NSKeyedArchiver); silhouettes over
   black with the rim hidden (two capsules end to end at gaps 0-32 and
   spacings 10, 20, 40; circles; capsules stacked; rows, triangles and 2x2
-  grids); and, for glass appearing and leaving, the presentation values of
-  every glass filter input on every frame.
+  grids; square pairs of 40 to 100pt with corners 4 to 26, rectangles side
+  by side and stacked, squares of 62 to 74pt around large glass); and, for
+  glass appearing and leaving, the presentation values of every glass
+  filter input on every frame. Refraction around corners: the comparison
+  app's corners set (rounded squares and rectangles, 44 to 360pt, regular
+  and clear).
 
 UIKit's container
   One glass group for the container: one backdrop with UIKit's glass filter
@@ -47,6 +51,38 @@ arcs meeting arcs, 0.11pt for a triangle at spacing 40)
   in a notch). Neck RMS over blocks 40-47 -> 4-8 levels, over dark 7-15 ->
   0.2-1.7.
 
+The glass's gradient (how much shapes face each other; refraction)
+  UIKit takes each shape's outward direction n from a rounder box than the
+  shape: corners 5/3 r (up to half the short side), the distance staying
+  the shape's own. Near a corner, n turns away well before the side meets
+  the arc, so where flat sides bridge, the bridge ends sooner: the notch
+  between two shapes is deeper and sharper, and a 2x2 grid's hole is a
+  four-pointed star. Notch tips of square pairs give the same radius at
+  every gap (60pt, r16: 26.3-27.0 = 1.64-1.69 r; r4, r8, 40pt r10, 50pt
+  r12, 60x120 and 120x60 r16 side by side and stacked: 1.67 r).
+  And UIKit's SDF elements carry a gradient ovalization (CASDFElementLayer
+  gradientOvalization, archived): 0.5 for regular glass over 64pt (66 to
+  400pt; unset at 62 and 64pt), for every element of a group whose largest
+  glass is (a 40pt square beside a 100pt one: both), never for clear glass.
+  n then leans halfway toward the point's direction in the box's
+  normalized coordinates (the lens's ovalization, Stage 3 of the bar).
+  Union outlines, area wrong outside the shapes (pt^2), n of the shape's
+  own corners -> this: square pairs r16 12-64 -> 0.5-6.5, r4 1.3-17 ->
+  0.3-1.8, 50pt 24 -> 3.2, 66-74pt 38-47 -> 3.0-9.1, 2x2 60pt 76/197 ->
+  10/15, 2x2 76pt 117/294 -> 10/27, 2x2 114pt 183 -> 28; capsules,
+  circles and triangles unchanged (their corners are already half their
+  short side, and none are over 64pt).
+  UIKit's glass refracts along the same n (Stage 1 measured capsules of 42
+  to 59pt, whose n is the same either way): rounded rectangles, edge band
+  over color blocks, n of the shape's own corners -> this: 60pt r16 9.7 ->
+  4.6, r8 15.6 -> 6.6, 160x60 r16 13.8 -> 5.9, 100pt r16 26.7 -> 3.8,
+  80pt r20 22.2 -> 8.8, 360x120 r24 14.1 -> 4.8; clear 60pt r16 41 -> 22,
+  160x60 r16 31 -> 15, 80pt r20 49 -> 11. Regular capsules over 64pt (the
+  ovalization alone): 66pt 9.6 -> 5.9, 70pt 10.8 -> 6.3, 80pt 10.1 -> 4.7,
+  90pt 10.1 -> 5.6, 300x100 9.6 -> 6.4; panels 360x200 to 400x400 12.5-14.3
+  -> 6.8-8.0. Glass of 64pt and below and clear capsules unchanged; the
+  tab bar pixel-identical.
+
 The group's inputs (archived): one set for all its glass
   From its smallest glass (short side): inner refraction and its depth,
   frost depth. From its largest: outer refraction, blur radius, bleed,
@@ -75,7 +111,9 @@ Appearing and leaving (UIView.animate { view.effect = glass / nil })
   motion): 2% to 97% in 0.36s (UIKit) and 0.34s (Liquidum), within 0.05 of
   each other throughout; leaving, 0.37s and 0.38s.
 
-Lone glass (Stage 1) is unchanged: against Stage 1's build, the sizes,
+Lone glass (Stage 1) was unchanged by the groups (before the glass's
+gradient above, which changes glass with corners and large glass): against
+Stage 1's build, the sizes,
 clears, tints, heights, apart, big and big2 sets differ by 0.005-0.27 RMS
 (glass up to 62pt: at most a few pixels by 1 level; larger glass 1-2
 levels where Impeller's heavy blur rounds differently over the group's
@@ -90,33 +128,37 @@ Results, groups (spacing 20; inside / edge / middle / necks / around)
     gap 12 (apart, leaning)          2.17 / 5.85 / 1.08 / 7.71 / 0.49
     three 48pt circles 4 apart       3.30 / 5.32 / 2.49 / 5.45 / 0.99
     160x50 capsules stacked 6 apart  2.24 / 4.70 / 1.40 / 4.40 / 0.78
-    44pt and 100pt glass 8 apart     3.23 / 6.49 / 2.42 / 5.83 / 2.58
-    2x2 76pt squares 8 apart        10.45 / 19.9 / 6.89 / 32.0 / 1.32 (open)
+    44pt and 100pt glass 8 apart     3.01 / 5.76 / 2.36 / 5.86 / 2.58
+    2x2 76pt squares r20 8 apart     4.54 / 8.11 / 3.30 / 10.9 / 1.33
+      (before the gradient above: 10.45 / 19.9 / 6.89 / 32.0)
   over dark
     two capsules, gaps 0, 6, 12      0.32-0.34 / 0.84-0.89 / 0.17 / 0.24-1.73
-    circles, stacked, mixed          0.33-0.94 / 0.77-1.54 / 0.14-0.82 / 0.31-1.09
+    circles, stacked, mixed          0.33-0.91 / 0.77-1.37 / 0.14-0.82 / 0.31-1.02
+    2x2 76pt squares                 3.55 / 8.42 / 0.06 / 14.8 (48.7 before)
   over gray
     two capsules, gaps 0, 6, 12      0.26-0.27 / 0.78-0.81 / 0.00 / 0.55-0.67
     circles 48pt, stacked 50pt       2.98-3.01 / 2.92-3.08 / 3.00 (see Open)
-    44pt and 100pt glass             0.64 / 0.97 / 0.58 / 1.03
+    44pt and 100pt glass             0.63 / 0.89 / 0.58 / 0.99
+    2x2 76pt squares                 2.13 / 5.04 / 0.18 / 8.84 (28.6 before)
 Results, styles (spacing 20; inside / edge / middle / necks), blocks | gray | dark
     plain and tinted, 6 apart        1.72/4.81/0.67/5.51 | 0.56/1.67/0.08/4.94 | 0.58/1.69/0.15/5.55
     two clear, 6 apart               3.52/3.56/3.51/3.08 | 0.61/1.51/0.37/0.48 | 0.97/2.87/0.21/0.50
     regular beside clear: regular    2.36/6.77/0.94      | 0.26/0.80/0.00      | 0.33/0.88/0.17
                           clear      2.62/3.84/2.44      | 0.66/1.59/0.44      | 1.00/3.03/0.21
-    44pt capsule over 200pt panel    3.91/6.67/3.67/6.75 | 2.02/3.41/1.90/4.99 | 2.21/5.51/1.83/8.37
+    44pt capsule over 200pt panel    3.77/5.50/3.63/6.73 | 2.00/3.21/1.90/3.79 | 2.16/5.12/1.83/5.90
   A group's clear glass keeps the system's appearance, as UIKit's (its own
   glass group): beside regular glass over dark it took the regular glass's
   dark rim before (5.91 / 18.3 -> 1.00 / 3.03).
 
 Open
-  - Where flat faces bridge and turn into corners, UIKit's bridge ends
-    sooner: notch tips 2-4.6pt deeper than the model's (60pt squares,
-    radius 16 and 4, gaps 2-9; stacked capsules 2.0-2.4pt). The pull there
-    depends on more than the surfaces' angle; seen as a 2x2 grid's hole (a
-    four-pointed star in UIKit, a diamond here) and the ends of a bridge
-    between stacked bars. Arcs meeting arcs (rows of capsules and circles)
-    fit within 0.06pt.
+  - Under a sharp notch tip (and the grid hole's points) the frost, kept
+    2px inside the outline, leaves a darker sliver UIKit does not have, and
+    UIKit's rim there is brighter (the grid's necks over dark: 14.8).
+  - A lone 160x50 r10 glass is 12 levels lighter in UIKit over gray (and
+    lighter over color) than Liquidum's and than UIKit's own 160x60 r16;
+    not understood yet (its glass filter inputs to archive).
+  - Clear glass with corners still differs at its edge (11-22 levels over
+    color blocks).
   - Over gray, UIKit's groups of 48-50pt glass are 3 levels lighter inside
     than its lone glass of that size (208 against 205); Liquidum's are
     205. 62pt groups match exactly.

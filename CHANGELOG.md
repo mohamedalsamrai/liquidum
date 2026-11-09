@@ -3,8 +3,10 @@
 * `Glass` is now UIKit's glass (`UIGlassEffect`), measured at 30 to 400pt:
   the tab bar's material at any size, with the inputs UIKit gives each size
   (refraction, frost, shadow, and for large glass its fixed appearance and
-  bleed), Apple's continuous corners, a `clear` style, `tint` and
-  `brightness`. Small glass turns light or dark with what is behind it.
+  bleed), Apple's continuous corners, UIKit's refraction around them (it
+  turns well before a side meets its corner, and in large regular glass
+  leans toward the center), a `clear` style, `tint` and `brightness`.
+  Small glass turns light or dark with what is behind it.
 * Breaking: `GlassMaterial` and `Glass.material` are gone; use
   `Glass(style: GlassStyle.regular or GlassStyle.clear)`.
 * New: `GlassGroup`, UIKit's glass container (`UIGlassContainerEffect`).

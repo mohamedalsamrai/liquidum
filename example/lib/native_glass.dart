@@ -102,6 +102,23 @@ const Map<String, List<GlassSpec>> glassSets = <String, List<GlassSpec>>{
     GlassSpec(Rect.fromLTWH(70, 500, 300, 120)),
     GlassSpec(Rect.fromLTWH(70, 660, 300, 160)),
   ],
+  // Rounded rectangles up to 64pt and above (UIKit's large glass).
+  'corners': <GlassSpec>[
+    GlassSpec(Rect.fromLTWH(40, 70, 60, 60), radius: 16),
+    GlassSpec(Rect.fromLTWH(140, 70, 60, 60), radius: 8),
+    GlassSpec(Rect.fromLTWH(240, 70, 44, 44), radius: 12),
+    GlassSpec(Rect.fromLTWH(330, 70, 64, 64), radius: 24),
+    GlassSpec(Rect.fromLTWH(40, 180, 160, 60), radius: 16),
+    GlassSpec(Rect.fromLTWH(240, 180, 160, 50), radius: 10),
+    GlassSpec(Rect.fromLTWH(40, 290, 100, 100), radius: 16),
+    GlassSpec(Rect.fromLTWH(180, 290, 100, 100), radius: 30),
+    GlassSpec(Rect.fromLTWH(40, 440, 360, 120), radius: 24),
+    GlassSpec(Rect.fromLTWH(40, 610, 80, 80), radius: 20),
+    GlassSpec(Rect.fromLTWH(160, 610, 240, 80), radius: 12),
+    GlassSpec(Rect.fromLTWH(40, 730, 60, 60), radius: 16, clear: true),
+    GlassSpec(Rect.fromLTWH(140, 730, 160, 60), radius: 16, clear: true),
+    GlassSpec(Rect.fromLTWH(320, 730, 80, 80), radius: 20, clear: true),
+  ],
   'bar': <GlassSpec>[GlassSpec(Rect.fromLTWH(21, 873, 398, 62))],
   // Glass groups, spacing 20 (as the catalog's groups page).
   'groups': <GlassSpec>[
