@@ -11,6 +11,9 @@ class GlassSpec {
     this.clear = false,
     this.tint,
     this.interactive = false,
+    this.group,
+    this.spacing = 0,
+    this.appear = false,
   });
 
   /// In the reference screen's points.
@@ -24,6 +27,16 @@ class GlassSpec {
 
   final Color? tint;
   final bool interactive;
+
+  /// The glass group it is in (`UIGlassContainerEffect`, [GlassGroup]), if
+  /// any: specs with the same number are one group, whose spacing is its
+  /// first spec's [spacing].
+  final int? group;
+  final double spacing;
+
+  /// Whether it materializes and dematerializes at the comparison's
+  /// `appear=` times (hidden until then).
+  final bool appear;
 }
 
 /// Shapes to compare, by name (the comparison's `glass=<name>` flag). The
@@ -90,14 +103,88 @@ const Map<String, List<GlassSpec>> glassSets = <String, List<GlassSpec>>{
     GlassSpec(Rect.fromLTWH(70, 660, 300, 160)),
   ],
   'bar': <GlassSpec>[GlassSpec(Rect.fromLTWH(21, 873, 398, 62))],
+  // Glass groups, spacing 20 (as the catalog's groups page).
+  'groups': <GlassSpec>[
+    // Two capsules 0, 6 and 12 apart: joined, joined, apart but leaning.
+    GlassSpec(Rect.fromLTWH(70, 60, 150, 62), group: 0, spacing: 20),
+    GlassSpec(Rect.fromLTWH(220, 60, 150, 62), group: 0),
+    GlassSpec(Rect.fromLTWH(67, 160, 150, 62), group: 1, spacing: 20),
+    GlassSpec(Rect.fromLTWH(223, 160, 150, 62), group: 1),
+    GlassSpec(Rect.fromLTWH(64, 260, 150, 62), group: 2, spacing: 20),
+    GlassSpec(Rect.fromLTWH(226, 260, 150, 62), group: 2),
+    // Three circles 4 apart.
+    GlassSpec(Rect.fromLTWH(140, 370, 48, 48), group: 3, spacing: 20),
+    GlassSpec(Rect.fromLTWH(192, 370, 48, 48), group: 3),
+    GlassSpec(Rect.fromLTWH(244, 370, 48, 48), group: 3),
+    // Capsules stacked 6 apart, flat sides facing; mixed heights 8 apart.
+    GlassSpec(Rect.fromLTWH(30, 460, 160, 50), group: 4, spacing: 20),
+    GlassSpec(Rect.fromLTWH(30, 516, 160, 50), group: 4),
+    GlassSpec(Rect.fromLTWH(220, 470, 90, 44), group: 5, spacing: 20),
+    GlassSpec(Rect.fromLTWH(318, 442, 100, 100), group: 5),
+    // A 2x2 grid of rounded squares 8 apart.
+    GlassSpec(
+      Rect.fromLTWH(140, 620, 76, 76),
+      radius: 20,
+      group: 6,
+      spacing: 20,
+    ),
+    GlassSpec(Rect.fromLTWH(224, 620, 76, 76), radius: 20, group: 6),
+    GlassSpec(Rect.fromLTWH(140, 704, 76, 76), radius: 20, group: 6),
+    GlassSpec(Rect.fromLTWH(224, 704, 76, 76), radius: 20, group: 6),
+  ],
+  // Glass appearing and leaving (the `appear=` flag): beside glass in a
+  // group, and alone (as the catalog's appear page).
+  'appear': <GlassSpec>[
+    GlassSpec(Rect.fromLTWH(60, 180, 150, 62), group: 0, spacing: 20),
+    GlassSpec(Rect.fromLTWH(218, 180, 150, 62), group: 0, appear: true),
+    GlassSpec(Rect.fromLTWH(145, 520, 150, 62), appear: true),
+  ],
+  // Styles and tints in groups, spacing 20.
+  'groupstyles': <GlassSpec>[
+    // Plain and blue, 6 apart: the tint reaches into the neck.
+    GlassSpec(Rect.fromLTWH(40, 80, 160, 62), group: 0, spacing: 20),
+    GlassSpec(
+      Rect.fromLTWH(206, 80, 160, 62),
+      tint: Color(0xFF0088FF),
+      group: 0,
+    ),
+    // Two clear, 6 apart.
+    GlassSpec(
+      Rect.fromLTWH(40, 220, 160, 62),
+      clear: true,
+      group: 1,
+      spacing: 20,
+    ),
+    GlassSpec(Rect.fromLTWH(206, 220, 160, 62), clear: true, group: 1),
+    // Regular and clear, 6 apart: drawn apart, no neck.
+    GlassSpec(Rect.fromLTWH(40, 360, 160, 62), group: 2, spacing: 20),
+    GlassSpec(Rect.fromLTWH(206, 360, 160, 62), clear: true, group: 2),
+    // A large panel with a small capsule 8 above it.
+    GlassSpec(Rect.fromLTWH(140, 500, 160, 44), group: 3, spacing: 20),
+    GlassSpec(Rect.fromLTWH(40, 552, 360, 200), radius: 34, group: 3),
+  ],
 };
 
 /// Apple's glass (`UIGlassEffect`), as a platform view: [shapes] over
 /// whatever Flutter paints behind it. iOS 26 only.
 class NativeGlass extends StatelessWidget {
-  const NativeGlass({super.key, required this.shapes});
+  const NativeGlass({
+    super.key,
+    required this.shapes,
+    this.appearAt,
+    this.leaveAt,
+    this.speed = 1,
+  });
 
   final List<GlassSpec> shapes;
+
+  /// When the appearing shapes materialize and dematerialize (seconds after
+  /// the view is made), in a half-second animation.
+  final double? appearAt;
+  final double? leaveAt;
+
+  /// The view's layer speed (below 1 slows its animations).
+  final double speed;
 
   static bool get isAvailable =>
       !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
@@ -118,8 +205,14 @@ class NativeGlass extends StatelessWidget {
               'style': s.clear ? 'clear' : 'regular',
               if (s.tint case final Color tint) 'tint': tint.toARGB32(),
               'interactive': s.interactive,
+              'group': ?s.group,
+              'spacing': s.spacing,
+              'appear': s.appear,
             },
         ],
+        'appearAt': ?appearAt,
+        'leaveAt': ?leaveAt,
+        'speed': speed,
       },
       creationParamsCodec: const StandardMessageCodec(),
     );

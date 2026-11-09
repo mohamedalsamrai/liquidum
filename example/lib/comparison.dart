@@ -1,7 +1,12 @@
 // Comparison harness: Apple's native tab bar or Liquidum's, over the same
 // background, driven by the same scripted touches (see ios/RunnerTests).
 //
-// `<tmp>/comparison.txt` holds "<apple|liquidum|none> <background> [flags]",
+// `<tmp>/comparison.txt` holds "<apple|liquidum|none> <background> [flags]"
+// (and the app writes `<tmp>/ready.txt` 2s after its first frame),
+// `shapes=<set>` (glass shapes from native_glass.dart in place of the bar),
+// `appear=<t1>,<t2>` (the set's appearing glass materializes t1 seconds
+// after the first frame and dematerializes at t2), `slow=<n>` (animations
+// n times slower, Flutter's and UIKit's),
 // flags being any of `log` (write liquidum's per-frame state), `view=<name>`
 // (a GlassTabBarDebugView), `noshare` (the lens takes its own capture),
 // `hold=<x>` (hold a press at x in the bar, for still comparisons), `bare`
@@ -49,6 +54,10 @@ const double markerBandHeight = 24;
 /// Top of the clock code, measured down from the top of the reference screen.
 const double clockTop = 838;
 
+// The `appear=` and `slow=` flags.
+List<double>? _appear;
+double _slow = 1;
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await GlassTabBar.precache();
@@ -58,6 +67,25 @@ Future<void> main() async {
       ? file.readAsStringSync().trim().split(' ')
       : <String>['liquidum', 'gray'];
   final Set<String> flags = config.skip(2).toSet();
+  _appear = flags
+      .where((String f) => f.startsWith('appear='))
+      .map((String f) => f.substring(7).split(',').map(double.parse).toList())
+      .firstOrNull;
+  _slow =
+      flags
+          .where((String f) => f.startsWith('slow='))
+          .map((String f) => double.parse(f.substring(5)))
+          .firstOrNull ??
+      1;
+  timeDilation = _slow;
+  // Tells a capture script the page is up: 2s after the first frame.
+  final ready = File('${Directory.systemTemp.path}/ready.txt');
+  if (ready.existsSync()) {
+    ready.deleteSync();
+  }
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    Timer(const Duration(seconds: 2), () => ready.writeAsStringSync('ready'));
+  });
   if (flags.contains('log')) {
     _StateLog.start();
   }
@@ -424,22 +452,13 @@ class _ComparisonAppState extends State<ComparisonApp>
             width: referenceScreen.width,
             height: referenceScreen.height,
             child: widget.apple
-                ? NativeGlass(shapes: shapes)
-                : Stack(
-                    children: <Widget>[
-                      for (final GlassSpec s in shapes)
-                        Positioned.fromRect(
-                          rect: s.rect,
-                          child: Glass(
-                            style: s.clear
-                                ? GlassStyle.clear
-                                : GlassStyle.regular,
-                            radius: s.radius,
-                            tint: s.tint,
-                          ),
-                        ),
-                    ],
-                  ),
+                ? NativeGlass(
+                    shapes: shapes,
+                    appearAt: _appear?[0],
+                    leaveAt: _appear?[1],
+                    speed: 1 / _slow,
+                  )
+                : _LiquidumShapes(shapes: shapes),
           )
         else if (widget.apple)
           Positioned(
@@ -699,4 +718,80 @@ class _Background extends CustomPainter {
   @override
   bool shouldRepaint(_Background oldDelegate) =>
       oldDelegate.kind != kind || oldDelegate.origin != origin;
+}
+
+/// Liquidum's glass for [shapes]: each group in a [GlassGroup] of its own
+/// (as UIKit's containers), the rest alone. Appearing glass materializes and
+/// dematerializes at the `appear=` times.
+class _LiquidumShapes extends StatefulWidget {
+  const _LiquidumShapes({required this.shapes});
+
+  final List<GlassSpec> shapes;
+
+  @override
+  State<_LiquidumShapes> createState() => _LiquidumShapesState();
+}
+
+class _LiquidumShapesState extends State<_LiquidumShapes> {
+  bool _shown = false;
+  final List<Timer> _timers = <Timer>[];
+
+  @override
+  void initState() {
+    super.initState();
+    if (_appear case final List<double> times) {
+      for (final (int i, double t) in times.indexed) {
+        _timers.add(
+          Timer(
+            Duration(milliseconds: (t * 1000).round()),
+            () => setState(() => _shown = i == 0),
+          ),
+        );
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    for (final Timer t in _timers) {
+      t.cancel();
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final List<GlassSpec> shapes = widget.shapes;
+    Widget glass(GlassSpec s) => Positioned.fromRect(
+      rect: s.rect,
+      child: Glass(
+        style: s.clear ? GlassStyle.clear : GlassStyle.regular,
+        radius: s.radius,
+        tint: s.tint,
+        visible: !s.appear || _shown,
+      ),
+    );
+    final Set<int> groups = <int>{
+      for (final GlassSpec s in shapes)
+        if (s.group case final int g) g,
+    };
+    return Stack(
+      children: <Widget>[
+        for (final GlassSpec s in shapes)
+          if (s.group == null) glass(s),
+        for (final int g in groups)
+          Positioned.fill(
+            child: GlassGroup(
+              spacing: shapes.firstWhere((GlassSpec s) => s.group == g).spacing,
+              child: Stack(
+                children: <Widget>[
+                  for (final GlassSpec s in shapes)
+                    if (s.group == g) glass(s),
+                ],
+              ),
+            ),
+          ),
+      ],
+    );
+  }
 }

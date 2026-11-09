@@ -194,8 +194,12 @@ final class NativeGlassFactory: NSObject, FlutterPlatformViewFactory {
 }
 
 /// Each shape: `x`, `y`, `width`, `height` (points, in the view), `radius`
-/// (a capsule when absent), `style` ("regular" or "clear"), `tint` (ARGB) and
-/// `interactive`.
+/// (a capsule when absent), `style` ("regular" or "clear"), `tint` (ARGB),
+/// `interactive`, `group`: shapes with the same group are in one
+/// `UIGlassContainerEffect`, whose spacing is its first shape's `spacing`,
+/// and `appear`: the shape's glass materializes `appearAt` seconds after the
+/// view is made and dematerializes at `leaveAt`, in half-second animations.
+/// `speed`: the view's layer speed.
 final class NativeGlass: NSObject, FlutterPlatformView {
   private let container: UIView
 
@@ -204,6 +208,9 @@ final class NativeGlass: NSObject, FlutterPlatformView {
     container.backgroundColor = .clear
     super.init()
     guard #available(iOS 26.0, *) else { return }
+    container.layer.speed = Float(arguments["speed"] as? Double ?? 1)
+    var containers: [Int: UIView] = [:]
+    var appearing: [(UIVisualEffectView, UIVisualEffect)] = []
     for shape in arguments["shapes"] as? [[String: Any]] ?? [] {
       let effect = UIGlassEffect(style: shape["style"] as? String == "clear" ? .clear : .regular)
       if let argb = shape["tint"] as? Int {
@@ -220,7 +227,32 @@ final class NativeGlass: NSObject, FlutterPlatformView {
       } else {
         view.cornerConfiguration = .capsule()
       }
-      container.addSubview(view)
+      if shape["appear"] as? Bool == true {
+        appearing.append((view, effect))
+        view.effect = nil
+      }
+      if let group = shape["group"] as? Int {
+        if containers[group] == nil {
+          let effect = UIGlassContainerEffect()
+          effect.spacing = CGFloat(shape["spacing"] as? Double ?? 0)
+          let groupView = UIVisualEffectView(effect: effect)
+          groupView.frame = container.bounds
+          groupView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+          container.addSubview(groupView)
+          containers[group] = groupView.contentView
+        }
+        containers[group]?.addSubview(view)
+      } else {
+        container.addSubview(view)
+      }
+    }
+    for (key, glass) in [("appearAt", true), ("leaveAt", false)] {
+      guard let t = arguments[key] as? Double else { continue }
+      DispatchQueue.main.asyncAfter(deadline: .now() + t) {
+        UIView.animate(withDuration: 0.5) {
+          for (view, effect) in appearing { view.effect = glass ? effect : nil }
+        }
+      }
     }
   }
 

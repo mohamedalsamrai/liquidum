@@ -110,16 +110,19 @@ class GlassAppearance {
   double? _aimAt;
 
   /// A new reading of the backdrop's luma under the bar. The first one
-  /// takes effect at once; later ones after a moment, and animate.
-  void sample(double luma) {
+  /// takes effect at once unless [snap] is false (glass that is still
+  /// materializing, which UIKit shows in its default look first); later
+  /// ones after a moment, and animate.
+  void sample(double luma, {bool snap = true}) {
     debugOnChange?.call(this, 'sample ${luma.toStringAsFixed(4)}');
-    if (!_sampled) {
+    if (!_sampled && snap) {
       _sampled = true;
       _luma = luma;
       _decide();
       _snap();
       return;
     }
+    _sampled = true;
     _pending.add((null, luma));
   }
 

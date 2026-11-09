@@ -7,6 +7,14 @@
   `brightness`. Small glass turns light or dark with what is behind it.
 * Breaking: `GlassMaterial` and `Glass.material` are gone; use
   `Glass(style: GlassStyle.regular or GlassStyle.clear)`.
+* New: `GlassGroup`, UIKit's glass container (`UIGlassContainerEffect`).
+  The `Glass` in it is drawn as one glass whose shapes melt together within
+  its `spacing`, with UIKit's union (measured on iOS 26.5): a neck where
+  they come within half the spacing, the inputs of its smallest and largest
+  glass, one appearance for the group, tints that stay with their glass.
+* New: `Glass.visible` materializes and dematerializes the glass as UIKit's
+  does when its effect is set in an animation: blur, refraction, color, rim
+  and shadow grow or fade together over half a second.
 
 ## 0.2.2
 

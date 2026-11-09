@@ -1,0 +1,124 @@
+Stage 2, glass groups (UIGlassContainerEffect) and glass appearing and
+leaving, 2026-11-09. UIKit = iOS 26.5 simulator, iPhone 17 Pro Max, 3 px/pt.
+RMS in levels (0-255) between UIKit's glass and Liquidum's at the same
+rects over the same backgrounds (example/lib/comparison.dart with
+shapes=<set>: UIKit's in UIGlassContainerEffects in a platform view,
+example/lib/native_glass.dart; Liquidum's in GlassGroups). "inside": the
+group's melted outline; "edge": its 3pt inside the outline; "middle": more
+than 3pt in; "necks": the outline outside every member; "around": 30pt
+outside (shadow).
+
+Method
+  UIKit's containers measured in a native catalog (simulator only): their
+  layer trees and archived glass groups (NSKeyedArchiver); silhouettes over
+  black with the rim hidden (two capsules end to end at gaps 0-32 and
+  spacings 10, 20, 40; circles; capsules stacked; rows, triangles and 2x2
+  grids); and, for glass appearing and leaving, the presentation values of
+  every glass filter input on every frame.
+
+UIKit's container
+  One glass group for the container: one backdrop with UIKit's glass filter
+  and one SDF layer, with an element per glass view (the views draw no
+  glass of their own). The container's spacing is the SDF layer's
+  smoothness (points); UIKit's default spacing is 0. Regular and clear
+  glass in one container are two glass groups: they do not melt together.
+  A tint stays with its glass (a material of its own over that glass's
+  shape).
+
+The union (silhouettes; mean outline offset 0.02-0.06pt over 25 layouts of
+arcs meeting arcs, 0.11pt for a triangle at spacing 40)
+  f = min over every pair (i, j) of smin(d_i, d_j, k_ij), and over each d_i
+  smin(a, b, k) = min(a, b) - h^2 k / 4, h = max(k - |a - b|, 0) / k
+  k_ij = spacing x (1 - n_i . n_j) / 2, n = each shape's outward direction
+  d_i: each shape's distance, with Apple's continuous corners (Stage 1).
+  Surfaces that face each other melt fully, perpendicular ones half, side
+  by side not at all. Two capsules end to end join when their gap is under
+  half the spacing; further apart (up to the spacing) their ends still
+  lean toward each other (spacing 20, gap 12: 1.55pt each).
+  Rejected: plain smooth minima (quadratic, cubic, exponential, circular:
+  1.1-1.3pt), the angle weighting the pull instead of k (0.4-0.5pt), and
+  folding each shape into the running union (order-dependent; it fills a
+  triangle's hole: 0.25 and 0.89pt against 0.06 and 0.11pt). Blending only
+  the two nearest shapes gives the same outlines as all pairs here.
+  Inside a blend the field's gradient is shorter than 1 and vanishes at a
+  neck's saddle; Liquidum refracts along it unnormalized (normalized, the
+  refraction flips across a neck's middle: a seam UIKit does not have) and
+  measures the rim by field / gradient length (UIKit's rim keeps its width
+  in a notch). Neck RMS over blocks 40-47 -> 4-8 levels, over dark 7-15 ->
+  0.2-1.7.
+
+The group's inputs (archived): one set for all its glass
+  From its smallest glass (short side): inner refraction and its depth,
+  frost depth. From its largest: outer refraction, blur radius, bleed,
+  shadow, the large-glass face. A small group turns light or dark as one,
+  from what is behind all its glass: two 48pt circles, one over black and
+  one over white, share one face (black 0.366, white 0.966, white fill
+  0.49), where alone they take dark and light faces. Liquidum samples each
+  glass's own area and averages them by area.
+  A tint reaches past its glass into a neck: 10/50/90% at 7.45/5.15/2.66pt
+  outside its outline, the same at spacing 20 and 40.
+
+Appearing and leaving (UIView.animate { view.effect = glass / nil })
+  The glass keeps its size; every glass filter input scales by one progress
+  p, the animation's own curve (ease in and out over the duration asked):
+  blur radius, frost opacities and depth, refractions and their depths,
+  face opacity and matrix (black x p, white 1 + (w - 1) p, fill x p),
+  shadow opacity, rim. In a container, appearing glass joins the group's
+  outline at once (its neck is there at full strength from the first
+  frame) and its own outline fades in; leaving glass parts from the group
+  at once and fades out alone. Glass appearing shows UIKit's default look
+  and adapts to what is behind it afterwards.
+  Liquidum (Glass.visible, 0.5s ease in and out): the same scaling, per
+  pixel within each glass's own outline; the heavy blur's sigma follows the
+  group's most materialized glass. Progress of a lone 150x62 capsule over
+  color blocks (least squares from backdrop to finished glass, 10x slow
+  motion): 2% to 97% in 0.36s (UIKit) and 0.34s (Liquidum), within 0.05 of
+  each other throughout; leaving, 0.37s and 0.38s.
+
+Lone glass (Stage 1) is unchanged: against Stage 1's build, the sizes,
+clears, tints, heights, apart, big and big2 sets differ by 0.005-0.27 RMS
+(glass up to 62pt: at most a few pixels by 1 level; larger glass 1-2
+levels where Impeller's heavy blur rounds differently over the group's
+bounds, and up to 38 on a few edge pixels where a large corner's arc meets
+its side, the frost now following the continuous corner). The tab bar is
+pixel-identical.
+
+Results, groups (spacing 20; inside / edge / middle / necks / around)
+  over color blocks
+    two 150x62 capsules, gap 0       2.10 / 5.76 / 1.05 / 6.21 / 0.50
+    gap 6                            2.20 / 5.94 / 0.97 / 6.10 / 0.54
+    gap 12 (apart, leaning)          2.17 / 5.85 / 1.08 / 7.71 / 0.49
+    three 48pt circles 4 apart       3.30 / 5.32 / 2.49 / 5.45 / 0.99
+    160x50 capsules stacked 6 apart  2.24 / 4.70 / 1.40 / 4.40 / 0.78
+    44pt and 100pt glass 8 apart     3.23 / 6.49 / 2.42 / 5.83 / 2.58
+    2x2 76pt squares 8 apart        10.45 / 19.9 / 6.89 / 32.0 / 1.32 (open)
+  over dark
+    two capsules, gaps 0, 6, 12      0.32-0.34 / 0.84-0.89 / 0.17 / 0.24-1.73
+    circles, stacked, mixed          0.33-0.94 / 0.77-1.54 / 0.14-0.82 / 0.31-1.09
+  over gray
+    two capsules, gaps 0, 6, 12      0.26-0.27 / 0.78-0.81 / 0.00 / 0.55-0.67
+    circles 48pt, stacked 50pt       2.98-3.01 / 2.92-3.08 / 3.00 (see Open)
+    44pt and 100pt glass             0.64 / 0.97 / 0.58 / 1.03
+Results, styles (spacing 20; inside / edge / middle / necks), blocks | gray | dark
+    plain and tinted, 6 apart        1.72/4.81/0.67/5.51 | 0.56/1.67/0.08/4.94 | 0.58/1.69/0.15/5.55
+    two clear, 6 apart               3.52/3.56/3.51/3.08 | 0.61/1.51/0.37/0.48 | 0.97/2.87/0.21/0.50
+    regular beside clear: regular    2.36/6.77/0.94      | 0.26/0.80/0.00      | 0.33/0.88/0.17
+                          clear      2.62/3.84/2.44      | 0.66/1.59/0.44      | 1.00/3.03/0.21
+    44pt capsule over 200pt panel    3.91/6.67/3.67/6.75 | 2.02/3.41/1.90/4.99 | 2.21/5.51/1.83/8.37
+  A group's clear glass keeps the system's appearance, as UIKit's (its own
+  glass group): beside regular glass over dark it took the regular glass's
+  dark rim before (5.91 / 18.3 -> 1.00 / 3.03).
+
+Open
+  - Where flat faces bridge and turn into corners, UIKit's bridge ends
+    sooner: notch tips 2-4.6pt deeper than the model's (60pt squares,
+    radius 16 and 4, gaps 2-9; stacked capsules 2.0-2.4pt). The pull there
+    depends on more than the surfaces' angle; seen as a 2x2 grid's hole (a
+    four-pointed star in UIKit, a diamond here) and the ends of a bridge
+    between stacked bars. Arcs meeting arcs (rows of capsules and circles)
+    fit within 0.06pt.
+  - Over gray, UIKit's groups of 48-50pt glass are 3 levels lighter inside
+    than its lone glass of that size (208 against 205); Liquidum's are
+    205. 62pt groups match exactly.
+  - The rim along a regular neck's curved notch is a little fainter than
+    UIKit's.

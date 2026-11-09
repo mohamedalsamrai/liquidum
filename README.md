@@ -390,6 +390,31 @@ Glass(
   `UIGlassEffect` over the same backgrounds: see
   [`doc/comparison/glass-widgets/stage1`](doc/comparison/glass-widgets/stage1).
 
+  `visible: false` dematerializes the glass (its child stays), and `true`
+  materializes it again, as UIKit's does when its effect is set in an
+  animation.
+- **`GlassGroup`** is UIKit's glass container (`UIGlassContainerEffect`):
+  the `Glass` inside it is drawn as one glass, whose shapes melt together
+  where they come within `spacing` of each other, with UIKit's shape for
+  the neck between them. Glass appearing in a group melts into its
+  neighbors; glass leaving parts from them.
+
+```dart
+GlassGroup(
+  spacing: 20,
+  child: Row(
+    children: [
+      Glass(child: Padding(padding: EdgeInsets.all(12), child: Icon(Icons.add))),
+      SizedBox(width: 6),
+      Glass(visible: showMore, child: Padding(padding: EdgeInsets.all(12), child: Icon(Icons.more_horiz))),
+    ],
+  ),
+)
+```
+
+  Measured against UIKit's containers: see
+  [`doc/comparison/glass-widgets/stage2`](doc/comparison/glass-widgets/stage2).
+
 ## Examples
 
 The [`example`](example) folder holds four apps. Run them from it.
