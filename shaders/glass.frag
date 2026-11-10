@@ -20,7 +20,7 @@ uniform vec4 uOptics;    // inner refraction and its height (points), spacing (p
 uniform vec4 uFace;      // face: luma black and white points, fill alpha, fill gray
 uniform vec4 uRim;       // rim matrix: chroma gain, luma weight, lift; shadow strength
 uniform vec4 uShadow;    // shadow: offset, sigma, center, reach (points)
-uniform vec4 uMore;      // face chroma gain, unused, rim curvature, press wash
+uniform vec4 uMore;      // face chroma gain, pressed shape + 1 (0: none), rim curvature, press wash
 uniform vec4 uFrost;     // frost: full depth, light blur sigma (points), ramp power
 uniform vec4 uGlow;      // fingertip glow: center.xy, 1 / (2 variance) (pixels), peak alpha
 // Each shape: center.xy and half size.zw (capture pixels); and its corner
@@ -37,6 +37,10 @@ uniform vec4 uShapeTints[16];
 // glass's color (and 1) to the bleed's red, green and blue; [3].x how much
 // of it shows.
 uniform vec4 uBleed[4];
+// A gray material over each shape (UIKit's prominent clear and disabled
+// prominent glass buttons): the color times .x plus its luma times .y plus
+// .z, at opacity .w (none at 0).
+uniform vec4 uShapeMaterials[8];
 
 uniform sampler2D uCapture;
 
@@ -65,6 +69,15 @@ const vec2 kTintReach = vec2(1.1, 9.0);
 // UIKit's silhouettes of squares and rectangles of 40 to 114pt, corners 4
 // to 30 (unions), and to its glass over color (refraction) (iOS 26.5).
 const float kGradientRound = 5.0 / 3.0;
+
+// UIKit's fingertip glow (_UIFlexInteraction's little glow: a white disk's
+// shadow drawn through a vibrant color matrix): what is under it, 2.727
+// times itself less 0.909 times its luma (grays x1.82, colors deeper), by
+// the glow's alpha (iOS 26.5).
+vec3 glowLight(vec3 c, float alpha) {
+  vec3 lit = clamp(2.7273 * c - 0.9091 * dot(c, kLuma), 0.0, 1.0);
+  return mix(c, lit, alpha);
+}
 
 int shapeCount() {
   return int(uPass.z + 0.5);
@@ -239,6 +252,18 @@ void main() {
         c = mix(c, tint(c, p, bright, dark, bright, dark, vec4(0.0)), tintWeight);
       }
     }
+    // The material over the shape at p (within its own outline).
+    for (int i = 0; i < kMaxShapes; i++) {
+      if (i >= shapeCount()) {
+        break;
+      }
+      vec4 m = uShapeMaterials[i];
+      if (m.w > 0.0) {
+        float inside = clamp(0.5 - continuousBox(p, uShapes[i], uShapeInfo[i].x), 0.0, 1.0);
+        vec3 gray = clamp(m.x * c + m.y * dot(c, kLuma) + m.z, 0.0, 1.0);
+        c = mix(c, gray, m.w * inside * amount);
+      }
+    }
     if (uBleed[3].x > 0.0) {
       vec4 b = vec4(c, 1.0);
       vec3 bleed = clamp(vec3(dot(uBleed[0], b), dot(uBleed[1], b), dot(uBleed[2], b)), 0.0, 1.0);
@@ -251,12 +276,24 @@ void main() {
     if (dp < kRimHeight + 0.5 / k) {
       c = rimLight(c, dp, n, k, uMore.z, uRim.xyz, amount);
     }
-    if (uMore.w > 0.0) {
-      c = wash(c, uMore.w);
-    }
-    if (uGlow.w > 0.0) {
-      vec2 o = p - uGlow.xy;
-      c += uGlow.w * exp(-dot(o, o) * uGlow.z) * (1.0 - c);
+    // The press, over the pressed shape (and a little into a neck from it,
+    // as a tint): its wash, and the glow under the finger.
+    int pressed = int(uMore.y + 0.5) - 1;
+    if (pressed >= 0 && (uMore.w > 0.0 || uGlow.w > 0.0)) {
+      float reach = 1.0;
+      for (int i = 0; i < kMaxShapes; i++) {
+        if (i == pressed && shapeCount() > 1) {
+          float di = continuousBox(p, uShapes[i], uShapeInfo[i].x) / k;
+          reach = 1.0 - smoothstep(kTintReach.x, kTintReach.y, di);
+        }
+      }
+      if (uMore.w > 0.0) {
+        c = mix(c, wash(c, uMore.w), reach);
+      }
+      if (uGlow.w > 0.0) {
+        vec2 o = p - uGlow.xy;
+        c = glowLight(c, reach * uGlow.w * exp(-dot(o, o) * uGlow.z));
+      }
     }
   }
   float shaded = 0.0;

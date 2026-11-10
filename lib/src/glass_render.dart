@@ -172,6 +172,9 @@ class _GlassShape {
     required this.amount,
     required this.joins,
     required this.tint,
+    this.press,
+    this.toShape,
+    this.material,
   });
 
   final Rect rect;
@@ -180,7 +183,26 @@ class _GlassShape {
   final double amount;
   final bool joins;
   final Color? tint;
+
+  /// The glass's press, if it is interactive, and the transform from the
+  /// glass's own coordinates to the painting render object's.
+  final _GlassPress? press;
+  final Matrix4? toShape;
+
+  /// A gray material over the glass: color gain, luma weight, offset,
+  /// opacity (UIKit's, for some glass buttons).
+  final _GlassMaterial? material;
 }
+
+/// A gray material over glass, as UIKit lays over some glass buttons: the
+/// glass's color times [gain] plus its luma times [lumaWeight] plus
+/// [offset], at [opacity].
+typedef _GlassMaterial = ({
+  double gain,
+  double lumaWeight,
+  double offset,
+  double opacity,
+});
 
 /// The layers and shaders that draw one glass of up to eight shapes (a lone
 /// glass, or a group's of one style): its frost into the backdrop, then the
@@ -276,6 +298,43 @@ class _GlassPasses {
         : appearance.face;
     final (double, double, double) rim = appearance.platterRim;
 
+    // The press: of the shape pressed most (one at a time, as fingers on
+    // UIKit's glass), its wash, and its glow (a gaussian of the blurred
+    // disk's size and peak, as the tab bar's).
+    var pressed = -1;
+    for (var i = 0; i < shapes.length; i++) {
+      final _GlassPress? press = shapes[i].press;
+      if (press != null &&
+          press.amount > 0 &&
+          (pressed < 0 || press.amount > shapes[pressed].press!.amount)) {
+        pressed = i;
+      }
+    }
+    (double, double, double, double) glow = (0, 0, 0, 0);
+    if (pressed >= 0) {
+      final _GlassShape shape = shapes[pressed];
+      final _GlassPress press = shape.press!;
+      final Offset? center = press.glowCenter;
+      if (center != null && press.glowAlpha > 0) {
+        final Matrix4 toPixels = toRoot.clone()..multiply(shape.toShape!);
+        final Offset c = MatrixUtils.transformPoint(toPixels, center);
+        final double scale = MatrixUtils.transformRect(
+          toPixels,
+          const Rect.fromLTWH(0, 0, 1, 1),
+        ).longestSide;
+        final double r = devicePixelRatio * scale * press.glowSize / 2;
+        final double sigma = devicePixelRatio * scale * press.glowSigma;
+        final double peak = 1 - math.exp(-r * r / (2 * sigma * sigma));
+        final double variance = r * r / (2 * peak);
+        glow = (
+          c.dx * devicePixelRatio,
+          c.dy * devicePixelRatio,
+          1 / (2 * variance),
+          press.glowAlpha * peak,
+        );
+      }
+    }
+
     void set(_GlassUniforms u, double pass) {
       u
         // UIKit's SDF elements' gradient ovalization: 0.5 for regular glass
@@ -305,11 +364,11 @@ class _GlassPasses {
         )
         ..more.set(
           isClear ? _GlassOptics.clearChroma : appearance.chroma,
-          0,
+          (pressed + 1).toDouble(),
           _GlassOptics.rimCurvature,
-          0,
+          pressed < 0 ? 0 : shapes[pressed].press!.wash,
         )
-        ..glow.set(0, 0, 0, 0)
+        ..glow.set(glow.$1, glow.$2, glow.$3, glow.$4)
         ..setBleed(
           appearance.isDark ? _GlassOptics.bleedDark : _GlassOptics.bleedLight,
           isClear
@@ -320,9 +379,17 @@ class _GlassPasses {
         if (i >= shapes.length) {
           u.shapes[i].set(0, 0, 0, 0);
           u.info[i].set(0, 0, 0, 0);
+          u.materials[i].set(0, 0, 0, 0);
           continue;
         }
         final _GlassShape shape = shapes[i];
+        final _GlassMaterial? m = shape.material;
+        u.materials[i].set(
+          m?.gain ?? 0,
+          m?.lumaWeight ?? 0,
+          m?.offset ?? 0,
+          m?.opacity ?? 0,
+        );
         final Rect global = MatrixUtils.transformRect(toRoot, shape.rect);
         u.shapes[i].set(
           global.center.dx * devicePixelRatio,
@@ -434,11 +501,38 @@ class _RenderGlass extends RenderProxyBox {
     required this.appearance,
     required this._hub,
     required this._repaint,
+    required this._press,
+    required this._material,
     required this._devicePixelRatio,
   });
 
   final GlassAppearance appearance;
   final _GlassPasses _passes = _GlassPasses();
+
+  /// A gray material over the glass, if any.
+  _GlassMaterial? get material => _material;
+  _GlassMaterial? _material;
+  set material(_GlassMaterial? value) {
+    if (value != _material) {
+      _material = value;
+      _changed();
+    }
+  }
+
+  /// The glass's press, if it is interactive.
+  _GlassPress? get press => _press;
+  _GlassPress? _press;
+  set press(_GlassPress? value) {
+    if (value == _press) {
+      return;
+    }
+    if (attached) {
+      _press?.removeListener(_changed);
+      value?.addListener(_changed);
+    }
+    _press = value;
+    _changed();
+  }
 
   GlassStyle get style => _style;
   GlassStyle _style;
@@ -553,6 +647,7 @@ class _RenderGlass extends RenderProxyBox {
     super.attach(owner);
     _repaint.addListener(markNeedsPaint);
     _presence.addListener(_changed);
+    _press?.addListener(_changed);
     _hub?.add(this);
   }
 
@@ -560,6 +655,7 @@ class _RenderGlass extends RenderProxyBox {
   void detach() {
     _repaint.removeListener(markNeedsPaint);
     _presence.removeListener(_changed);
+    _press?.removeListener(_changed);
     _hub?.remove(this);
     super.detach();
   }
@@ -598,6 +694,9 @@ class _RenderGlass extends RenderProxyBox {
               amount: amount,
               joins: true,
               tint: _tint,
+              press: _press,
+              toShape: Matrix4.identity(),
+              material: _material,
             ),
         ],
         style: _style,
@@ -717,8 +816,9 @@ class _RenderGlassGroup extends RenderProxyBox {
       if (!glass.attached || !glass.hasSize || glass.size.isEmpty) {
         continue;
       }
+      final Matrix4 toGroup = glass.getTransformTo(this);
       final Rect rect = MatrixUtils.transformRect(
-        glass.getTransformTo(this),
+        toGroup,
         Offset.zero & glass.size,
       );
       _painted[glass] = rect;
@@ -734,6 +834,9 @@ class _RenderGlassGroup extends RenderProxyBox {
           amount: amount,
           joins: glass.visible,
           tint: glass.tint,
+          press: glass.press,
+          toShape: toGroup,
+          material: glass.material,
         ),
       );
     }
@@ -788,7 +891,8 @@ class _GlassUniforms {
       shapes = shader.getUniformVec4Array('uShapes'),
       info = shader.getUniformVec4Array('uShapeInfo'),
       tints = shader.getUniformVec4Array('uShapeTints'),
-      bleed = shader.getUniformVec4Array('uBleed');
+      bleed = shader.getUniformVec4Array('uBleed'),
+      materials = shader.getUniformVec4Array('uShapeMaterials');
 
   final ui.FragmentShader shader;
   final ui.UniformVec4Slot pass;
@@ -802,6 +906,7 @@ class _GlassUniforms {
   final ui.UniformArray<ui.UniformVec4Slot> shapes;
   final ui.UniformArray<ui.UniformVec4Slot> info;
   final ui.UniformArray<ui.UniformVec4Slot> tints;
+  final ui.UniformArray<ui.UniformVec4Slot> materials;
   final ui.UniformArray<ui.UniformVec4Slot> bleed;
 
   void setBleed(List<List<double>> matrix, double opacity) {

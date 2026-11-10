@@ -414,6 +414,22 @@ GlassGroup(
 
   Measured against UIKit's containers: see
   [`doc/comparison/glass-widgets/stage2`](doc/comparison/glass-widgets/stage2).
+- **`GlassButton`** is UIKit's glass button: a label, an icon or both on
+  a capsule of interactive glass, in UIKit's sizes. `prominent: true` fills
+  it with `tint` (the system blue by default) under a white label, and
+  `style: GlassStyle.clear` makes it clear. Its label is vibrant, as
+  UIKit's: it takes the colors of the glass under it.
+
+```dart
+GlassButton(label: 'Done', onPressed: save)
+GlassButton(icon: CupertinoIcons.add, onPressed: add)
+GlassButton(label: 'Buy', prominent: true, onPressed: buy)
+```
+
+  `Glass(interactive: true)` gives any glass the same press: it swells,
+  lightens and glows under the finger, stretches toward a drag and springs
+  back. Measured against UIKit's buttons: see
+  [`doc/comparison/glass-widgets/stage3`](doc/comparison/glass-widgets/stage3).
 
 ## Examples
 

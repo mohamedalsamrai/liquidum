@@ -199,6 +199,7 @@ final class NativeGlassFactory: NSObject, FlutterPlatformViewFactory {
 /// `UIGlassContainerEffect`, whose spacing is its first shape's `spacing`,
 /// and `appear`: the shape's glass materializes `appearAt` seconds after the
 /// view is made and dematerializes at `leaveAt`, in half-second animations.
+/// Shapes with a `button` are glass buttons (see `button(_:_:)`).
 /// `speed`: the view's layer speed.
 final class NativeGlass: NSObject, FlutterPlatformView {
   private let container: UIView
@@ -212,6 +213,10 @@ final class NativeGlass: NSObject, FlutterPlatformView {
     var containers: [Int: UIView] = [:]
     var appearing: [(UIVisualEffectView, UIVisualEffect)] = []
     for shape in arguments["shapes"] as? [[String: Any]] ?? [] {
+      if let label = shape["button"] as? String {
+        container.addSubview(Self.button(label, shape))
+        continue
+      }
       let effect = UIGlassEffect(style: shape["style"] as? String == "clear" ? .clear : .regular)
       if let argb = shape["tint"] as? Int {
         effect.tintColor = UIColor(
@@ -254,6 +259,42 @@ final class NativeGlass: NSObject, FlutterPlatformView {
         }
       }
     }
+  }
+
+  /// A glass button (`UIButton.Configuration.glass()` and kin) at the
+  /// shape's `x`, `y`, its own size: `button` (its title, none if empty),
+  /// `icon` (a plus), `prominent`, `style`, `tint`, `size` (mini, small,
+  /// medium, large), `enabled`.
+  @available(iOS 26.0, *)
+  private static func button(_ label: String, _ shape: [String: Any]) -> UIButton {
+    let clear = shape["style"] as? String == "clear"
+    let prominent = shape["prominent"] as? Bool ?? false
+    var config: UIButton.Configuration =
+      clear
+      ? (prominent ? .prominentClearGlass() : .clearGlass())
+      : (prominent ? .prominentGlass() : .glass())
+    if !label.isEmpty { config.title = label }
+    if shape["icon"] as? Bool == true {
+      config.image = UIImage(systemName: "plus")
+      config.imagePadding = 6
+    }
+    switch shape["size"] as? String {
+    case "mini": config.buttonSize = .mini
+    case "small": config.buttonSize = .small
+    case "large": config.buttonSize = .large
+    default: config.buttonSize = .medium
+    }
+    let button = UIButton(configuration: config)
+    if let argb = shape["tint"] as? Int {
+      button.tintColor = UIColor(
+        red: CGFloat(argb >> 16 & 0xff) / 255, green: CGFloat(argb >> 8 & 0xff) / 255,
+        blue: CGFloat(argb & 0xff) / 255, alpha: CGFloat(argb >> 24 & 0xff) / 255)
+    }
+    button.isEnabled = shape["enabled"] as? Bool ?? true
+    button.sizeToFit()
+    button.frame.origin = CGPoint(
+      x: CGFloat(shape["x"] as? Double ?? 0), y: CGFloat(shape["y"] as? Double ?? 0))
+    return button
   }
 
   func view() -> UIView { container }

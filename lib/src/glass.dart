@@ -9,8 +9,12 @@ import 'frame_sampler.dart';
 import 'glass_backdrop.dart';
 import 'shader_program.dart';
 import 'tab_bar/appearance.dart';
+import 'tab_bar/spring.dart';
+import 'tab_bar/style.dart';
 import 'tab_bar/tint.dart';
 
+part 'glass_button.dart';
+part 'glass_press.dart';
 part 'glass_render.dart';
 
 /// UIKit's styles of glass (`UIGlassEffect.Style`).
@@ -47,8 +51,20 @@ class Glass extends StatefulWidget {
     this.tint,
     this.brightness,
     this.visible = true,
+    this.interactive = false,
     this.child,
-  });
+  }) : _material = null;
+
+  // A glass button's glass, with UIKit's gray material over it.
+  const Glass._button(
+    this._material, {
+    required this.style,
+    required this.tint,
+    required this.interactive,
+    required this.child,
+  }) : radius = null,
+       brightness = null,
+       visible = true;
 
   final GlassStyle style;
 
@@ -73,6 +89,19 @@ class Glass extends StatefulWidget {
   ///
   /// Only the glass: [child] stays.
   final bool visible;
+
+  /// Whether the glass responds to a finger, as UIKit's interactive glass
+  /// (`UIGlassEffect.isInteractive`, and glass buttons): pressed, it swells
+  /// (with [child]), lightens and glows under the finger, stretches toward
+  /// a drag, and springs back when let go. It takes no gesture away from
+  /// [child]: a button inside still gets its taps.
+  ///
+  /// As UIKit's, by its size: glass up to 110pt long swells by 16pt and
+  /// glows fully; longer glass swells less and glows more faintly the
+  /// taller it is (4pt and a fifth from 160pt).
+  final bool interactive;
+
+  final _GlassMaterial? _material;
 
   final Widget? child;
 
@@ -101,10 +130,17 @@ class _GlassState extends State<Glass> with TickerProviderStateMixin {
   final _Repaint _repaint = _Repaint();
   _GlassHub? _hub;
   bool _sampling = false;
+  _GlassPress? _press;
+
+  /// Whether the glass looks dark, for what is drawn on it.
+  final ValueNotifier<bool> _dark = ValueNotifier<bool>(false);
 
   @override
   void initState() {
     super.initState();
+    if (widget.interactive) {
+      _press = _GlassPress();
+    }
     _sampler = FrameSampler(
       interval: const Duration(milliseconds: 50),
       sample: _sample,
@@ -126,6 +162,10 @@ class _GlassState extends State<Glass> with TickerProviderStateMixin {
   @override
   void didUpdateWidget(Glass oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (widget.interactive != oldWidget.interactive) {
+      _press?.dispose();
+      _press = widget.interactive ? _GlassPress() : null;
+    }
     if (widget.visible != oldWidget.visible) {
       if (widget.visible) {
         _presence.forward();
@@ -141,6 +181,7 @@ class _GlassState extends State<Glass> with TickerProviderStateMixin {
     _appearance
       ..adaptive = forced == null
       ..system = forced ?? MediaQuery.platformBrightnessOf(context);
+    _dark.value = _appearance.isDark;
     _wake();
   }
 
@@ -148,7 +189,10 @@ class _GlassState extends State<Glass> with TickerProviderStateMixin {
     final double now =
         SchedulerBinding.instance.currentSystemFrameTimeStamp.inMicroseconds /
         1e6;
-    if (!_appearance.tick(now)) {
+    final bool appearing = _appearance.tick(now);
+    final bool pressing = _press?.tick(now) ?? false;
+    _dark.value = _appearance.isDark;
+    if (!appearing && !pressing) {
       _ticker.stop();
     }
     _repaint.notify();
@@ -158,6 +202,25 @@ class _GlassState extends State<Glass> with TickerProviderStateMixin {
     if (!_ticker.isActive) {
       _ticker.start();
     }
+  }
+
+  void _down(PointerDownEvent event) {
+    final _GlassPress? press = _press;
+    if (press == null || press.pressed) {
+      return;
+    }
+    press.down(event.localPosition);
+    _wake();
+  }
+
+  void _move(PointerMoveEvent event) {
+    _press?.move(event.localPosition);
+    _wake();
+  }
+
+  void _up(PointerEvent event) {
+    _press?.up();
+    _wake();
   }
 
   // Reads the backdrop under small glass, as the bar does; large glass and
@@ -204,12 +267,14 @@ class _GlassState extends State<Glass> with TickerProviderStateMixin {
     _ticker.dispose();
     _presence.dispose();
     _repaint.dispose();
+    _press?.dispose();
+    _dark.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return _GlassSurface(
+    Widget glass = _GlassSurface(
       style: widget.style,
       radius: widget.radius,
       tint: widget.tint,
@@ -218,9 +283,33 @@ class _GlassState extends State<Glass> with TickerProviderStateMixin {
       appearance: _appearance,
       hub: _hub,
       repaint: _repaint,
+      press: _press,
+      material: widget._material,
       devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
-      child: widget.child,
+      child: widget.child == null
+          ? null
+          : _GlassTone(
+              dark: _dark,
+              child: _press == null
+                  ? widget.child!
+                  : _GlassPressScope(
+                      press: _GlassPressView._(_press!),
+                      child: widget.child!,
+                    ),
+            ),
     );
+    final _GlassPress? press = _press;
+    if (press != null) {
+      glass = Listener(
+        behavior: HitTestBehavior.translucent,
+        onPointerDown: _down,
+        onPointerMove: _move,
+        onPointerUp: _up,
+        onPointerCancel: _up,
+        child: _PressTransform(press: press, child: glass),
+      );
+    }
+    return glass;
   }
 }
 
@@ -451,6 +540,8 @@ class _GlassSurface extends SingleChildRenderObjectWidget {
     required this.appearance,
     required this.hub,
     required this.repaint,
+    required this.press,
+    required this.material,
     required this.devicePixelRatio,
     super.child,
   });
@@ -463,6 +554,8 @@ class _GlassSurface extends SingleChildRenderObjectWidget {
   final GlassAppearance appearance;
   final _GlassHub? hub;
   final Listenable repaint;
+  final _GlassPress? press;
+  final _GlassMaterial? material;
   final double devicePixelRatio;
 
   @override
@@ -475,6 +568,8 @@ class _GlassSurface extends SingleChildRenderObjectWidget {
     appearance: appearance,
     hub: hub,
     repaint: repaint,
+    press: press,
+    material: material,
     devicePixelRatio: devicePixelRatio,
   );
 
@@ -488,6 +583,8 @@ class _GlassSurface extends SingleChildRenderObjectWidget {
       ..presence = presence
       ..hub = hub
       ..repaint = repaint
+      ..press = press
+      ..material = material
       ..devicePixelRatio = devicePixelRatio;
   }
 }
@@ -528,3 +625,49 @@ class _GlassGroupSurface extends SingleChildRenderObjectWidget {
       ..devicePixelRatio = devicePixelRatio;
   }
 }
+
+/// Whether the glass around its child looks dark, for what is drawn on it
+/// (a [GlassButton]'s label follows it, as UIKit's vibrant labels do).
+class _GlassTone extends InheritedNotifier<ValueNotifier<bool>> {
+  const _GlassTone({required ValueNotifier<bool> dark, required super.child})
+    : super(notifier: dark);
+}
+
+/// Whether the nearest glass above [context] looks dark (null outside
+/// glass). Rebuilds [context] when it turns.
+bool? _glassIsDarkOf(BuildContext context) =>
+    context.dependOnInheritedWidgetOfExactType<_GlassTone>()?.notifier?.value;
+
+/// How pressed interactive glass is, for what is drawn on it (a glass
+/// button's label dims while pressed). Notifies as the press moves.
+class _GlassPressView {
+  _GlassPressView._(this._press);
+
+  final _GlassPress _press;
+
+  Listenable get listenable => _press;
+
+  /// How pressed the glass is, 0 to 1 (its wash and glow follow).
+  double get amount => _press.amount;
+
+  @override
+  bool operator ==(Object other) =>
+      other is _GlassPressView && other._press == _press;
+
+  @override
+  int get hashCode => _press.hashCode;
+}
+
+class _GlassPressScope extends InheritedWidget {
+  const _GlassPressScope({required this.press, required super.child});
+
+  final _GlassPressView press;
+
+  @override
+  bool updateShouldNotify(_GlassPressScope oldWidget) =>
+      press != oldWidget.press;
+}
+
+/// The press of the nearest interactive glass above [context], if any.
+_GlassPressView? _glassPressOf(BuildContext context) =>
+    context.dependOnInheritedWidgetOfExactType<_GlassPressScope>()?.press;

@@ -14,7 +14,30 @@ class GlassSpec {
     this.group,
     this.spacing = 0,
     this.appear = false,
-  });
+  }) : button = null,
+       icon = false,
+       prominent = false,
+       size = 'medium',
+       enabled = true;
+
+  /// A glass button (UIKit's `UIButton.Configuration.glass()` and kin, or a
+  /// [GlassButton]) at [rect]'s top left, its own size: [label] (none if
+  /// null), a plus icon if [icon].
+  const GlassSpec.button(
+    this.rect, {
+    String? label,
+    this.icon = false,
+    this.prominent = false,
+    this.clear = false,
+    this.tint,
+    this.size = 'medium',
+    this.enabled = true,
+  }) : button = label ?? '',
+       radius = null,
+       interactive = true,
+       group = null,
+       spacing = 0,
+       appear = false;
 
   /// In the reference screen's points.
   final Rect rect;
@@ -37,6 +60,15 @@ class GlassSpec {
   /// Whether it materializes and dematerializes at the comparison's
   /// `appear=` times (hidden until then).
   final bool appear;
+
+  /// A button's label ('' for none); null if this is plain glass.
+  final String? button;
+  final bool icon;
+  final bool prominent;
+
+  /// mini, small, medium or large.
+  final String size;
+  final bool enabled;
 }
 
 /// Shapes to compare, by name (the comparison's `glass=<name>` flag). The
@@ -118,6 +150,84 @@ const Map<String, List<GlassSpec>> glassSets = <String, List<GlassSpec>>{
     GlassSpec(Rect.fromLTWH(40, 730, 60, 60), radius: 16, clear: true),
     GlassSpec(Rect.fromLTWH(140, 730, 160, 60), radius: 16, clear: true),
     GlassSpec(Rect.fromLTWH(320, 730, 80, 80), radius: 20, clear: true),
+  ],
+  // Glass buttons (UIButton's glass configurations), as the catalog's
+  // buttons page: styles, sizes, tints and disabled.
+  'buttons': <GlassSpec>[
+    GlassSpec.button(Rect.fromLTWH(40, 80, 0, 0), label: 'Button'),
+    GlassSpec.button(Rect.fromLTWH(160, 80, 0, 0), icon: true),
+    GlassSpec.button(Rect.fromLTWH(230, 80, 0, 0), label: 'Add', icon: true),
+    GlassSpec.button(
+      Rect.fromLTWH(40, 160, 0, 0),
+      label: 'Button',
+      prominent: true,
+    ),
+    GlassSpec.button(
+      Rect.fromLTWH(160, 160, 0, 0),
+      icon: true,
+      prominent: true,
+    ),
+    GlassSpec.button(
+      Rect.fromLTWH(230, 160, 0, 0),
+      label: 'Add',
+      icon: true,
+      prominent: true,
+    ),
+    GlassSpec.button(
+      Rect.fromLTWH(40, 240, 0, 0),
+      label: 'Button',
+      clear: true,
+    ),
+    GlassSpec.button(Rect.fromLTWH(160, 240, 0, 0), icon: true, clear: true),
+    GlassSpec.button(
+      Rect.fromLTWH(230, 240, 0, 0),
+      label: 'Button',
+      clear: true,
+      prominent: true,
+    ),
+    GlassSpec.button(
+      Rect.fromLTWH(40, 320, 0, 0),
+      label: 'Red',
+      tint: Color(0xFFFF383C),
+    ),
+    GlassSpec.button(
+      Rect.fromLTWH(160, 320, 0, 0),
+      label: 'Red',
+      tint: Color(0xFFFF383C),
+      prominent: true,
+    ),
+    GlassSpec.button(
+      Rect.fromLTWH(40, 400, 0, 0),
+      label: 'Off',
+      enabled: false,
+    ),
+    GlassSpec.button(
+      Rect.fromLTWH(160, 400, 0, 0),
+      label: 'Off',
+      prominent: true,
+      enabled: false,
+    ),
+    GlassSpec.button(
+      Rect.fromLTWH(40, 480, 0, 0),
+      label: 'Small',
+      size: 'small',
+    ),
+    GlassSpec.button(Rect.fromLTWH(160, 480, 0, 0), icon: true, size: 'small'),
+    GlassSpec.button(
+      Rect.fromLTWH(40, 560, 0, 0),
+      label: 'Large',
+      size: 'large',
+    ),
+    GlassSpec.button(Rect.fromLTWH(160, 560, 0, 0), icon: true, size: 'large'),
+    GlassSpec.button(
+      Rect.fromLTWH(260, 560, 0, 0),
+      label: 'Mini',
+      size: 'mini',
+    ),
+    // Interactive glass of the press's variants, for presses.
+    GlassSpec(Rect.fromLTWH(40, 660, 80, 80), radius: 20, interactive: true),
+    GlassSpec(Rect.fromLTWH(160, 660, 200, 62), interactive: true),
+    GlassSpec(Rect.fromLTWH(40, 770, 360, 120), radius: 30, interactive: true),
   ],
   'bar': <GlassSpec>[GlassSpec(Rect.fromLTWH(21, 873, 398, 62))],
   // Glass groups, spacing 20 (as the catalog's groups page).
@@ -225,6 +335,13 @@ class NativeGlass extends StatelessWidget {
               'group': ?s.group,
               'spacing': s.spacing,
               'appear': s.appear,
+              if (s.button case final String label) ...<String, Object>{
+                'button': label,
+                'icon': s.icon,
+                'prominent': s.prominent,
+                'size': s.size,
+                'enabled': s.enabled,
+              },
             },
         ],
         'appearAt': ?appearAt,

@@ -17,6 +17,15 @@
 * New: `Glass.visible` materializes and dematerializes the glass as UIKit's
   does when its effect is set in an animation: blur, refraction, color, rim
   and shadow grow or fade together over half a second.
+* New: `GlassButton`, UIKit's glass buttons (`UIButton.Configuration`'s
+  `glass()`, `prominentGlass()`, `clearGlass()` and
+  `prominentClearGlass()`): a label, an icon or both, four sizes, UIKit's
+  metrics, and its vibrant label, which takes the colors of the glass
+  under it.
+* New: `Glass.interactive`, UIKit's interactive glass
+  (`UIGlassEffect.isInteractive`): pressed, the glass swells by UIKit's
+  points for its size, lightens and glows under the finger, stretches
+  toward a drag and springs back, on UIKit's springs.
 
 ## 0.2.2
 

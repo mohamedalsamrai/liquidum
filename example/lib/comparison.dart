@@ -762,15 +762,30 @@ class _LiquidumShapesState extends State<_LiquidumShapes> {
   @override
   Widget build(BuildContext context) {
     final List<GlassSpec> shapes = widget.shapes;
-    Widget glass(GlassSpec s) => Positioned.fromRect(
-      rect: s.rect,
-      child: Glass(
-        style: s.clear ? GlassStyle.clear : GlassStyle.regular,
-        radius: s.radius,
-        tint: s.tint,
-        visible: !s.appear || _shown,
-      ),
-    );
+    Widget glass(GlassSpec s) => s.button == null
+        ? Positioned.fromRect(
+            rect: s.rect,
+            child: Glass(
+              style: s.clear ? GlassStyle.clear : GlassStyle.regular,
+              radius: s.radius,
+              tint: s.tint,
+              interactive: s.interactive,
+              visible: !s.appear || _shown,
+            ),
+          )
+        : Positioned(
+            left: s.rect.left,
+            top: s.rect.top,
+            child: GlassButton(
+              label: s.button!.isEmpty ? null : s.button,
+              icon: s.icon ? CupertinoIcons.add : null,
+              prominent: s.prominent,
+              style: s.clear ? GlassStyle.clear : GlassStyle.regular,
+              tint: s.tint,
+              size: GlassButtonSize.values.byName(s.size),
+              onPressed: s.enabled ? () {} : null,
+            ),
+          );
     final Set<int> groups = <int>{
       for (final GlassSpec s in shapes)
         if (s.group case final int g) g,

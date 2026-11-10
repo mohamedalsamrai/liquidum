@@ -1,0 +1,100 @@
+Stage 3, glass buttons (UIButton.Configuration.glass() and kin) and the
+interactive press (UIGlassEffect.isInteractive), 2026-11-10. UIKit = iOS
+26.5 simulator, iPhone 17 Pro Max, 3 px/pt. RMS in levels (0-255) between
+UIKit's and Liquidum's at the same places over the same backgrounds
+(example/lib/comparison.dart with shapes=buttons: UIKit's UIButtons in a
+platform view, example/lib/native_glass.dart; Liquidum's GlassButtons and
+Glass(interactive: true)).
+
+Method
+  UIKit's buttons measured in a native catalog (simulator only): their
+  layer trees, their glass groups archived (NSKeyedArchiver: the filters'
+  inputs and color matrices), UIKit's flex interaction settings read at
+  run time (_UIFlexInteractionSettingsDomain), and every frame of presses,
+  holds and drags logged (each layer's transform, opacity and frame).
+
+UIKit's glass button
+  The same glass group as UIGlassEffect's (one element, the button's
+  capsule) behind the button's content; prominent glass adds a tint
+  material over the shape (the tinted glass's). The title and image are
+  drawn through a vibrantColorMatrix: 1.5 x the color less 1.4 x its luma,
+  offset 0.9, the same on every style.
+  Sizes (buttonSize): medium (the default) 38.33pt tall, insets 7 / 12, SF
+  17pt; large 54.33pt, 15 / 20, 17pt; small and mini 32pt, 5 / 10, 15pt.
+  An image alone: a circle of 34.33, 50.33 or 28pt; the symbol's box 23 x
+  21.67pt (20.33 x 19 small), 6pt before the title.
+  Label colors: the label color (black on light glass), white on prominent
+  glass, the tertiary label color (60, 60, 67 at 0.3) when disabled.
+  Prominent clear glass: a gray material over clear glass (0.22 of its luma
+  plus 0.25, at 0.16), whatever the tint. Disabled prominent glass: no tint,
+  a material that pulls the glass's luma to about half (color less 0.93 of
+  its luma plus 0.5, at 0.45). Plain glass ignores the tint.
+
+The label
+  Liquidum draws the label as UIKit's matrix over the glass under it: 0.69
+  x the matrix (its offset left out) plus 0.9 x the label's color, the
+  glyphs as a mask (fitted to UIKit's labels over color blocks: black
+  labels within 2 to 9 levels, white ones within 5 to 13). Pressed, UIKit's
+  label shows half as strongly, under the press's glow.
+
+The press (UIKit's _UIFlexInteraction)
+  Swell: the glass and its content scale uniformly by (length + lift) /
+  length. Glass up to 110pt long, any aspect, is "ultra small": lift 16pt,
+  glow 1, wash 1. Longer glass goes from "small" to "large" with its short
+  side h: t = (h - 44) / 116, from 0 to 1; lift 16 - 12 t, glow 0.3 - 0.1 t,
+  wash 1 - t (the tab bar's platter, 62pt: 14.14pt, 0.2845, 0.845).
+  Rise: the liquid lens's lift spring (stiffness 541.54, damping 29.09: 8%
+  over at 0.17s). Release: the variant's scale spring (246.74 / 11.78, 28%
+  under at 0.22s; to 304.62 / 20.94 for large glass).
+  Wash: a white layer through a vibrant matrix (saturation 1.2, lift 0.05),
+  the tab bar's. Glow: a white disk 1.5 h across (at most 160pt), blurred
+  by 0.75 h, under the finger in the glass's own coordinates, through a
+  vibrant matrix (2.73 x the color less 0.91 x its luma: grays x1.82). Both
+  rise within 0.1s and fall over half a second; on release the glow
+  spreads to 4x as it fades. A finger past the glass's edge: the glow stops
+  at the edge, twice as large, at half its opacity.
+  Drag: the glass stretches toward the finger, keeping its area, and moves
+  a little that way. Liquidum's law is approximate: up to UIKit's 10%
+  (its movement min 0.9, max 1.1), 0.1 tanh(d^2 / 20000) for a drag of d
+  points, and 0.025 d (at most 3pt) toward the finger; fitted to four drags
+  of 20 to 120pt on one button.
+
+Results, at rest (1-buttons.jpg): per button, inside its capsule; edge =
+its outer 3pt; glass = inside, away from the glyphs; glyphs = the label and
+icon, grown by 1pt.
+                          inside  edge  glass  glyphs
+  glass title               21.0  11.6    0.8   28.5
+  glass icon                39.6   6.5    1.0   89.1
+  glass icon + title        25.1   7.2    0.6   60.2
+  prominent title           15.2  18.9    0.2   28.2
+  prominent icon            22.2   5.6    0.0   47.7
+  prominent icon + title    15.6   6.6    0.2   39.1
+  clear title               11.3   6.2    0.4   25.3
+  clear icon                37.6   1.4    0.5   84.8
+  prominent clear           16.2   6.5    0.9   35.9
+  plain glass, red tint     32.0  26.2   22.2   56.7
+  prominent red             16.1  10.4    0.3   36.4
+  disabled glass             9.7  13.9    0.6   17.2
+  disabled prominent         9.3  12.3    1.0   17.4
+  small icon                30.1   3.6    0.1   65.1
+  large icon                26.3   6.6    1.8   91.8
+  Sizes: every capsule and circle on UIKit's outline (within half a point,
+  red / cyan overlays). Glyph errors are mostly the icon: the comparison
+  draws CupertinoIcons.add, about 1pt lower and bolder than UIKit's SF
+  symbol; text differs by antialiasing. The red-tinted plain button's glass
+  differs as plain glass can over mixed blocks (UIKit's inputs for it are
+  plain glass's but for the face it adapts to the backdrop).
+
+Results, held (2-press.jpg; 0.5 to 4s into a press)
+  button (75 x 38.33, pressed in its middle)    inside 14.5  edge 17.6  middle 13.8
+  interactive glass 200 x 62                    inside  5.5  edge 15.8  middle  1.8
+  Swell: both on UIKit's outline (1.2133 and 1.0707). The pressed label is
+  within 10 to 25 levels (UIKit's a little grayer).
+
+Open
+  - Labels on dark glass are drawn with the same law, white; not compared.
+  - The drag's stretch law is approximate (four drags).
+  - Tap: the button fires on a tap as Flutter's (cancelled past the touch
+    slop); UIKit's fires on release within about 70pt of the button.
+  - Icons are the app's IconData, not SF symbols (UIKit's symbol box is
+    kept, so layouts match).
