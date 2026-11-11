@@ -4,6 +4,7 @@ import 'dart:ui';
 
 import 'package:flutter/rendering.dart' show EdgeInsets, Matrix4;
 
+import '../lens/lens_flex.dart';
 import 'spring.dart';
 
 /// Everything that moves in a glass tab bar, advanced one frame at a time:
@@ -285,48 +286,11 @@ class GlassTabBarPhysics {
     tolerance: 1e-4,
   );
 
-  // Flex: the lens is a soft body. Every change in its velocity on screen
-  // (also as the swelling platter carries it), smoothed over 20ms as
-  // UIKit's velocity integrator does, kicks one state m, which springs back
-  // on UIKit's loupe flex spring (157.9/25.13, critically damped). m, taken
-  // within ±0.46, sets the lens's scale and drift: x scales by 1 + 0.6m and
-  // the lens drifts -14.8m points; y scales by 1 - m while m is small,
-  // flattening at most about 40% and bulging at most 28%. The result eases
-  // in on a slightly overdamped spring. Fitted to UIKit's flex state over
-  // nine gestures.
-  static const double _flexGain = 0.0173;
-  static const double _flexSmoothing = 0.02;
-  static const double _flexLimit = 0.46;
-  static const double _flexScaleX = 0.6;
-  static const double _flexFlattenKnee = 0.3;
-  static const double _flexFlattenLimit = 0.4;
-  static const double _flexBulgeLimit = 0.28;
+  // Flex: the lens is a soft body (LensFlex, shared with the lens controls),
+  // kicked by every change in its velocity on screen (also as the swelling
+  // platter carries it); it drifts -14.8m points.
   static const double _flexDrift = -14.8;
-  final GlassSpring _flex = GlassSpring.physical(
-    mass: 1,
-    stiffness: 157.91367,
-    damping: 25.132741,
-    tolerance: 1e-5,
-  );
-  static const (double, double) _flexEase = (0.314, 1.15);
-  double _smoothedVelocity = 0;
-  final GlassSpring _flexX = GlassSpring(
-    response: 0.314,
-    dampingRatio: 1.15,
-    value: 1,
-    tolerance: 1e-5,
-  );
-  final GlassSpring _flexY = GlassSpring(
-    response: 0.314,
-    dampingRatio: 1.15,
-    value: 1,
-    tolerance: 1e-5,
-  );
-  final GlassSpring _flexShift = GlassSpring(
-    response: 0.314,
-    dampingRatio: 1.15,
-    tolerance: 1e-3,
-  );
+  final LensFlex _flex = LensFlex(driftPerState: _flexDrift);
 
   // The press (UIKit's GlowContainerView, whose wash and fingertip glow
   // fade in and out together): up within 0.18s of a touch, down over half a
@@ -365,10 +329,7 @@ class GlassTabBarPhysics {
     _shadow,
     _lift,
     _growth,
-    _flex,
-    _flexX,
-    _flexY,
-    _flexShift,
+    ..._flex.springs,
     _press,
     _spread,
   ];
@@ -688,19 +649,7 @@ class GlassTabBarPhysics {
       ..configure(_spreading.$1, _spreading.$2)
       ..target = down ? (_leftStartTab ? 1 : 0) : 3;
 
-    final double m = _flex.value.clamp(-_flexLimit, _flexLimit);
-    _flex.target = 0;
-    _flexX
-      ..configure(_flexEase.$1, _flexEase.$2)
-      ..target = 1 + _flexScaleX * m;
-    _flexY
-      ..configure(_flexEase.$1, _flexEase.$2)
-      ..target = m >= 0
-          ? 1 - _flatten(m)
-          : 1 + _flexBulgeLimit * _tanh(-m / _flexBulgeLimit);
-    _flexShift
-      ..configure(_flexEase.$1, _flexEase.$2)
-      ..target = _flexDrift * m;
+    _flex.aim();
 
     _shadow.target = _anchorAt(t - _trailDelay);
 
@@ -717,18 +666,9 @@ class GlassTabBarPhysics {
         }
         s.step(h);
       }
-      _smoothedVelocity +=
-          (_shadowScreenVelocity - _smoothedVelocity) *
-          (1 - math.exp(-h / _flexSmoothing));
-      final double v = _smoothedVelocity;
-      if (!reduceMotion) {
-        _flex.velocity += _flexGain * (v - _kickVx);
-      }
-      _kickVx = v;
+      _flex.kick(_shadowScreenVelocity, h, reduceMotion: reduceMotion);
     }
   }
-
-  double _kickVx = 0;
 
   // How fast UIKit's trailing lens would move on screen: its own motion,
   // scaled and carried by the platter.
@@ -746,27 +686,6 @@ class GlassTabBarPhysics {
     return driftV +
         _shadow.velocity * sx +
         (_shadow.value - _size.width / 2) * sxv;
-  }
-
-  // How much the lens flattens for m > 0: m itself up to a knee, then
-  // easing toward a limit.
-  static double _flatten(double m) {
-    if (m <= _flexFlattenKnee) {
-      return m;
-    }
-    const double room = _flexFlattenLimit - _flexFlattenKnee;
-    return _flexFlattenKnee + room * _tanh((m - _flexFlattenKnee) / room);
-  }
-
-  static double _tanh(double x) {
-    if (x > 20) {
-      return 1;
-    }
-    if (x < -20) {
-      return -1;
-    }
-    final double e = math.exp(2 * x);
-    return (e - 1) / (e + 1);
   }
 
   static double _slope(Iterable<(double, double)> samples) {
@@ -846,14 +765,14 @@ class GlassTabBarPhysics {
   double get lift => _growth.value;
 
   /// The lens's flex scale (x, y) and drift, as drawn.
-  Size get flexScale => Size(_flexX.value, _flexY.value);
-  double get flexDrift => _flexShift.value;
+  Size get flexScale => _flex.scale;
+  double get flexDrift => _flex.drift;
 
   /// The soft-body state that drives the flex.
-  double get flex => _flex.value;
+  double get flex => _flex.state;
 
   /// Log of the flex's x scale, for compatibility with earlier callers.
-  double get stretch => math.log(math.max(_flexX.value, 1e-3));
+  double get stretch => math.log(math.max(_flex.scale.width, 1e-3));
 
   /// How pressed the bar is, 0 to 1: its wash and fingertip glow follow.
   double get press => _press.value.clamp(0.0, 1.0);
@@ -880,9 +799,9 @@ class GlassTabBarPhysics {
     final double up = (liftOutset - inset + _padding.top) * g;
     final double down = (liftOutset - inset + _padding.bottom) * g;
     return Rect.fromCenter(
-      center: Offset(lensX + _flexShift.value, tabMiddle + (down - up) / 2),
-      width: (pillWidth + 2 * side) * _flexX.value,
-      height: (pillHeight + up + down) * _flexY.value,
+      center: Offset(lensX + _flex.drift, tabMiddle + (down - up) / 2),
+      width: (pillWidth + 2 * side) * _flex.scale.width,
+      height: (pillHeight + up + down) * _flex.scale.height,
     );
   }
 

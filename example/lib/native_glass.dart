@@ -18,7 +18,42 @@ class GlassSpec {
        icon = false,
        prominent = false,
        size = 'medium',
-       enabled = true;
+       enabled = true,
+       control = null,
+       on = false,
+       value = 0,
+       items = const <String>[],
+       selected = 0,
+       thumbColor = null;
+
+  /// A lens control (UIKit's UISwitch, UISlider or UISegmentedControl, or
+  /// Liquidum's GlassSwitch, GlassSlider, GlassSegmentedControl) at
+  /// [rect]'s top left: [kind] is 'switch', 'slider' or 'segmented'. A
+  /// switch takes its own size; a slider and a segmented control are as
+  /// wide as [rect]. [on] (switch), [value] 0 to 1 (slider), [items] and
+  /// [selected] (segmented); [tint] = onTintColor / minimumTrackTintColor /
+  /// selectedSegmentTintColor, [thumbColor] = thumbTintColor.
+  const GlassSpec.control(
+    this.rect, {
+    required String kind,
+    this.on = false,
+    this.value = 0,
+    this.items = const <String>[],
+    this.selected = 0,
+    this.tint,
+    this.thumbColor,
+    this.enabled = true,
+  }) : control = kind,
+       radius = null,
+       clear = false,
+       interactive = true,
+       group = null,
+       spacing = 0,
+       appear = false,
+       button = null,
+       icon = false,
+       prominent = false,
+       size = 'medium';
 
   /// A glass button (UIKit's `UIButton.Configuration.glass()` and kin, or a
   /// [GlassButton]) at [rect]'s top left, its own size: [label] (none if
@@ -37,7 +72,13 @@ class GlassSpec {
        interactive = true,
        group = null,
        spacing = 0,
-       appear = false;
+       appear = false,
+       control = null,
+       on = false,
+       value = 0,
+       items = const <String>[],
+       selected = 0,
+       thumbColor = null;
 
   /// In the reference screen's points.
   final Rect rect;
@@ -69,6 +110,14 @@ class GlassSpec {
   /// mini, small, medium or large.
   final String size;
   final bool enabled;
+
+  /// A control's kind ('switch', 'slider', 'segmented'); null otherwise.
+  final String? control;
+  final bool on;
+  final double value;
+  final List<String> items;
+  final int selected;
+  final Color? thumbColor;
 }
 
 /// Shapes to compare, by name (the comparison's `glass=<name>` flag). The
@@ -229,6 +278,106 @@ const Map<String, List<GlassSpec>> glassSets = <String, List<GlassSpec>>{
     GlassSpec(Rect.fromLTWH(160, 660, 200, 62), interactive: true),
     GlassSpec(Rect.fromLTWH(40, 770, 360, 120), radius: 30, interactive: true),
   ],
+  // Lens controls (UISwitch, UISlider, UISegmentedControl), as the research
+  // catalog's lens page: switches on, off, tinted, thumb-tinted, disabled
+  // and two to drag; sliders default (0.4), tinted, disabled, thumb-tinted
+  // at 1; segmented controls of three, two, tinted, five, disabled, with
+  // the second selected, and one to drag.
+  'controls': <GlassSpec>[
+    GlassSpec.control(Rect.fromLTWH(20, 70, 63, 28), kind: 'switch', on: true),
+    GlassSpec.control(Rect.fromLTWH(110, 70, 63, 28), kind: 'switch'),
+    GlassSpec.control(
+      Rect.fromLTWH(200, 70, 63, 28),
+      kind: 'switch',
+      on: true,
+      tint: Color(0xFFFF383C),
+    ),
+    GlassSpec.control(
+      Rect.fromLTWH(290, 70, 63, 28),
+      kind: 'switch',
+      on: true,
+      thumbColor: Color(0xFFFFCC00),
+    ),
+    GlassSpec.control(
+      Rect.fromLTWH(20, 130, 63, 28),
+      kind: 'switch',
+      on: true,
+      enabled: false,
+    ),
+    GlassSpec.control(
+      Rect.fromLTWH(110, 130, 63, 28),
+      kind: 'switch',
+      enabled: false,
+    ),
+    GlassSpec.control(Rect.fromLTWH(200, 130, 63, 28), kind: 'switch'),
+    GlassSpec.control(
+      Rect.fromLTWH(290, 130, 63, 28),
+      kind: 'switch',
+      on: true,
+    ),
+    GlassSpec.control(
+      Rect.fromLTWH(20, 190, 400, 34),
+      kind: 'slider',
+      value: 0.4,
+    ),
+    GlassSpec.control(
+      Rect.fromLTWH(20, 240, 400, 34),
+      kind: 'slider',
+      value: 0.5,
+      tint: Color(0xFFFF383C),
+    ),
+    GlassSpec.control(
+      Rect.fromLTWH(20, 290, 190, 34),
+      kind: 'slider',
+      value: 0.6,
+      enabled: false,
+    ),
+    GlassSpec.control(
+      Rect.fromLTWH(230, 290, 190, 34),
+      kind: 'slider',
+      value: 1,
+      thumbColor: Color(0xFFFFCC00),
+    ),
+    GlassSpec.control(
+      Rect.fromLTWH(20, 340, 400, 32),
+      kind: 'segmented',
+      items: <String>['One', 'Two', 'Three'],
+    ),
+    GlassSpec.control(
+      Rect.fromLTWH(20, 396, 88, 32),
+      kind: 'segmented',
+      items: <String>['One', 'Two'],
+    ),
+    GlassSpec.control(
+      Rect.fromLTWH(220, 396, 200, 32),
+      kind: 'segmented',
+      items: <String>['One', 'Two', 'Three'],
+      tint: Color(0xFFFF383C),
+    ),
+    GlassSpec.control(
+      Rect.fromLTWH(20, 452, 400, 32),
+      kind: 'segmented',
+      items: <String>['A', 'B', 'C', 'D', 'E'],
+      selected: 2,
+    ),
+    GlassSpec.control(
+      Rect.fromLTWH(20, 508, 200, 32),
+      kind: 'segmented',
+      items: <String>['One', 'Two', 'Three'],
+      enabled: false,
+    ),
+    GlassSpec.control(
+      Rect.fromLTWH(240, 508, 180, 32),
+      kind: 'segmented',
+      items: <String>['One', 'Two', 'Three'],
+      selected: 1,
+    ),
+    GlassSpec.control(
+      Rect.fromLTWH(20, 564, 400, 32),
+      kind: 'segmented',
+      items: <String>['One', 'Two', 'Three'],
+    ),
+  ],
   'bar': <GlassSpec>[GlassSpec(Rect.fromLTWH(21, 873, 398, 62))],
   // Glass groups, spacing 20 (as the catalog's groups page).
   'groups': <GlassSpec>[
@@ -301,6 +450,7 @@ class NativeGlass extends StatelessWidget {
     this.appearAt,
     this.leaveAt,
     this.speed = 1,
+    this.dark = false,
   });
 
   final List<GlassSpec> shapes;
@@ -312,6 +462,9 @@ class NativeGlass extends StatelessWidget {
 
   /// The view's layer speed (below 1 slows its animations).
   final double speed;
+
+  /// The dark appearance (UIKit's dark user interface style).
+  final bool dark;
 
   static bool get isAvailable =>
       !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
@@ -335,6 +488,15 @@ class NativeGlass extends StatelessWidget {
               'group': ?s.group,
               'spacing': s.spacing,
               'appear': s.appear,
+              if (s.control case final String kind) ...<String, Object>{
+                'control': kind,
+                'on': s.on,
+                'value': s.value,
+                'items': s.items,
+                'selected': s.selected,
+                if (s.thumbColor case final Color c) 'thumbColor': c.toARGB32(),
+                'enabled': s.enabled,
+              },
               if (s.button case final String label) ...<String, Object>{
                 'button': label,
                 'icon': s.icon,
@@ -347,6 +509,7 @@ class NativeGlass extends StatelessWidget {
         'appearAt': ?appearAt,
         'leaveAt': ?leaveAt,
         'speed': speed,
+        'dark': dark,
       },
       creationParamsCodec: const StandardMessageCodec(),
     );

@@ -430,6 +430,19 @@ GlassButton(label: 'Buy', prominent: true, onPressed: buy)
   lightens and glows under the finger, stretches toward a drag and springs
   back. Measured against UIKit's buttons: see
   [`doc/comparison/glass-widgets/stage3`](doc/comparison/glass-widgets/stage3).
+- **`GlassSwitch`**, **`GlassSlider`** and **`GlassSegmentedControl`** are
+  UIKit's iOS 26 controls: their thumb or selection is the tab bar's liquid
+  lens, lifting under the finger and following it, in UIKit's sizes,
+  colors and springs.
+
+```dart
+GlassSwitch(value: on, onChanged: (bool v) => setState(() => on = v))
+GlassSlider(value: volume, onChanged: (double v) => setState(() => volume = v))
+GlassSegmentedControl<int>(children: {0: Text('Day'), 1: Text('Week')}, groupValue: span, onValueChanged: (int v) => setState(() => span = v))
+```
+
+  Measured against UIKit's controls at rest and frame by frame: see
+  [`doc/comparison/glass-widgets/stage4`](doc/comparison/glass-widgets/stage4).
 
 ## Examples
 

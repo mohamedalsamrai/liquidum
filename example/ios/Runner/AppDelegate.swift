@@ -210,11 +210,18 @@ final class NativeGlass: NSObject, FlutterPlatformView {
     super.init()
     guard #available(iOS 26.0, *) else { return }
     container.layer.speed = Float(arguments["speed"] as? Double ?? 1)
+    if arguments["dark"] as? Bool == true {
+      container.overrideUserInterfaceStyle = .dark
+    }
     var containers: [Int: UIView] = [:]
     var appearing: [(UIVisualEffectView, UIVisualEffect)] = []
     for shape in arguments["shapes"] as? [[String: Any]] ?? [] {
       if let label = shape["button"] as? String {
         container.addSubview(Self.button(label, shape))
+        continue
+      }
+      if let kind = shape["control"] as? String {
+        container.addSubview(Self.control(kind, shape))
         continue
       }
       let effect = UIGlassEffect(style: shape["style"] as? String == "clear" ? .clear : .regular)
@@ -295,6 +302,48 @@ final class NativeGlass: NSObject, FlutterPlatformView {
     button.frame.origin = CGPoint(
       x: CGFloat(shape["x"] as? Double ?? 0), y: CGFloat(shape["y"] as? Double ?? 0))
     return button
+  }
+
+  /// A lens control at the shape's `x`, `y`: `control` = "switch" (its own
+  /// size; `on`, `tint` = onTintColor, `thumbColor`), "slider" (`width`
+  /// wide, 34 tall; `value`, `tint` = minimumTrackTintColor, `thumbColor`)
+  /// or "segmented" (`width` wide; `items`, `selected`, `tint` =
+  /// selectedSegmentTintColor); `enabled`.
+  private static func control(_ kind: String, _ shape: [String: Any]) -> UIView {
+    func color(_ key: String) -> UIColor? {
+      guard let argb = shape[key] as? Int else { return nil }
+      return UIColor(
+        red: CGFloat(argb >> 16 & 0xff) / 255, green: CGFloat(argb >> 8 & 0xff) / 255,
+        blue: CGFloat(argb & 0xff) / 255, alpha: CGFloat(argb >> 24 & 0xff) / 255)
+    }
+    func d(_ key: String) -> CGFloat { CGFloat(shape[key] as? Double ?? 0) }
+    let control: UIControl
+    switch kind {
+    case "switch":
+      let s = UISwitch()
+      s.isOn = shape["on"] as? Bool ?? false
+      s.onTintColor = color("tint")
+      s.thumbTintColor = color("thumbColor")
+      control = s
+    case "slider":
+      let s = UISlider()
+      s.value = Float(shape["value"] as? Double ?? 0)
+      s.minimumTrackTintColor = color("tint")
+      s.thumbTintColor = color("thumbColor")
+      control = s
+    default:
+      let s = UISegmentedControl(items: shape["items"] as? [String] ?? [])
+      s.selectedSegmentIndex = shape["selected"] as? Int ?? 0
+      s.selectedSegmentTintColor = color("tint")
+      control = s
+    }
+    control.isEnabled = shape["enabled"] as? Bool ?? true
+    control.sizeToFit()
+    var frame = control.frame
+    frame.origin = CGPoint(x: d("x"), y: d("y"))
+    if kind != "switch" { frame.size.width = d("width") }
+    control.frame = frame
+    return control
   }
 
   func view() -> UIView { container }

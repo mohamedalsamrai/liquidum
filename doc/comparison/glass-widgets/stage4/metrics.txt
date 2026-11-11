@@ -1,0 +1,92 @@
+Stage 4, lens controls (UISwitch, UISlider, UISegmentedControl, iOS 26:
+their thumb or selection is the liquid lens), 2026-11-11. UIKit = iOS 26.5
+simulator, iPhone 17 Pro Max, 3 px/pt. RMS in levels (0-255) between
+UIKit's and Liquidum's at the same places over the same backgrounds
+(example/lib/comparison.dart with shapes=controls: UIKit's controls in a
+platform view, example/lib/native_glass.dart; Liquidum's GlassSwitch,
+GlassSlider and GlassSegmentedControl).
+
+Method
+  UIKit's controls measured in a native catalog (simulator only): their
+  layer trees and frames, the lens's glass archived while held
+  (NSKeyedArchiver: the filters' inputs), and every frame of taps, holds
+  and drags logged; springs fitted to those frames. Liquidum's lens is the
+  tab bar's, extracted (lib/src/lens: LiquidLens, LensLift, LensFlex; the
+  bar's shader math shared in shaders/lens_material.glsl, the bar's output
+  unchanged to the level).
+
+UISwitch
+  63 x 28, radius 14. Thumb 37 x 24, inset 2, travel 22pt; an opaque white
+  capsule at rest. Lifted (touched): the "small" lens, 58 x 38.33,
+  refraction -h/2 over 0.18 h, highlight 0.25, shadow h/4 at 0.18; it
+  lifts on touch (k ~800, c ~31), even for a tap (about 0.15s), and falls
+  back with no hang. Travel: spring 452 / 44.8; a drag moves the thumb 1:1
+  (31% rubber band past an end) and toggles on release past the middle.
+  Track: off (60, 60, 67) at 0.30 light / (235, 235, 245) at 0.30 dark,
+  on systemGreen (52, 199, 89) / (48, 209, 88) or onTintColor, swept
+  critically damped (omega 7). Disabled: half alpha, as one layer.
+UISlider
+  34 tall; track 6 (radius 3) at y 14, the max track black at 0.10 / white
+  at 0.10, the min track systemBlue (0, 136, 255) / (0, 145, 255) or
+  minimumTrackTintColor. Thumb 37 x 24 at y 5, x = value x (width - 37),
+  shadow 0.14 / blur 5 / y 1; lifted 57.33 x 37 into the small lens. A
+  touch on the thumb lifts it; a touch on the track does nothing.
+UISegmentedControl
+  32 tall, radius 16, equal segments; the selection inset 2, white (dark:
+  (193, 193, 204) at 0.47) or selectedSegmentTintColor. Track (115, 115,
+  123) at 0.12 / (117, 117, 130) at 0.24. Labels SF 13pt, regular, the
+  selected one medium (UIKit's G3 grade: its glyphs are 3.5% larger than
+  Flutter's 13pt, so Liquidum draws 13.45pt), above the lens. A touch on
+  an unselected segment never lifts: on release the segment under the
+  finger is selected and the selection slides there (235 / 26). A touch on
+  the selected segment lifts it into the tab bar's lens (lifted outsets
+  12 / 8, spring 612 / 49); it follows the finger 1:1, the label under it
+  turns medium, and on release it snaps to the segment under it.
+
+Results, at rest (1-controls.jpg light, 2-dark.jpg dark appearance), RMS
+inside each control's frame, over four backgrounds in each appearance
+(/D = dark appearance):
+                           blocks blocks/D  gray gray/D white white/D  dark dark/D
+  switch on                   6.9    7.2     6.0   6.3   7.7   8.3    6.9   6.8
+  switch off                  5.0    3.5     5.3   3.7   3.2   0.3    7.8   6.5
+  switch on, red              7.6    7.7     6.8   6.9   8.1   8.5    7.8   7.6
+  switch on, yellow thumb   103.4  103.5   103.4 103.4 103.5 103.5  103.4 103.4
+  switch disabled on          2.9    3.0     3.1   3.2   4.0   4.3    3.5   3.4
+  switch disabled off         2.8    2.0     2.6   1.8   1.6   0.2    3.9   3.2
+  slider 0.4                  5.3    5.2     5.2   5.1   2.8   2.7    8.3   8.2
+  slider 0.5, red             9.3    9.0     9.1   8.8   4.9   4.8   14.1  13.8
+  slider disabled 0.6         4.4    4.0     3.9   3.9   4.2   2.1    5.5   6.4
+  slider 1, yellow thumb      3.3    3.3     3.9   3.9   4.9   5.0    5.8   5.8
+  segmented three            16.8   13.5    13.4  11.3  21.5   9.3    9.7  19.5
+  segmented two (88pt)       18.5   13.5    17.8   9.4  20.7  10.4   17.3  16.6
+  segmented three, red       20.5   17.7    17.2  17.7  27.8  13.2   12.8  24.8
+  segmented five (C)          8.0    8.1     7.1   5.2  10.2   6.9    6.0   9.9
+  segmented disabled         12.5    9.3    11.1   7.6  15.1   6.9   11.4  13.4
+  segmented second           18.9   13.0    16.3  11.1  22.4   9.0   13.9  18.8
+  The yellow-thumb switch: UISwitch ignores thumbTintColor on iOS 26.5
+  (its thumb stays white); GlassSwitch draws thumbColor (UISlider honors
+  it, row "slider 1, yellow thumb"). Segmented: the track and pill match
+  to the level; what is left is in the glyphs (UIKit's G3 grade against
+  Flutter's SF, antialiasing), on the same outline and baseline.
+
+Results, in motion (3-gestures.jpg), RMS in each control's region per
+frame (0.25s apart; the switch drag 0.1s), median and worst after aligning
+the two runs by up to 1s (0.5s) to remove the test's touch timing:
+                              median  worst  settled
+  switch, two taps               4.5   23.4      6.6
+  switch, drag to on and hold    3.7   22.9      3.7
+  slider, drag and hold         17.2   22.1     22.1
+  segmented, tap a segment      13.8   41.1     14.8
+  segmented, drag the selection 12.9   28.6     13.0
+  The worst frames are mid-motion. UIKit's lifted lens trails the finger
+  (the slider's 25pt behind while held, 11pt after release; the others
+  alike); Liquidum's stays under it (this package's rule: true 1:1), so
+  held and settled slider frames compare thumbs at different places.
+
+Open
+  - The lifted small lens: UIKit's interior magnifies the backdrop evenly
+    (the slider's track 1.6x thicker); Liquidum's refraction gathers near
+    the rim.
+  - The switch's lift spring is fitted from frames (not in UIKit's
+    settings); each control's lifted outsets are constants.
+  - Haptics are out of scope.

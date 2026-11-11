@@ -84,24 +84,10 @@ uniform sampler2D uContentAtlas;  // the tabs' content: a row per layer, a slot 
 out vec4 fragColor;
 
 #include "glass_material.glsl"
+#include "lens_material.glsl"
 
 // ---- UIKit's numbers, in the glass's own points.
 
-// Lens: the warp's displacement at full lift and the height of the lens's
-// glass displacement.
-const float kWarp = 9.0;
-const float kWarpHeight = 36.0;
-// Lens glass filter: inner refraction amount and height, SDR holding tone.
-const float kLensInner = 17.5;
-const float kLensInnerHeight = 7.0;
-const float kLensTone = 0.97;
-// Lens dispersion (aberration amount 3.68, offset 38.9, angle -15
-// degrees): the image is dispersed over seven taps along a vector that grows
-// with the position (x / half width, y / half height); red takes the three
-// taps toward one end (1:2:3), blue the mirror, green the middle five
-// (1:2:3:2:1). Mixed in fully at the edge, not at all 14pt in.
-const float kAberrationDepth = 14.0;
-const mat2 kAberration = mat2(-1.499, 2.235, 5.925, 0.706);
 // Platter glass filter: inner refraction. Its frost is in the capture
 // already, within the platter less this many pixels: the bar draws it
 // there before its other passes, a heavy blur (natively) and over it a
@@ -119,9 +105,6 @@ const float kFrostRamp = 0.72;
 // Its face color matrix (the luma mapped from a black to a white point, the
 // chroma kept, a fill mixed in; inputs in uFace) sits under the filter's
 // 0.97 SDR holding tone (kGlassTone).
-// The resting selection blurs the glass behind it again (a gaussian blur,
-// radius 2 at quarter scale), then applies a color matrix (uPill).
-const float kRestBlur = 2.22;
 // Lifted content (UIKit's displacement of the lens's content): the selected
 // tabs, seen in the lens, are lensed by two displacement maps of this amount
 // at full lift (one of height 11.2, then one of height 14 in the material),
@@ -131,8 +114,6 @@ const float kContentLens = 17.5;
 const float kContentLensHeight = 11.2;
 const float kContentMaterialHeight = 14.0;
 const float kContentGrowth = 0.16;
-// UIKit fades the lens's material in at four times the lift progress.
-const float kMaterialFade = 4.0;
 
 // ---- Lighting.
 
@@ -144,7 +125,6 @@ const float kMaterialFade = 4.0;
 // color matrix (uRim, uLensRim) pushes what is below toward a gain of its
 // chroma plus a weight of its luma and a lift.
 const float kPlatterRimCurvature = 0.7;
-const float kLensRimCurvature = 0.8;
 // Shadows (from the glass filter): outside the glass, what is below is
 // multiplied by 1 - strength * (a gaussian edge of the outline moved down);
 // the edge's sigma is 0.685 of the filter's shadow radius. (offset, sigma,
@@ -153,48 +133,11 @@ const float kLensRimCurvature = 0.8;
 // fit UIKit's within 0.3 levels; the platter's stops where its SDF does.
 const vec3 kPlatterShadow = vec3(8.0, 16.4, 0.85);
 const float kPlatterShadowReach = 39.06;
-const vec3 kLensShadow = vec3(7.0, 5.49, 0.05);
-const float kLensShadowStrength = 0.1086;
-const float kLensShadowReach = 9.21;
-// Inside, the lens's material darkens what it reads where its shadow's
-// edge is not: most just inside its top edge, and none past 15pt in (by
-// this much over what is below, wherever the shadow there would be none).
-// Fitted to UIKit's lifted lens over white, gray and a position code; a
-// shadow opacity of 0.111 in its glass filter is the likely source.
-const float kLensTopShade = 0.06;
 // The press wash (a white layer over the platter through a vibrant color
 // matrix): chroma x1.2 and a 0.05 lift, at 0.8448 when fully pressed.
 const float kWash = 0.8448;
 
-// Stages, for comparing them one at a time (GlassTabBar's debugOptics).
-const float kWarpStage = 1.0;
-const float kInnerStage = 2.0;
-const float kDispersionStage = 4.0;
-const float kPlatterStage = 8.0;
-const float kRestStage = 16.0;
-const float kContentStage = 32.0;
-const float kRimStage = 64.0;
-const float kShadowStage = 128.0;
-const float kPressStage = 256.0;
-
-bool stage(float bit) {
-  return mod(floor(uOptics.w / bit), 2.0) > 0.5;
-}
-
 // ---- Geometry, in capture pixels.
-
-// Signed distance to a capsule-cornered box (radius = half the short side).
-float capsule(vec2 p, vec4 s) {
-  return roundBox(p, s, min(s.z, s.w));
-}
-
-// Outward direction of the capsule's distance, blended by `oval` toward the
-// direction of the point in the capsule's normalized coordinates: UIKit's
-// ovalization, which this matches to within 1.3 degrees (median) over its
-// lens's displacement field.
-vec2 outward(vec2 p, vec4 s, float oval) {
-  return roundOutward(p, s, min(s.z, s.w), oval);
-}
 
 // The glass shape nearest p: the platter, or one beside it.
 vec4 glassAt(vec2 p) {
@@ -266,30 +209,6 @@ vec3 platter(vec2 p, int taps, float extra) {
 
 // ---- Lighting.
 
-// The lit rim over color c at p, for glass shaped `shape` scaled by k pixels
-// per point: c pushed toward the rim's vibrant color by the rim's alpha.
-vec3 rim(vec3 c, vec2 p, vec4 shape, float k, float curvature, vec3 matrix, float amount) {
-  float depth = max(-capsule(p, shape), 0.0) / k;
-  if (amount <= 0.0 || depth >= kRimHeight + 0.5 / k) {
-    return c;
-  }
-  return rimLight(c, depth, outward(p, shape, 0.0), k, curvature, matrix, amount);
-}
-
-// How much a glass shaped `shape` (scaled by k) shades p outside it.
-float shade(vec2 p, vec4 shape, float k, vec3 shadow, float reach) {
-  return shadeAt(capsule(p - vec2(0.0, shadow.x * k), shape) / k, shadow, reach);
-}
-
-// The lens material's darkening of what it reads at q (see kLensTopShade).
-float topShade(vec2 q) {
-  if (!stage(kShadowStage)) {
-    return 1.0;
-  }
-  float k = uPass.z * uOptics.y;
-  return 1.0 - kLensTopShade * (1.0 - shade(q, uLens, k, kLensShadow, 1e4));
-}
-
 // The fingertip glow's alpha at p: a blurred disk, as a gaussian of the same
 // peak and volume (within 2 levels while the finger is down).
 float glowAt(vec2 p) {
@@ -342,45 +261,6 @@ vec3 below(vec2 p, vec2 j1, vec2 j2, int taps) {
     c *= 1.0 - gPlatterShadow * glassShade(p, uPass.z * uOptics.z);
   }
   return c;
-}
-
-// The lens's bounds as UIKit's backdrop captures them: whole pixels, read at
-// their centers.
-vec4 lensTexels() {
-  vec2 lo = ceil(uLens.xy - uLens.zw) + 0.5;
-  vec2 hi = ceil(uLens.xy + uLens.zw) - 0.5;
-  return vec4(lo, hi);
-}
-
-// The lens material's inner refraction: from p, where it looks, pulled
-// inward near the edge. UIKit's material refracts at full strength and
-// fades in as a whole (see kMaterialFade).
-vec2 innerSource(vec2 p) {
-  if (!stage(kInnerStage)) {
-    return p;
-  }
-  float k = uPass.z * uOptics.y;
-  float depth = max(-capsule(p, uLens), 0.0);
-  return p - outward(p, uLens, uPass.w) * kLensInner * k *
-                 sag(depth, kLensInnerHeight * k);
-}
-
-// The warp: from q, where the lens looks below it, pushed outward by up to
-// 9pt at full lift, within the lens's bounds.
-vec2 warpSource(vec2 q, float lift) {
-  vec2 r = q;
-  if (stage(kWarpStage)) {
-    float k = uPass.z * uOptics.y;
-    float depth = max(-capsule(q, uLens), 0.0);
-    r += outward(q, uLens, uPass.w) * kWarp * k * lift *
-         sag(depth, kWarpHeight * k);
-  }
-  vec4 t = lensTexels();
-  return clamp(r, t.xy, t.zw);
-}
-
-vec2 lensSource(vec2 p, float lift) {
-  return warpSource(innerSource(p), lift);
 }
 
 // What the lens material has behind it at q: the warped backdrop, with the
@@ -534,10 +414,6 @@ vec3 contentInMaterial(vec2 p, float lift, vec3 under) {
 }
 
 // ---- Diagnostics.
-
-float coverage(float d, float px) {
-  return clamp(0.5 - d / px, 0.0, 1.0);
-}
 
 // A line of `width` pixels along the zero contour of d.
 float line(float d, float width) {

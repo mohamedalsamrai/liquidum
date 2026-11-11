@@ -14,7 +14,7 @@
 // `lift=<progress>` (the optics at a fixed lift), `tint=<rrggbb>` and
 // `utint=<rrggbb>` (selected and normal item colors) and `badge=<i>:<text>`
 // (a badge on tab i), `count=<n>` (n tabs, up to five), `glass=`, `indicator=` and `lens=<rrggbbaa>` (glass
-// tints).
+// tints), `dark` (the dark appearance, for Flutter's widgets and UIKit's).
 //
 // The bar and background are laid out as on the reference screen (the
 // iPhone 17 Pro Max the bars were compared on): on any other screen the bar
@@ -54,9 +54,10 @@ const double markerBandHeight = 24;
 /// Top of the clock code, measured down from the top of the reference screen.
 const double clockTop = 838;
 
-// The `appear=` and `slow=` flags.
+// The `appear=`, `slow=` and `dark` flags.
 List<double>? _appear;
 double _slow = 1;
+bool _dark = false;
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -78,6 +79,7 @@ Future<void> main() async {
           .firstOrNull ??
       1;
   timeDilation = _slow;
+  _dark = flags.contains('dark');
   // Tells a capture script the page is up: 2s after the first frame.
   final ready = File('${Directory.systemTemp.path}/ready.txt');
   if (ready.existsSync()) {
@@ -408,9 +410,17 @@ class _ComparisonAppState extends State<ComparisonApp>
 
   @override
   Widget build(BuildContext context) {
-    return CupertinoApp(
-      debugShowCheckedModeBanner: false,
-      home: Builder(builder: _buildHome),
+    return MediaQuery(
+      data: MediaQueryData.fromView(View.of(context)).copyWith(
+        platformBrightness: _dark ? Brightness.dark : Brightness.light,
+      ),
+      child: CupertinoApp(
+        debugShowCheckedModeBanner: false,
+        theme: CupertinoThemeData(
+          brightness: _dark ? Brightness.dark : Brightness.light,
+        ),
+        home: Builder(builder: _buildHome),
+      ),
     );
   }
 
@@ -457,6 +467,7 @@ class _ComparisonAppState extends State<ComparisonApp>
                     appearAt: _appear?[0],
                     leaveAt: _appear?[1],
                     speed: 1 / _slow,
+                    dark: _dark,
                   )
                 : _LiquidumShapes(shapes: shapes),
           )
@@ -720,6 +731,57 @@ class _Background extends CustomPainter {
       oldDelegate.kind != kind || oldDelegate.origin != origin;
 }
 
+/// One of Liquidum's lens controls for a control spec, keeping its own
+/// state so the scripted gestures move it.
+class _LiquidumControl extends StatefulWidget {
+  const _LiquidumControl({required this.spec});
+
+  final GlassSpec spec;
+
+  @override
+  State<_LiquidumControl> createState() => _LiquidumControlState();
+}
+
+class _LiquidumControlState extends State<_LiquidumControl> {
+  late bool _on = widget.spec.on;
+  late double _value = widget.spec.value;
+  late int _selected = widget.spec.selected;
+
+  @override
+  Widget build(BuildContext context) {
+    final GlassSpec s = widget.spec;
+    switch (s.control) {
+      case 'switch':
+        return GlassSwitch(
+          value: _on,
+          onChanged: s.enabled ? (bool v) => setState(() => _on = v) : null,
+          activeColor: s.tint,
+          thumbColor: s.thumbColor,
+        );
+      case 'slider':
+        return GlassSlider(
+          value: _value,
+          onChanged: s.enabled
+              ? (double v) => setState(() => _value = v)
+              : null,
+          activeColor: s.tint,
+          thumbColor: s.thumbColor,
+        );
+      default:
+        return GlassSegmentedControl<int>(
+          children: <int, Widget>{
+            for (final (int i, String item) in s.items.indexed) i: Text(item),
+          },
+          groupValue: _selected,
+          tint: s.tint,
+          onValueChanged: s.enabled
+              ? (int v) => setState(() => _selected = v)
+              : null,
+        );
+    }
+  }
+}
+
 /// Liquidum's glass for [shapes]: each group in a [GlassGroup] of its own
 /// (as UIKit's containers), the rest alone. Appearing glass materializes and
 /// dematerializes at the `appear=` times.
@@ -762,7 +824,14 @@ class _LiquidumShapesState extends State<_LiquidumShapes> {
   @override
   Widget build(BuildContext context) {
     final List<GlassSpec> shapes = widget.shapes;
-    Widget glass(GlassSpec s) => s.button == null
+    Widget glass(GlassSpec s) => s.control != null
+        ? Positioned(
+            left: s.rect.left,
+            top: s.rect.top,
+            width: s.control == 'switch' ? null : s.rect.width,
+            child: _LiquidumControl(spec: s),
+          )
+        : s.button == null
         ? Positioned.fromRect(
             rect: s.rect,
             child: Glass(

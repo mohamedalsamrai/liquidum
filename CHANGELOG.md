@@ -26,6 +26,12 @@
   (`UIGlassEffect.isInteractive`): pressed, the glass swells by UIKit's
   points for its size, lightens and glows under the finger, stretches
   toward a drag and springs back, on UIKit's springs.
+* New: `GlassSwitch`, `GlassSlider` and `GlassSegmentedControl`, UIKit's
+  iOS 26 controls whose thumb or selection is the tab bar's liquid lens:
+  a 63 x 28 switch, a 34pt slider, a 32pt segmented control, with UIKit's
+  measured geometry, colors, springs and lens for each (the switch's and
+  slider's thumbs lift into UIKit's small lens, the selection into the
+  bar's), compared with UIKit at rest and in motion.
 
 ## 0.2.2
 

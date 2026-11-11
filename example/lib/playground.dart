@@ -9,7 +9,9 @@ import 'tabs.dart';
 
 // A playground for the bar: its colors and appearance changed live, the
 // search tab, the bottom accessory and minimizing turned on and off, and
-// Apple's own bar (on iOS) over the same pages, to compare them.
+// Apple's own bar (on iOS) over the same pages, to compare them. Its Glass
+// tab tries Liquidum's other glass over the same content: glass buttons,
+// interactive glass and a glass group.
 // Run with `flutter run -t lib/playground.dart`.
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -35,6 +37,10 @@ class _Options {
     this.accessory = false,
     this.minimizeOnScroll = false,
     this.reduceTransparency = false,
+    this.buttonStyle = GlassStyle.regular,
+    this.buttonSize = GlassButtonSize.medium,
+    this.buttonTint,
+    this.buttonsEnabled = true,
   });
 
   final Color? selectedColor;
@@ -51,6 +57,12 @@ class _Options {
   final bool minimizeOnScroll;
   final bool reduceTransparency;
 
+  // The Glass tab's buttons.
+  final GlassStyle buttonStyle;
+  final GlassButtonSize buttonSize;
+  final Color? buttonTint;
+  final bool buttonsEnabled;
+
   _Options copyWith({
     Color? Function()? selectedColor,
     Color? Function()? unselectedColor,
@@ -65,6 +77,10 @@ class _Options {
     bool? accessory,
     bool? minimizeOnScroll,
     bool? reduceTransparency,
+    GlassStyle? buttonStyle,
+    GlassButtonSize? buttonSize,
+    Color? Function()? buttonTint,
+    bool? buttonsEnabled,
   }) => _Options(
     selectedColor: selectedColor == null ? this.selectedColor : selectedColor(),
     unselectedColor: unselectedColor == null
@@ -83,6 +99,10 @@ class _Options {
     accessory: accessory ?? this.accessory,
     minimizeOnScroll: minimizeOnScroll ?? this.minimizeOnScroll,
     reduceTransparency: reduceTransparency ?? this.reduceTransparency,
+    buttonStyle: buttonStyle ?? this.buttonStyle,
+    buttonSize: buttonSize ?? this.buttonSize,
+    buttonTint: buttonTint == null ? this.buttonTint : buttonTint(),
+    buttonsEnabled: buttonsEnabled ?? this.buttonsEnabled,
   );
 }
 
@@ -96,7 +116,10 @@ class Playground extends StatefulWidget {
 class _PlaygroundState extends State<Playground> {
   final GlassTabController _tabs = GlassTabController();
 
-  /// The last tab other than the search tab.
+  /// The Glass tab's index, after the feed tabs (Liquidum's bar only).
+  static final int _glassTab = tabs.length;
+
+  /// The last feed tab, to go back to when the search or Glass tab goes.
   int _lastTab = 0;
 
   /// The search tab's field.
@@ -135,7 +158,7 @@ class _PlaygroundState extends State<Playground> {
                 setState(() => _options = options);
                 setSheetState(() {});
                 if (!options.search) {
-                  _offSearch();
+                  _offExtras();
                 }
               },
             ),
@@ -199,6 +222,14 @@ class _PlaygroundState extends State<Playground> {
               badge: _badge(i),
               page: Feed(title: tabs[i].label),
             ),
+          GlassTab.custom(
+            icon: const SfSymbol(
+              'drop.fill',
+              fallback: CupertinoIcons.drop_fill,
+            ),
+            label: 'Glass',
+            page: _GlassPage(options: o),
+          ),
           if (o.search)
             GlassTab.search(
               controller: _query,
@@ -233,9 +264,9 @@ class _PlaygroundState extends State<Playground> {
                 child: CupertinoSlidingSegmentedControl<bool>(
                   groupValue: _native,
                   onValueChanged: (bool? native) {
-                    // Apple's bar here has no search tab.
+                    // Apple's bar here has no search or Glass tab.
                     if (native ?? false) {
-                      _offSearch();
+                      _offExtras(all: true);
                     }
                     setState(() => _native = native ?? false);
                   },
@@ -251,9 +282,10 @@ class _PlaygroundState extends State<Playground> {
     );
   }
 
-  // Back from the search tab to the tab before it, when it goes.
-  void _offSearch() {
-    if (_tabs.index >= tabs.length) {
+  // Back from the search tab (or, with [all], the Glass tab too) to the
+  // feed tab before it, when it goes.
+  void _offExtras({bool all = false}) {
+    if (_tabs.index > _glassTab || (all && _tabs.index == _glassTab)) {
       _tabs.index = _lastTab;
     }
   }
@@ -424,6 +456,39 @@ class _OptionsSheet extends StatelessWidget {
             value: o.reduceTransparency,
             onChanged: (bool v) => onChanged(o.copyWith(reduceTransparency: v)),
           ),
+          const _Heading('Glass buttons (the Glass tab)'),
+          CupertinoSlidingSegmentedControl<GlassStyle>(
+            groupValue: o.buttonStyle,
+            onValueChanged: (GlassStyle? v) =>
+                onChanged(o.copyWith(buttonStyle: v)),
+            children: const <GlassStyle, Widget>{
+              GlassStyle.regular: Text('Regular'),
+              GlassStyle.clear: Text('Clear'),
+            },
+          ),
+          const SizedBox(height: 10),
+          CupertinoSlidingSegmentedControl<GlassButtonSize>(
+            groupValue: o.buttonSize,
+            onValueChanged: (GlassButtonSize? v) =>
+                onChanged(o.copyWith(buttonSize: v)),
+            children: const <GlassButtonSize, Widget>{
+              GlassButtonSize.mini: Text('Mini'),
+              GlassButtonSize.small: Text('Small'),
+              GlassButtonSize.medium: Text('Medium'),
+              GlassButtonSize.large: Text('Large'),
+            },
+          ),
+          const _Heading('Prominent fill'),
+          _Swatches(
+            colors: _colors,
+            value: o.buttonTint,
+            onChanged: (Color? c) => onChanged(o.copyWith(buttonTint: () => c)),
+          ),
+          _Switch(
+            label: 'Enabled',
+            value: o.buttonsEnabled,
+            onChanged: (bool v) => onChanged(o.copyWith(buttonsEnabled: v)),
+          ),
           Padding(
             padding: const EdgeInsets.only(top: 10),
             child: Text(
@@ -437,6 +502,173 @@ class _OptionsSheet extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Liquidum's other glass over the feed: UIKit's glass buttons, glass that
+/// responds to a finger, and a glass group whose glass melts together.
+class _GlassPage extends StatefulWidget {
+  const _GlassPage({required this.options});
+
+  final _Options options;
+
+  @override
+  State<_GlassPage> createState() => _GlassPageState();
+}
+
+class _GlassPageState extends State<_GlassPage> {
+  // The glass group's extra glass, shown and hidden by its button.
+  bool _more = false;
+  int _taps = 0;
+  // The lens controls' values.
+  bool _on = true;
+  double _amount = 0.4;
+  String _segment = 'One';
+
+  @override
+  Widget build(BuildContext context) {
+    final _Options o = widget.options;
+    final VoidCallback? tap = o.buttonsEnabled
+        ? () => setState(() => _taps++)
+        : null;
+    GlassButton button({
+      String? label,
+      IconData? icon,
+      bool prominent = false,
+    }) => GlassButton(
+      label: label,
+      icon: icon,
+      prominent: prominent,
+      style: o.buttonStyle,
+      size: o.buttonSize,
+      tint: o.buttonTint,
+      onPressed: tap,
+    );
+    final TextStyle caption = TextStyle(
+      fontSize: 13,
+      color: CupertinoColors.label.resolveFrom(context),
+    );
+    return Stack(
+      children: <Widget>[
+        // The content the glass floats over: scroll it under the glass.
+        const Positioned.fill(child: Feed(title: 'Glass')),
+        Positioned(
+          left: 16,
+          right: 16,
+          top: MediaQuery.paddingOf(context).top + 120,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: <Widget>[
+                  button(label: 'Button'),
+                  button(icon: CupertinoIcons.add),
+                  button(label: 'Add', icon: CupertinoIcons.add),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: <Widget>[
+                  button(label: 'Prominent', prominent: true),
+                  button(icon: CupertinoIcons.heart_fill, prominent: true),
+                  Text('Taps: $_taps', style: caption),
+                ],
+              ),
+              const SizedBox(height: 24),
+              // Any glass can respond to a finger: press it, drag out of it.
+              Glass(
+                interactive: true,
+                radius: 28,
+                child: SizedBox(
+                  height: 110,
+                  width: double.infinity,
+                  child: Center(
+                    child: Text(
+                      'Interactive glass: press and drag',
+                      style: caption,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+              // The lens controls: their thumb and selection are the lens.
+              Row(
+                children: <Widget>[
+                  GlassSwitch(
+                    value: _on,
+                    activeColor: o.buttonTint,
+                    onChanged: o.buttonsEnabled
+                        ? (bool v) => setState(() => _on = v)
+                        : null,
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: GlassSlider(
+                      value: _amount,
+                      activeColor: o.buttonTint,
+                      onChanged: o.buttonsEnabled
+                          ? (double v) => setState(() => _amount = v)
+                          : null,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: GlassSegmentedControl<String>(
+                  children: const <String, Widget>{
+                    'One': Text('One'),
+                    'Two': Text('Two'),
+                    'Three': Text('Three'),
+                  },
+                  groupValue: _segment,
+                  onValueChanged: o.buttonsEnabled
+                      ? (String v) => setState(() => _segment = v)
+                      : null,
+                ),
+              ),
+              const SizedBox(height: 24),
+              // A glass group: glass within its spacing melts together, and
+              // glass appearing in it grows out of its neighbors.
+              GlassGroup(
+                spacing: 20,
+                child: Row(
+                  children: <Widget>[
+                    GlassButton(
+                      icon: _more
+                          ? CupertinoIcons.xmark
+                          : CupertinoIcons.ellipsis,
+                      onPressed: () => setState(() => _more = !_more),
+                    ),
+                    for (final IconData icon in const <IconData>[
+                      CupertinoIcons.share,
+                      CupertinoIcons.bookmark,
+                      CupertinoIcons.trash,
+                    ]) ...<Widget>[
+                      const SizedBox(width: 6),
+                      Glass(
+                        visible: _more,
+                        child: SizedBox.square(
+                          dimension: 34.33,
+                          child: _more ? Icon(icon, size: 18) : null,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

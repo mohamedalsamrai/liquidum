@@ -44,3 +44,4 @@ flutter:
     - shaders/field.frag
     - shaders/backdrop.frag
     - shaders/vibrant.frag
+    - shaders/lens.frag

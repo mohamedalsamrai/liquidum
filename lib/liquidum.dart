@@ -3,6 +3,9 @@ library;
 
 export 'src/glass.dart'
     show Glass, GlassButton, GlassButtonSize, GlassGroup, GlassStyle;
+export 'src/controls/segmented.dart' show GlassSegmentedControl;
+export 'src/controls/slider.dart' show GlassSlider;
+export 'src/controls/switch.dart' show GlassSwitch;
 export 'src/glass_backdrop.dart' show GlassBackdrop, GlassBrightness;
 export 'src/tab_bar/decoration.dart' show GlassDecoration, GlassFill;
 export 'src/tab_bar/item.dart' show GlassTabItem;

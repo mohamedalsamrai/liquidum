@@ -16,6 +16,7 @@ import 'appearance.dart';
 import 'debug.dart';
 import 'glyphs.dart';
 import 'decoration.dart';
+import 'decoration_paint.dart';
 import 'item.dart';
 import 'minimize.dart';
 import 'physics.dart';
@@ -1222,38 +1223,6 @@ class _RenderGlassTabBar extends RenderBox
     }
   }
 
-  GlassTint _tint(Color? color, GlassFill fill) {
-    final Color? resolved = color == null
-        ? null
-        : GlassTabBarStyle.resolve(color, dark: _contentDark);
-    return fill == GlassFill.paint
-        ? GlassTint.paint(resolved)
-        : GlassTint(resolved, darkAppearance: _contentDark);
-  }
-
-  // A decoration's tint over [shape] (capture pixels): at its gradient's
-  // start and end, the gradient's axis, and whether it is painted rather
-  // than tinted; a color is both ends at once.
-  (GlassTint, GlassTint, Offset, Offset, bool) _decorationTint(
-    GlassDecoration decoration,
-    Rect shape,
-  ) {
-    final GlassFill fill = decoration.fill;
-    final bool paint = fill == GlassFill.paint;
-    final LinearGradient? gradient = decoration.gradient;
-    if (gradient == null || gradient.colors.isEmpty) {
-      final GlassTint t = _tint(decoration.color, fill);
-      return (t, t, Offset.zero, Offset.zero, paint);
-    }
-    return (
-      _tint(gradient.colors.first, fill),
-      _tint(gradient.colors.last, fill),
-      gradient.begin.resolve(_textDirection).withinRect(shape),
-      gradient.end.resolve(_textDirection).withinRect(shape),
-      paint,
-    );
-  }
-
   ui.FragmentShader? _fieldShader;
 
   // One shader per pass: a shader image filter reads its uniforms only when
@@ -1866,9 +1835,24 @@ class _RenderGlassTabBar extends RenderBox
     final (double, double, double) lensRim = appearance.lensRim;
     final (double, double, double) pill = appearance.pill;
     final (double, double) symbol = appearance.symbol;
-    final glassTint = _decorationTint(_glass, platterPixels);
-    final restTint = _decorationTint(_indicator, lensPixels);
-    final lensTint = _decorationTint(_lens, lensPixels);
+    final glassTint = decorationTint(
+      _glass,
+      platterPixels,
+      textDirection: _textDirection,
+      dark: _contentDark,
+    );
+    final restTint = decorationTint(
+      _indicator,
+      lensPixels,
+      textDirection: _textDirection,
+      dark: _contentDark,
+    );
+    final lensTint = decorationTint(
+      _lens,
+      lensPixels,
+      textDirection: _textDirection,
+      dark: _contentDark,
+    );
 
     ui.ImageFilter passFilter(int pass) {
       final _BackdropUniforms u = _passes[pass]
@@ -1993,7 +1977,7 @@ class _RenderGlassTabBar extends RenderBox
     // The glass's drop shadows go under it, into the backdrop it captures.
     if (!diagnostic) {
       for (final RRect shape in glassShapes) {
-        _paintShadows(canvas(), shape, _glass.shadows, 1);
+        paintGlassShadows(canvas(), shape, _glass.shadows, 1);
       }
     }
 
@@ -2034,10 +2018,10 @@ class _RenderGlassTabBar extends RenderBox
     // whose shader sees it through its optics.
     if (!diagnostic) {
       for (final RRect shape in glassShapes) {
-        _paintInnerShadows(canvas(), shape, _glass.innerShadows, 1);
+        paintGlassInnerShadows(canvas(), shape, _glass.innerShadows, 1);
       }
-      _paintShadows(canvas(), lensShape, _indicator.shadows, resting);
-      _paintShadows(canvas(), lensShape, _lens.shadows, lifted);
+      paintGlassShadows(canvas(), lensShape, _indicator.shadows, resting);
+      paintGlassShadows(canvas(), lensShape, _lens.shadows, lifted);
     }
     _paintGlow(context, offset, platter);
 
@@ -2069,8 +2053,13 @@ class _RenderGlassTabBar extends RenderBox
     );
 
     if (!diagnostic) {
-      _paintInnerShadows(canvas(), lensShape, _indicator.innerShadows, resting);
-      _paintInnerShadows(canvas(), lensShape, _lens.innerShadows, lifted);
+      paintGlassInnerShadows(
+        canvas(),
+        lensShape,
+        _indicator.innerShadows,
+        resting,
+      );
+      paintGlassInnerShadows(canvas(), lensShape, _lens.innerShadows, lifted);
       _paintExtras(context, offset, shapes);
       _inspectorClip.layer = null;
       _inspectorPass.layer = null;
@@ -2361,78 +2350,6 @@ class _RenderGlassTabBar extends RenderBox
     _frostClip.layer = null;
     _frostHeavy.layer = null;
     _frostLight.layer = null;
-  }
-
-  static Paint _shadowPaint(BoxShadow shadow, double opacity) {
-    final paint = Paint()
-      ..color = shadow.color.withValues(alpha: shadow.color.a * opacity);
-    if (shadow.blurSigma > 0) {
-      paint.maskFilter = MaskFilter.blur(BlurStyle.normal, shadow.blurSigma);
-    }
-    return paint;
-  }
-
-  // How far [shadow] reaches past its shape.
-  static double _reach(BoxShadow shadow) =>
-      2 * shadow.blurRadius +
-      shadow.spreadRadius.abs() +
-      shadow.offset.distance +
-      2;
-
-  // Drop shadows of [shape], around it only: the glass shows what is under
-  // it, a shadow there included.
-  static void _paintShadows(
-    Canvas canvas,
-    RRect shape,
-    List<BoxShadow>? shadows,
-    double opacity,
-  ) {
-    if (shadows == null || shadows.isEmpty || opacity <= 0) {
-      return;
-    }
-    final double reach = shadows.map(_reach).reduce(math.max);
-    canvas
-      ..save()
-      ..clipPath(
-        Path()
-          ..fillType = PathFillType.evenOdd
-          ..addRect(shape.outerRect.inflate(reach))
-          ..addRRect(shape),
-      );
-    for (final BoxShadow shadow in shadows) {
-      canvas.drawRRect(
-        shape.inflate(shadow.spreadRadius).shift(shadow.offset),
-        _shadowPaint(shadow, opacity),
-      );
-    }
-    canvas.restore();
-  }
-
-  // Shadows cast inward from [shape]'s edge, over it, as inset shadows: the
-  // shape's outside, its edge moved by the offset and in by the spread,
-  // blurred into it.
-  static void _paintInnerShadows(
-    Canvas canvas,
-    RRect shape,
-    List<BoxShadow>? shadows,
-    double opacity,
-  ) {
-    if (shadows == null || shadows.isEmpty || opacity <= 0) {
-      return;
-    }
-    canvas
-      ..save()
-      ..clipRRect(shape);
-    for (final BoxShadow shadow in shadows) {
-      canvas.drawPath(
-        Path()
-          ..fillType = PathFillType.evenOdd
-          ..addRect(shape.outerRect.inflate(_reach(shadow)))
-          ..addRRect(shape.deflate(shadow.spreadRadius).shift(shadow.offset)),
-        _shadowPaint(shadow, opacity),
-      );
-    }
-    canvas.restore();
   }
 
   // How far the platter's shadow reaches past it: 39pt past its outline
