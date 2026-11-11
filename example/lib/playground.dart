@@ -636,6 +636,35 @@ class _GlassPageState extends State<_GlassPage> {
                 ),
               ),
               const SizedBox(height: 24),
+              // Pages with UIKit's bars: a navigation bar, a toolbar or a
+              // search field, over content that scrolls under them.
+              Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                children: <Widget>[
+                  GlassButton(
+                    label: 'Page with bars',
+                    onPressed: () =>
+                        Navigator.of(context, rootNavigator: true).push(
+                          CupertinoPageRoute<void>(
+                            builder: (BuildContext context) =>
+                                const _BarsPage(),
+                          ),
+                        ),
+                  ),
+                  GlassButton(
+                    label: 'Page with search',
+                    onPressed: () =>
+                        Navigator.of(context, rootNavigator: true).push(
+                          CupertinoPageRoute<void>(
+                            builder: (BuildContext context) =>
+                                const _BarsPage(search: true),
+                          ),
+                        ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 24),
               // A glass group: glass within its spacing melts together, and
               // glass appearing in it grows out of its neighbors.
               GlassGroup(
@@ -669,6 +698,95 @@ class _GlassPageState extends State<_GlassPage> {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// A page with UIKit's bars over a colorful list: a large title, a back
+/// button, actions and a toolbar, or a search field.
+class _BarsPage extends StatefulWidget {
+  const _BarsPage({this.search = false});
+
+  final bool search;
+
+  @override
+  State<_BarsPage> createState() => _BarsPageState();
+}
+
+class _BarsPageState extends State<_BarsPage> {
+  String _query = '';
+  int _added = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    final List<int> rows = <int>[
+      for (var i = 0; i < 40 + _added; i++)
+        if ('Album ${i + 1}'.toLowerCase().contains(_query.toLowerCase())) i,
+    ];
+    return GlassPage(
+      title: widget.search ? 'Search' : 'Albums',
+      largeTitle: true,
+      onBack: () => Navigator.of(context).pop(),
+      actions: widget.search
+          ? const <GlassBarItem>[]
+          : <GlassBarItem>[
+              GlassBarItem(icon: CupertinoIcons.ellipsis, onPressed: () {}),
+              GlassBarItem(
+                icon: CupertinoIcons.add,
+                onPressed: () => setState(() => _added++),
+              ),
+            ],
+      toolbar: widget.search
+          ? const <GlassBarItem>[]
+          : <GlassBarItem>[
+              GlassBarItem(icon: CupertinoIcons.trash, onPressed: () {}),
+              const GlassBarItem.space(),
+              GlassBarItem(icon: CupertinoIcons.share, onPressed: () {}),
+              const GlassBarItem.space(),
+              GlassBarItem(
+                label: 'Done',
+                prominent: true,
+                onPressed: () => Navigator.of(context).pop(),
+              ),
+            ],
+      onSearchChanged: widget.search
+          ? (String q) => setState(() => _query = q)
+          : null,
+      child: ListView.builder(
+        itemCount: rows.length,
+        itemBuilder: (BuildContext context, int index) {
+          final int i = rows[index];
+          return Container(
+            height: 64,
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Row(
+              children: <Widget>[
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(8),
+                    color: HSVColor.fromAHSV(
+                      1,
+                      (i * 47) % 360 * 1.0,
+                      0.6,
+                      0.95,
+                    ).toColor(),
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Text(
+                  'Album ${i + 1}',
+                  style: TextStyle(
+                    fontSize: 17,
+                    color: CupertinoColors.label.resolveFrom(context),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
     );
   }
 }

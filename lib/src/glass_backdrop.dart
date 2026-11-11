@@ -78,6 +78,8 @@ class GlassBackdropState extends State<GlassBackdrop> {
     if (object is! _RenderBackdropBoundary || !object.attached) {
       return null;
     }
+    // Where the backdrop is, read now: it may be gone once the snapshot is.
+    final Offset origin = object.localToGlobal(Offset.zero);
     final ui.Image image = await object.snapshot(
       Offset.zero & object.size,
       _ratio,
@@ -87,7 +89,7 @@ class GlassBackdropState extends State<GlassBackdrop> {
       if (data == null) {
         return null;
       }
-      final Rect local = rect.shift(-object.localToGlobal(Offset.zero));
+      final Rect local = rect.shift(-origin);
       final int x0 = (local.left * _ratio).floor().clamp(0, image.width);
       final int x1 = (local.right * _ratio).ceil().clamp(0, image.width);
       final int y0 = (local.top * _ratio).floor().clamp(0, image.height);

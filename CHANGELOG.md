@@ -32,6 +32,14 @@
   measured geometry, colors, springs and lens for each (the switch's and
   slider's thumbs lift into UIKit's small lens, the selection into the
   bar's), compared with UIKit at rest and in motion.
+* New: `GlassPage` and `GlassBarItem`, UIKit's iOS 26 bars over a page: a
+  navigation bar of glass (a title, a back button, leading and trailing
+  items, a large title that collapses into the bar) and a toolbar or a
+  search field at the bottom, with UIKit's metrics, grouping, presses and
+  its scroll-edge effect where content scrolls under them, light and dark.
+* Fix: glass in a `GlassGroup` drew its content (a `GlassButton`'s label)
+  in the system's look instead of the group's when the group turned light
+  or dark with what is behind it.
 
 ## 0.2.2
 

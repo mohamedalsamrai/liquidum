@@ -443,6 +443,29 @@ GlassSegmentedControl<int>(children: {0: Text('Day'), 1: Text('Week')}, groupVal
 
   Measured against UIKit's controls at rest and frame by frame: see
   [`doc/comparison/glass-widgets/stage4`](doc/comparison/glass-widgets/stage4).
+- **`GlassPage`** puts UIKit's bars over a page: a navigation bar of glass
+  at the top and a toolbar (or a search field) at the bottom, over content
+  that scrolls under them, softened there by UIKit's scroll-edge effect.
+  Icons side by side share one capsule; a label or a prominent item gets
+  its own.
+
+```dart
+GlassPage(
+  title: 'Albums',
+  largeTitle: true,
+  onBack: () => Navigator.pop(context),
+  actions: [GlassBarItem(icon: CupertinoIcons.add, onPressed: add)],
+  toolbar: [
+    GlassBarItem(icon: CupertinoIcons.trash, onPressed: delete),
+    GlassBarItem.space(),
+    GlassBarItem(label: 'Done', prominent: true, onPressed: done),
+  ],
+  child: ListView(children: rows),
+)
+```
+
+  Measured against UIKit's bars: see
+  [`doc/comparison/glass-widgets/stage5`](doc/comparison/glass-widgets/stage5).
 
 ## Examples
 
@@ -454,6 +477,7 @@ The [`example`](example) folder holds four apps. Run them from it.
 | `flutter run -t lib/playground.dart` | change colors, badges, appearance and direction live, and turn on the search tab, the accessory, minimizing on scroll and Reduce Transparency. On iOS, a switch swaps in Apple's own tab bar over the same content to compare them |
 | `flutter run -t lib/features.dart` | a search tab that opens into a field, an accessory, and the bar minimizing as you scroll |
 | `flutter run -t lib/comparison.dart` | the harness used to compare with UIKit |
+| `flutter run -t lib/bars_comparison.dart` | the harness used to compare the bars with UIKit |
 
 Judge motion in profile or release mode: debug builds are much slower.
 

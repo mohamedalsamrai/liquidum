@@ -45,3 +45,4 @@ flutter:
     - shaders/backdrop.frag
     - shaders/vibrant.frag
     - shaders/lens.frag
+    - shaders/scroll_edge.frag

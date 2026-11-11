@@ -1,0 +1,99 @@
+Stage 5, bars (UINavigationBar's items, UIToolbar's items, the bottom
+search field, the scroll-edge effect, large titles), 2026-11-11. UIKit = iOS
+26.5 simulator, iPhone 17 Pro Max (440 x 956, status bar 62, home indicator
+34), 3 px/pt. RMS in levels (0-255) between UIKit's screen and Liquidum's,
+per region: UIKit's bars from a UINavigationController page over a 44pt
+pattern (the research catalog), Liquidum's from a GlassPage set up the same
+way over the same pattern (example/lib/bars_comparison.dart).
+
+Method
+  UIKit's bars measured in a native catalog (simulator only): their layer
+  trees and views (frames, fonts, colors), the glass archived, every frame
+  of presses logged, and the scroll-edge effect's layers dumped with their
+  filters' inputs; then screenshots over flat grays, stripes and the
+  pattern, at set scroll offsets, light and dark.
+
+UIKit's bars
+  Navigation bar: 54pt under the status bar. Its glass: capsules 44pt tall
+  at its top, 20pt from the screen's sides and 12pt apart, in one glass
+  group (Stage 1's glass of that size). Items 36pt tall, 4pt in, 16pt
+  apart: an icon its symbol's box plus 14, a label itself plus 24. Icons
+  side by side share a capsule; a label or a prominent item has its own; a
+  fixed space splits a group. A lone icon, and the back button, are 44pt
+  circles. Title SF Semibold 17, centered; items SF Medium 17 (prominent:
+  Semibold, white on the tint). Glyphs vibrant, as Stage 3's labels.
+  Large title: SF Bold 34 (SF Pro Display) at x 20, in a 52pt row under the
+  bar; it scrolls with the content and collapses into the bar's title once
+  scrolled its row's height (the inline title rises 15pt into place).
+  Toolbar: glass 48pt tall, 28pt from the sides and the bottom. A lone icon
+  is a 48pt circle; a label its width plus 32. Items without spaces share
+  a capsule (slots of the box plus 26, 4pt apart). With flexible spaces the
+  first group sits at the start, the last at the end, one between in the
+  middle.
+  Bottom search field (a search controller on the root page): a 384 x 48
+  capsule in the toolbar's place, the magnifier (label color, 2pt strokes)
+  13pt into the field and the placeholder 41.67pt into it. Tapped: the
+  navigation bar steps aside and the field shrinks for a 48pt close circle
+  12pt away.
+  Presses: Stage 3's flex interaction on each capsule (a 44 circle swells
+  to 60, a 99 x 44 group to 115 x 51, whatever item is pressed). The
+  pressed item fades: to 0.1 of its contrast in the navigation bar, about
+  0.6 in the toolbar; the others on the glass keep about 0.87.
+  Scroll-edge effect: where a scroll view's content is under a bar (at the
+  top once scrolled; at the bottom while there is more below). A soft step
+  at the bar's glass (the navigation bar's bottom, 10pt into the toolbar):
+  m = Phi(d / 18pt). Under it a Gaussian blur of up to 1.72pt (through
+  1.25 m - 0.25; not at the bottom, and not while a large title shows),
+  and either black at 0.25 or a wash toward the page's background. With
+  the system light: black over content darker than a mean luma of 0.675,
+  else a wash of 0.85 (0.8 fitted). With it dark: a wash of 0.85, 0.6 or
+  0.3 as the content is darker or lighter (steps near 0.35 and 0.85). The
+  title turns white with the black; the status bar follows.
+
+Results (1-bars.jpg, 2-scroll-edge.jpg, 3-large-title.jpg,
+4-press-search.jpg, 5-items.jpg): RMS per region. "glass" lists each glass
+shape (grown by 2pt) in UIKit's order; bands: the navigation bar's (62 to
+116pt, off the glass), under it (116 to 180), above the toolbar (815 to
+870), the toolbar's (870 to 940, off the glass).
+                         glass              title  nav   under  above  toolbar
+  pushed page, blocks    9 23 20 19 12       31    8.4   0.2    0.2    0.4
+  root page, search      18 14               28    5.7   0.2    0.2    0.6
+  pushed page, white     9 25 22 23 11       42   11.4   0.3    0.1    0.5
+  dark, blocks           9 18 14 14 10       17    4.6   0.2    0.1    0.4
+  scrolled, blocks       11 24 22 20 12      22    6.4   0.6    1.7    1.9
+  scrolled, gray 0.6     8 23 18 19 13       23    6.2   0.5    1.3    1.8
+  scrolled, gray 0.7     8 25 21 22 11       39   10.5   0.5    2.3    2.6
+  scrolled, stripes      15 26 20 21 14      30   19.3   5.5    1.7    2.0
+  dark scrolled, 0.2     12 25 22 23 11      40   10.8   0.2    1.5    2.0
+  dark scrolled, 0.6     14 22 23 23 11      30    8.2   0.4    3.1    4.1
+  dark scrolled, blocks  29 34 32 36 11      29    8.1   0.5    3.9    4.9
+  dark scrolled, white   9 25 30 30 20       12    3.6   0.4    1.0   36.3
+  large title            21 19               -     0.3  10.3    1.7    2.0
+  large title, 30pt      20 35               26    8.3   4.8    7.6   83.3
+  collapsed              21 18               -     7.7   0.7    1.7    2.0
+  Item layouts (5-items.jpg), every capsule and circle on UIKit's outline:
+  a leading item and labels 9 47 18 21 20; prominent 9 11 12 12; a split
+  group and a toolbar group 9 27 19 46; an icon beside a label 9 28 18 20
+  (and "Select All" 47: the catalog drew "Select_All").
+  What the glass errors are: inside the capsules, off the glyphs, the glass
+  is within 0.5 to 2 levels at rest (1 to 12 at the edge); the rest is the
+  glyphs (16 to 108): the comparison draws CupertinoIcons, not SF symbols
+  (their boxes and ink within about 1pt and 5%), and 17pt text rasterizes
+  a pixel taller than UIKit's (the titles' ink boxes within 0.33pt). The
+  back chevron, the magnifier and the close cross are Liquidum's own and
+  match UIKit's (ink within 0.33pt and 5%); the large title's ink box is
+  within 0.33pt.
+  Held press on "+" (4-press-search.jpg): the pressed glyph's darkest
+  level 217 (UIKit 218), the other item's 49 (56); a held toolbar circle's
+  107 (115).
+
+Open
+  - Dark glass over dimmed content is a little grayer than UIKit's (dark
+    scrolled blocks, 29 to 36): Stage 1's dark look.
+  - With a large title at 30pt UIKit washed the bottom light over dark
+    content (83); at 0 and once collapsed it does not, as Liquidum.
+  - Dark mode over white: UIKit's bottom wash was 0.1 where its top's was
+    0.3 (36).
+  - Icons are the app's IconData; UIKit's are SF symbols.
+  - The effects' fade timings, the search field's animation and keyboard
+    gap are not measured; push and pop transitions are Stage 6's.

@@ -200,6 +200,100 @@ class GlassButton extends StatelessWidget {
   }
 }
 
+/// Paints a glyph of [size] in [color] (a path drawn in place of an icon).
+/// For Liquidum's bars; not exported.
+typedef GlassGlyph = void Function(Canvas canvas, Size size, Color color);
+
+/// Whether the [Glass] around [context] is dark now (null outside glass).
+/// For Liquidum's bars; not exported.
+bool? glassIsDarkOf(BuildContext context) => _glassIsDarkOf(context);
+
+/// An icon, a label or both on glass, drawn as a glass button's are: through
+/// the glass under them (UIKit's vibrant label), in the label color (black
+/// on light glass, white on dark or [onTint] glass), faint when disabled,
+/// and half as strong while the glass is pressed. For Liquidum's bars; not
+/// exported.
+class GlassVibrantLabel extends StatelessWidget {
+  const GlassVibrantLabel({
+    super.key,
+    this.label,
+    this.icon,
+    required this.style,
+    this.iconSize = 22,
+    this.iconBox = 23,
+    this.gap = 6,
+    this.side = 0,
+    this.enabled = true,
+    this.onTint = false,
+    this.glyph,
+    this.glyphSize = Size.zero,
+    this.fixedBox = false,
+    this.strength = 1,
+    this.pressFade = 0.5,
+  });
+
+  final String? label;
+  final IconData? icon;
+
+  /// How strongly the label shows, 0 to 1 (a bar item's highlight).
+  final double strength;
+
+  /// How much the label fades while its glass is pressed: a glass button's
+  /// half; a bar item's 0.15 (the item under the finger fades of its own).
+  final double pressFade;
+
+  /// Whether the icon keeps [iconBox] as its width even when its glyph is
+  /// wider (UIKit's bar items: their width is the symbol's box).
+  final bool fixedBox;
+
+  /// Drawn in place of [icon], in a box of [glyphSize].
+  final GlassGlyph? glyph;
+  final Size glyphSize;
+  final TextStyle style;
+  final double iconSize;
+
+  /// The width given to the icon (UIKit's symbol box), or the glyph's if
+  /// wider.
+  final double iconBox;
+  final double gap;
+
+  /// Space either side.
+  final double side;
+  final bool enabled;
+
+  /// On tinted (prominent) glass: white.
+  final bool onTint;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool dark =
+        _glassIsDarkOf(context) ??
+        MediaQuery.platformBrightnessOf(context) == Brightness.dark;
+    return _GlassLabel(
+      label: label,
+      icon: icon,
+      glyph: glyph,
+      glyphSize: glyphSize,
+      fixedBox: fixedBox,
+      pressFade: pressFade,
+      style: style.copyWith(decoration: TextDecoration.none),
+      iconSize: iconSize,
+      iconBox: iconBox,
+      gap: gap,
+      side: side,
+      color: !enabled
+          ? (dark ? const Color(0xFFEBEBF5) : const Color(0xFF3C3C43))
+          : onTint || dark
+          ? const Color(0xFFFFFFFF)
+          : const Color(0xFF000000),
+      strength: (enabled ? 1 : 0.3) * strength,
+      textScaler: MediaQuery.textScalerOf(context),
+      devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
+      press: _glassPressOf(context),
+    );
+  }
+}
+
 /// A glass button's icon and label, side by side and centered, drawn
 /// vibrantly: through the glass under them, with [color] (plainly in
 /// [color] where shader filters are not supported).
@@ -207,6 +301,10 @@ class _GlassLabel extends LeafRenderObjectWidget {
   const _GlassLabel({
     required this.label,
     required this.icon,
+    this.glyph,
+    this.glyphSize = Size.zero,
+    this.fixedBox = false,
+    this.pressFade = 0.5,
     required this.style,
     required this.iconSize,
     required this.iconBox,
@@ -221,6 +319,10 @@ class _GlassLabel extends LeafRenderObjectWidget {
 
   final String? label;
   final IconData? icon;
+  final GlassGlyph? glyph;
+  final Size glyphSize;
+  final bool fixedBox;
+  final double pressFade;
   final TextStyle style;
   final double iconSize;
   final double iconBox;
@@ -287,6 +389,9 @@ class _RenderGlassLabel extends RenderBox {
     if (old == null ||
         old.label != c.label ||
         old.icon != c.icon ||
+        old.glyph != c.glyph ||
+        old.glyphSize != c.glyphSize ||
+        old.fixedBox != c.fixedBox ||
         old.style != c.style ||
         old.iconSize != c.iconSize ||
         old.iconBox != c.iconBox ||
@@ -319,15 +424,24 @@ class _RenderGlassLabel extends RenderBox {
             );
       _icon.textScaler = c.textScaler;
       markNeedsLayout();
-    } else if (old.strength != c.strength) {
+    } else if (old.strength != c.strength || old.pressFade != c.pressFade) {
       markNeedsPaint();
     }
   }
 
-  bool get _hasIcon => _icon.text != null;
+  bool get _hasGlyph => _config!.glyph != null;
+
+  bool get _hasIcon => _hasGlyph || _icon.text != null;
 
   // The icon's box: UIKit's symbol box, or the glyph if wider.
-  double get _iconWidth => math.max(_config!.iconBox, _icon.width);
+  double get _iconWidth => _hasGlyph
+      ? _config!.glyphSize.width
+      : _config!.fixedBox
+      ? _config!.iconBox
+      : math.max(_config!.iconBox, _icon.width);
+
+  double get _iconHeight =>
+      _hasGlyph ? _config!.glyphSize.height : _icon.height;
   bool get _hasText => _text.text != null;
 
   double get _contentWidth {
@@ -347,7 +461,7 @@ class _RenderGlassLabel extends RenderBox {
 
   void _layoutPainters(double maxWidth) {
     final _GlassLabel c = _config!;
-    if (_hasIcon) {
+    if (_icon.text != null) {
       _icon.layout();
     }
     if (_hasText) {
@@ -374,7 +488,7 @@ class _RenderGlassLabel extends RenderBox {
   @override
   double computeMaxIntrinsicHeight(double width) {
     _layoutPainters(width);
-    return math.max(_hasText ? _text.height : 0, _hasIcon ? _icon.height : 0);
+    return math.max(_hasText ? _text.height : 0, _hasIcon ? _iconHeight : 0);
   }
 
   @override
@@ -386,7 +500,7 @@ class _RenderGlassLabel extends RenderBox {
   Size _sizeFor(BoxConstraints constraints) {
     final double h = constraints.hasBoundedHeight
         ? constraints.maxHeight
-        : math.max(_hasText ? _text.height : 0, _hasIcon ? _icon.height : 0);
+        : math.max(_hasText ? _text.height : 0, _hasIcon ? _iconHeight : 0);
     return constraints.constrain(Size(_contentWidth + 2 * _config!.side, h));
   }
 
@@ -399,10 +513,15 @@ class _RenderGlassLabel extends RenderBox {
   }
 
   // Where the icon and label are painted: centered together.
-  Offset get _iconAt => Offset(
-    (size.width - _contentWidth) / 2 + (_iconWidth - _icon.width) / 2,
-    (size.height - _icon.height) / 2,
-  );
+  Offset get _iconAt => _hasGlyph
+      ? Offset(
+          (size.width - _contentWidth) / 2,
+          (size.height - _iconHeight) / 2,
+        )
+      : Offset(
+          (size.width - _contentWidth) / 2 + (_iconWidth - _icon.width) / 2,
+          (size.height - _icon.height) / 2,
+        );
 
   Offset get _textAt => Offset(
     (size.width - _contentWidth) / 2 +
@@ -419,7 +538,15 @@ class _RenderGlassLabel extends RenderBox {
   ).inflate(2);
 
   void _paintGlyphs(Canvas canvas, Offset offset) {
-    if (_hasIcon) {
+    final GlassGlyph? glyph = _config!.glyph;
+    if (glyph != null) {
+      final Offset at = offset + _iconAt;
+      canvas
+        ..save()
+        ..translate(at.dx, at.dy);
+      glyph(canvas, _config!.glyphSize, _config!.color);
+      canvas.restore();
+    } else if (_hasIcon) {
       _icon.paint(canvas, offset + _iconAt);
     }
     if (_hasText) {
@@ -458,7 +585,8 @@ class _RenderGlassLabel extends RenderBox {
 
   // The label's strength now: its own, halved while fully pressed (UIKit's
   // pressed glass button, iOS 26.5).
-  double get _strength => _config!.strength * (1 - 0.5 * (_press?.amount ?? 0));
+  double get _strength =>
+      _config!.strength * (1 - _config!.pressFade * (_press?.amount ?? 0));
 
   @override
   bool get alwaysNeedsCompositing => true;

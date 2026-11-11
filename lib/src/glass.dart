@@ -289,7 +289,12 @@ class _GlassState extends State<Glass> with TickerProviderStateMixin {
       child: widget.child == null
           ? null
           : _GlassTone(
-              dark: _dark,
+              // In a group, the group's look.
+              dark: switch (_hub) {
+                null => _dark,
+                final _GlassHub hub =>
+                  widget.style == GlassStyle.clear ? hub.clearDark : hub.dark,
+              },
               child: _press == null
                   ? widget.child!
                   : _GlassPressScope(
@@ -398,6 +403,8 @@ class _GlassGroupState extends State<GlassGroup>
       ..system = forced ?? MediaQuery.platformBrightnessOf(context);
     _clearAppearance.system =
         forced ?? MediaQuery.platformBrightnessOf(context);
+    _hub.dark.value = _appearance.isDark;
+    _hub.clearDark.value = _clearAppearance.isDark;
     _wake();
   }
 
@@ -408,6 +415,7 @@ class _GlassGroupState extends State<GlassGroup>
     if (!_appearance.tick(now)) {
       _ticker.stop();
     }
+    _hub.dark.value = _appearance.isDark;
     _repaint.notify();
   }
 
@@ -474,6 +482,8 @@ class _GlassGroupState extends State<GlassGroup>
     _sampler.dispose();
     _ticker.dispose();
     _repaint.dispose();
+    _hub.dark.dispose();
+    _hub.clearDark.dispose();
     super.dispose();
   }
 
@@ -502,6 +512,11 @@ class _Repaint extends ChangeNotifier {
 class _GlassHub {
   final Set<_RenderGlass> members = <_RenderGlass>{};
   _RenderGlassGroup? group;
+
+  /// Whether the group's regular and clear glass look dark now: what the
+  /// content on its glass follows (glass in a group takes the group's look).
+  final ValueNotifier<bool> dark = ValueNotifier<bool>(false);
+  final ValueNotifier<bool> clearDark = ValueNotifier<bool>(false);
 
   void add(_RenderGlass glass) {
     members.add(glass);
