@@ -32,9 +32,6 @@ float phi(float z) {
 
 vec3 at(vec2 p) {
   vec2 uv = p / uSize;
-#ifdef IMPELLER_TARGET_OPENGLES
-  uv.y = 1.0 - uv.y;
-#endif
   return texture(uCapture, uv).rgb;
 }
 

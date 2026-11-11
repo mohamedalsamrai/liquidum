@@ -21,7 +21,7 @@ uniform vec4 uFace;      // face: luma black and white points, fill alpha, fill 
 uniform vec4 uRim;       // rim matrix: chroma gain, luma weight, lift; shadow strength
 uniform vec4 uShadow;    // shadow: offset, sigma, center, reach (points)
 uniform vec4 uMore;      // face chroma gain, pressed shape + 1 (0: none), rim curvature, press wash
-uniform vec4 uFrost;     // frost: full depth, light blur sigma (points), ramp power
+uniform vec4 uFrost;     // frost: full depth, light blur sigma (points), ramp power; label count
 uniform vec4 uGlow;      // fingertip glow: center.xy, 1 / (2 variance) (pixels), peak alpha
 // Each shape: center.xy and half size.zw (capture pixels); and its corner
 // radius (pixels), how materialized it is (0 to 1), whether it melts with
@@ -41,14 +41,53 @@ uniform vec4 uBleed[4];
 // prominent glass buttons): the color times .x plus its luma times .y plus
 // .z, at opacity .w (none at 0).
 uniform vec4 uShapeMaterials[8];
+// The vibrant labels on the glass, drawn with it (UIKit draws a glass
+// button's title and image through a vibrantColorMatrix: see vibrant.frag),
+// uFrost.w of them: each one's box (capture pixels: left, top, width,
+// height), where its mask is in uLabels (texture coordinates: left, top,
+// width, height), and its color times UIKit's offset (.rgb) and strength
+// (.w).
+uniform vec4 uLabelBoxes[8];
+uniform vec4 uLabelMasks[8];
+uniform vec4 uLabelColors[8];
 
 uniform sampler2D uCapture;
+uniform sampler2D uLabels;
 
 out vec4 fragColor;
 
 #include "glass_material.glsl"
 
 const int kMaxShapes = 8;
+const int kMaxLabels = 8;
+
+// UIKit's vibrant matrix for labels on glass (iOS 26.5, as vibrant.frag's):
+// the label shows 0.69 of 1.5 times the glass's color less 1.4 times its
+// luma, plus its own color.
+const float kVibrantGain = 1.5;
+const float kVibrantLuma = 1.4;
+const float kVibrantScale = 0.69;
+
+// The glass's color c at p with its labels over it, each through its mask.
+vec3 vibrantLabels(vec3 c, vec2 p) {
+  int count = int(uFrost.w + 0.5);
+  for (int i = 0; i < kMaxLabels; i++) {
+    if (i >= count) {
+      break;
+    }
+    vec4 box = uLabelBoxes[i];
+    vec2 m = (p - box.xy) / box.zw;
+    if (m.x >= 0.0 && m.y >= 0.0 && m.x <= 1.0 && m.y <= 1.0) {
+      float alpha = texture(uLabels, uLabelMasks[i].xy + m * uLabelMasks[i].zw).a *
+                    uLabelColors[i].w;
+      vec3 v = clamp(kVibrantScale * (kVibrantGain * c - kVibrantLuma * dot(c, kLuma)) +
+                         uLabelColors[i].rgb,
+                     0.0, 1.0);
+      c = mix(c, v, alpha);
+    }
+  }
+  return c;
+}
 
 // The frost lies within the glass by this many pixels (as the bar's).
 const float kFrostInset = 2.0;
@@ -295,6 +334,7 @@ void main() {
         c = glowLight(c, reach * uGlow.w * exp(-dot(o, o) * uGlow.z));
       }
     }
+    c = vibrantLabels(c, p);
   }
   float shaded = 0.0;
   if (a < 1.0 && uRim.w > 0.0) {

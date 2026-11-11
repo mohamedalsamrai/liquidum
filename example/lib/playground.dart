@@ -551,8 +551,16 @@ class _GlassPageState extends State<_GlassPage> {
     );
     return Stack(
       children: <Widget>[
-        // The content the glass floats over: scroll it under the glass.
-        const Positioned.fill(child: Feed(title: 'Glass')),
+        // The content the glass floats over, on the page's background:
+        // scroll it under the glass.
+        Positioned.fill(
+          child: GlassBackdrop(
+            child: ColoredBox(
+              color: CupertinoColors.systemBackground.resolveFrom(context),
+              child: const Feed(title: 'Glass'),
+            ),
+          ),
+        ),
         Positioned(
           left: 16,
           right: 16,

@@ -175,6 +175,7 @@ class _GlassShape {
     this.press,
     this.toShape,
     this.material,
+    this.labels = const <_RenderGlassLabel>[],
   });
 
   final Rect rect;
@@ -192,6 +193,9 @@ class _GlassShape {
   /// A gray material over the glass: color gain, luma weight, offset,
   /// opacity (UIKit's, for some glass buttons).
   final _GlassMaterial? material;
+
+  /// The vibrant labels on the glass, which its pass draws.
+  final List<_RenderGlassLabel> labels;
 }
 
 /// A gray material over glass, as UIKit lays over some glass buttons: the
@@ -210,12 +214,29 @@ typedef _GlassMaterial = ({
 class _GlassPasses {
   static const int maxShapes = 8;
 
+  /// The most labels one glass draws (the rest draw themselves).
+  static const int maxLabels = 8;
+
+  // The widest the labels' atlas gets (pixels).
+  static const int _maxAtlasWidth = 8192;
+
+  // The labels' masks side by side, and each one's box in it (pixels).
+  ui.Image? _atlas;
+  List<ui.Image> _atlasMasks = const <ui.Image>[];
+  List<Rect> _atlasBoxes = const <Rect>[];
+
+  // An empty atlas, for glass without labels (the shader's sampler must be
+  // set).
+  static ui.Image? _noLabels;
+
   // One shader per pass: a shader image filter reads its uniforms only when
   // it is composited.
   _GlassUniforms? _glassPass;
   _GlassUniforms? _frostPass;
 
   final LayerHandle<ClipRectLayer> _frostClip = LayerHandle<ClipRectLayer>();
+  final LayerHandle<OffsetLayer> _frostSlot = LayerHandle<OffsetLayer>();
+  final LayerHandle<ClipRectLayer> _slotClip = LayerHandle<ClipRectLayer>();
   final LayerHandle<ClipPathLayer> _plainClip = LayerHandle<ClipPathLayer>();
   final LayerHandle<BackdropFilterLayer> _frostHeavy =
       LayerHandle<BackdropFilterLayer>();
@@ -226,8 +247,27 @@ class _GlassPasses {
       LayerHandle<BackdropFilterLayer>();
   final BackdropKey _frostCapture = BackdropKey();
 
+  // The glass's frost in a backdrop's, if there.
+  void _removeSlot() {
+    _frostSlot.layer?.remove();
+    _frostSlot.layer = null;
+    _slotClip.layer = null;
+  }
+
+  // The reads [owner] (at [rect], global) shares with the other glass over
+  // its backdrop: not when it is on other glass.
+  static GlassShare? _shareFor(RenderObject owner, Rect rect) {
+    for (RenderObject? o = owner.parent; o != null; o = o.parent) {
+      if (o is _RenderGlass || o is _RenderGlassGroup) {
+        return null;
+      }
+    }
+    return glassShareFor(owner, rect);
+  }
+
   void clear() {
     _frostClip.layer = null;
+    _removeSlot();
     _plainClip.layer = null;
     _frostHeavy.layer = null;
     _frostLight.layer = null;
@@ -239,11 +279,67 @@ class _GlassPasses {
     clear();
     _glassPass?.shader.dispose();
     _frostPass?.shader.dispose();
+    _atlas?.dispose();
+  }
+
+  // The atlas of [masks], built again only when they change.
+  ui.Image _labelAtlas(List<ui.Image> masks) {
+    if (masks.isEmpty) {
+      return _noLabels ??= () {
+        final recorder = ui.PictureRecorder();
+        Canvas(recorder);
+        final ui.Picture picture = recorder.endRecording();
+        final ui.Image image = picture.toImageSync(1, 1);
+        picture.dispose();
+        return image;
+      }();
+    }
+    final ui.Image? atlas = _atlas;
+    if (atlas != null && masks.length == _atlasMasks.length) {
+      var same = true;
+      for (var i = 0; i < masks.length; i++) {
+        if (!identical(masks[i], _atlasMasks[i])) {
+          same = false;
+          break;
+        }
+      }
+      if (same) {
+        return atlas;
+      }
+    }
+    // Side by side, 2 pixels apart, at whole pixels: the shader reads each
+    // mask's texels as the label's own pass read its mask.
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+    final boxes = <Rect>[];
+    var x = 0;
+    var height = 1;
+    for (final ui.Image mask in masks) {
+      canvas.drawImage(mask, Offset(x.toDouble(), 0), Paint());
+      boxes.add(
+        Rect.fromLTWH(
+          x.toDouble(),
+          0,
+          mask.width.toDouble(),
+          mask.height.toDouble(),
+        ),
+      );
+      x += mask.width + 2;
+      height = math.max(height, mask.height);
+    }
+    final ui.Picture picture = recorder.endRecording();
+    _atlas?.dispose();
+    _atlas = picture.toImageSync(math.max(1, x), height);
+    picture.dispose();
+    _atlasMasks = List<ui.Image>.of(masks);
+    _atlasBoxes = boxes;
+    return _atlas!;
   }
 
   /// Paints [shapes] (in [owner]'s coordinates, at most [maxShapes]) as one
-  /// glass of [style], [owner] being painted at [offset].
-  void paint(
+  /// glass of [style], [owner] being painted at [offset]. Returns the labels
+  /// on the shapes that its glass pass drew.
+  Set<_RenderGlassLabel> paint(
     PaintingContext context,
     Offset offset,
     RenderBox owner,
@@ -256,7 +352,7 @@ class _GlassPasses {
     final ui.FragmentProgram? program = Glass._program.program;
     if (shapes.isEmpty || program == null) {
       clear();
-      return;
+      return const <_RenderGlassLabel>{};
     }
     Rect bounds = shapes.first.rect;
     for (final _GlassShape shape in shapes.skip(1)) {
@@ -265,7 +361,7 @@ class _GlassPasses {
     bounds = bounds.shift(offset);
     if (!ui.ImageFilter.isShaderFilterSupported) {
       _paintPlain(context, offset, shapes, bounds, appearance);
-      return;
+      return const <_RenderGlassLabel>{};
     }
     _plainClip.layer = null;
     final _GlassUniforms glassPass = _glassPass ??= _GlassUniforms(
@@ -410,28 +506,121 @@ class _GlassPasses {
     set(frostPass, 1);
     set(glassPass, 0);
 
+    // The labels on the glass: the glass pass draws them over the glass, as
+    // each one's own pass would through what is under it.
+    final labels = <_RenderGlassLabel>[];
+    final masks = <ui.Image>[];
+    var atlasWidth = 0;
+    for (final _GlassShape shape in shapes) {
+      for (final _RenderGlassLabel label in shape.labels) {
+        if (labels.length == maxLabels ||
+            !label.attached ||
+            !label._canBeHosted) {
+          continue;
+        }
+        final ui.Image mask = label._glyphMask;
+        if (atlasWidth + mask.width > _maxAtlasWidth) {
+          continue;
+        }
+        atlasWidth += mask.width + 2;
+        labels.add(label);
+        masks.add(mask);
+      }
+    }
+    final ui.Image atlas = _labelAtlas(masks);
+    glassPass.shader.setImageSampler(1, atlas);
+    frostPass.shader.setImageSampler(1, atlas);
+    for (var i = 0; i < maxLabels; i++) {
+      if (i >= labels.length) {
+        glassPass.labelBoxes[i].set(0, 0, 0, 0);
+        glassPass.labelMasks[i].set(0, 0, 0, 0);
+        glassPass.labelColors[i].set(0, 0, 0, 0);
+        continue;
+      }
+      final _RenderGlassLabel label = labels[i];
+      final Rect box = label._screenBox;
+      final Rect inAtlas = _atlasBoxes[i];
+      final (double, double, double, double) color = label._vibrantColor;
+      glassPass.labelBoxes[i].set(
+        box.left * devicePixelRatio,
+        box.top * devicePixelRatio,
+        box.width * devicePixelRatio,
+        box.height * devicePixelRatio,
+      );
+      glassPass.labelMasks[i].set(
+        inAtlas.left / atlas.width,
+        inAtlas.top / atlas.height,
+        inAtlas.width / atlas.width,
+        inAtlas.height / atlas.height,
+      );
+      glassPass.labelColors[i].set(color.$1, color.$2, color.$3, color.$4);
+    }
+    glassPass.frost.set(
+      optics.frostDepth,
+      optics.lightSigma,
+      optics.frostRamp,
+      labels.length.toDouble(),
+    );
+
     // The frost, into the backdrop: a heavy blur over the glass's bounds,
     // and the shader's light one over it, putting the backdrop back outside
     // the glass's frost, both from the backdrop as it was.
     final double sigma = optics.heavySigma * amount * k / devicePixelRatio;
+    final GlassShare? share = _shareFor(
+      owner,
+      MatrixUtils.transformRect(toRoot, bounds.shift(-offset)),
+    );
+    final BackdropKey frostKey = share?.frostKey ?? _frostCapture;
     final BackdropFilterLayer heavy =
         (_frostHeavy.layer ??= BackdropFilterLayer())
           ..filter = ui.ImageFilter.blur(sigmaX: sigma, sigmaY: sigma)
-          ..backdropKey = _frostCapture;
+          ..backdropKey = frostKey;
     final BackdropFilterLayer light =
         (_frostLight.layer ??= BackdropFilterLayer())
           ..filter = ui.ImageFilter.shader(frostPass.shader)
-          ..backdropKey = _frostCapture;
-    _frostClip.layer = context.pushClipRect(true, Offset.zero, bounds, (
-      PaintingContext context,
-      Offset _,
-    ) {
-      context
-        ..pushLayer(heavy, _paintNothing, Offset.zero)
-        ..pushLayer(light, _paintNothing, Offset.zero);
-    }, oldLayer: _frostClip.layer);
+          ..backdropKey = frostKey;
+    if (share == null) {
+      _removeSlot();
+      _frostClip.layer = context.pushClipRect(true, Offset.zero, bounds, (
+        PaintingContext context,
+        Offset _,
+      ) {
+        context
+          ..pushLayer(heavy, _paintNothing, Offset.zero)
+          ..pushLayer(light, _paintNothing, Offset.zero);
+      }, oldLayer: _frostClip.layer);
+    } else {
+      // Drawn by the backdrop, with the frost of the other glass over it,
+      // before any of the glass: in the backdrop's coordinates (an offset;
+      // a transform layer there keeps the engine from sharing the reads).
+      _frostClip.layer = null;
+      final OffsetLayer slot = _frostSlot.layer ??= OffsetLayer();
+      slot.offset = MatrixUtils.getAsTranslation(
+        owner.getTransformTo(share.host),
+      )!;
+      final ClipRectLayer clip = _slotClip.layer ??= ClipRectLayer();
+      clip
+        ..clipRect = bounds.shift(-offset)
+        ..clipBehavior = Clip.hardEdge;
+      if (!identical(heavy.parent, clip) || !identical(light.parent, clip)) {
+        heavy.remove();
+        light.remove();
+        clip
+          ..append(heavy)
+          ..append(light);
+      }
+      if (!identical(clip.parent, slot)) {
+        clip.remove();
+        slot.append(clip);
+      }
+      if (!identical(slot.parent, share.frosts)) {
+        slot.remove();
+        share.frosts.append(slot);
+      }
+    }
 
-    // The glass, over its frost, and its shadow around it.
+    // The glass, over its frost, and its shadow around it: from the read
+    // the glass over the backdrop shares, when it does.
     _glassClip.layer = context.pushClipRect(
       true,
       Offset.zero,
@@ -439,11 +628,13 @@ class _GlassPasses {
       (PaintingContext context, Offset _) {
         final BackdropFilterLayer layer =
             (_glassLayer.layer ??= BackdropFilterLayer())
-              ..filter = ui.ImageFilter.shader(glassPass.shader);
+              ..filter = ui.ImageFilter.shader(glassPass.shader)
+              ..backdropKey = share?.glassKey;
         context.pushLayer(layer, _paintNothing, Offset.zero);
       },
       oldLayer: _glassClip.layer,
     );
+    return labels.toSet();
   }
 
   // Without shader filters: a plain frost in each shape.
@@ -508,6 +699,9 @@ class _RenderGlass extends RenderProxyBox {
 
   final GlassAppearance appearance;
   final _GlassPasses _passes = _GlassPasses();
+
+  /// The vibrant labels on the glass, drawn by its pass.
+  final Set<_RenderGlassLabel> _labels = <_RenderGlassLabel>{};
 
   /// A gray material over the glass, if any.
   _GlassMaterial? get material => _material;
@@ -657,6 +851,8 @@ class _RenderGlass extends RenderProxyBox {
     _presence.removeListener(_changed);
     _press?.removeListener(_changed);
     _hub?.remove(this);
+    // Its frost may be in a backdrop's layer.
+    _passes.clear();
     super.detach();
   }
 
@@ -681,7 +877,7 @@ class _RenderGlass extends RenderProxyBox {
     final _GlassHub? hub = _hub;
     if (hub == null) {
       final double amount = this.amount;
-      _passes.paint(
+      final Set<_RenderGlassLabel> hosted = _passes.paint(
         context,
         offset,
         this,
@@ -697,6 +893,7 @@ class _RenderGlass extends RenderProxyBox {
               press: _press,
               toShape: Matrix4.identity(),
               material: _material,
+              labels: _labels.toList(),
             ),
         ],
         style: _style,
@@ -704,6 +901,9 @@ class _RenderGlass extends RenderProxyBox {
         spacing: 0,
         devicePixelRatio: _devicePixelRatio,
       );
+      for (final _RenderGlassLabel label in _labels) {
+        label._setHosted(hosted.contains(label));
+      }
     } else {
       _passes.clear();
       // A move the group did not paint (one within a repaint boundary of
@@ -796,6 +996,9 @@ class _RenderGlassGroup extends RenderProxyBox {
       hub.group = null;
     }
     _repaint.removeListener(markNeedsPaint);
+    for (final _GlassPasses passes in _passes) {
+      passes.clear();
+    }
     super.detach();
   }
 
@@ -837,6 +1040,7 @@ class _RenderGlassGroup extends RenderProxyBox {
           press: glass.press,
           toShape: toGroup,
           material: glass.material,
+          labels: glass._labels.toList(),
         ),
       );
     }
@@ -847,23 +1051,28 @@ class _RenderGlassGroup extends RenderProxyBox {
           .reduce(math.max);
     }
     var used = 0;
+    final hosted = <_RenderGlassLabel>{};
     void draw(List<_GlassShape> shapes, GlassStyle style) {
       for (var i = 0; i < shapes.length; i += _GlassPasses.maxShapes) {
         if (used == _passes.length) {
           _passes.add(_GlassPasses());
         }
-        _passes[used++].paint(
-          context,
-          offset,
-          this,
-          shapes.sublist(
-            i,
-            math.min(i + _GlassPasses.maxShapes, shapes.length),
+        hosted.addAll(
+          _passes[used++].paint(
+            context,
+            offset,
+            this,
+            shapes.sublist(
+              i,
+              math.min(i + _GlassPasses.maxShapes, shapes.length),
+            ),
+            style: style,
+            appearance: style == GlassStyle.clear
+                ? clearAppearance
+                : appearance,
+            spacing: _spacing,
+            devicePixelRatio: _devicePixelRatio,
           ),
-          style: style,
-          appearance: style == GlassStyle.clear ? clearAppearance : appearance,
-          spacing: _spacing,
-          devicePixelRatio: _devicePixelRatio,
         );
       }
     }
@@ -872,6 +1081,11 @@ class _RenderGlassGroup extends RenderProxyBox {
     draw(clear, GlassStyle.clear);
     for (var i = used; i < _passes.length; i++) {
       _passes[i].clear();
+    }
+    for (final _RenderGlass glass in hub.members) {
+      for (final _RenderGlassLabel label in glass._labels) {
+        label._setHosted(hosted.contains(label));
+      }
     }
     super.paint(context, offset);
   }
@@ -892,7 +1106,10 @@ class _GlassUniforms {
       info = shader.getUniformVec4Array('uShapeInfo'),
       tints = shader.getUniformVec4Array('uShapeTints'),
       bleed = shader.getUniformVec4Array('uBleed'),
-      materials = shader.getUniformVec4Array('uShapeMaterials');
+      materials = shader.getUniformVec4Array('uShapeMaterials'),
+      labelBoxes = shader.getUniformVec4Array('uLabelBoxes'),
+      labelMasks = shader.getUniformVec4Array('uLabelMasks'),
+      labelColors = shader.getUniformVec4Array('uLabelColors');
 
   final ui.FragmentShader shader;
   final ui.UniformVec4Slot pass;
@@ -908,6 +1125,9 @@ class _GlassUniforms {
   final ui.UniformArray<ui.UniformVec4Slot> tints;
   final ui.UniformArray<ui.UniformVec4Slot> materials;
   final ui.UniformArray<ui.UniformVec4Slot> bleed;
+  final ui.UniformArray<ui.UniformVec4Slot> labelBoxes;
+  final ui.UniformArray<ui.UniformVec4Slot> labelMasks;
+  final ui.UniformArray<ui.UniformVec4Slot> labelColors;
 
   void setBleed(List<List<double>> matrix, double opacity) {
     for (var i = 0; i < 3; i++) {

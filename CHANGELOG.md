@@ -40,6 +40,24 @@
 * Fix: glass in a `GlassGroup` drew its content (a `GlassButton`'s label)
   in the system's look instead of the group's when the group turned light
   or dark with what is behind it.
+* Fix: on Android (Impeller's OpenGL ES backend) every glass drew what is
+  behind it, and the tab bar its icons and labels, upside down: Flutter
+  3.47 no longer stores those textures flipped. Liquidum now needs
+  Flutter 3.47 or later.
+* Faster: every glass read what is behind it with its own snapshot of the
+  page; now one snapshot per drawn frame serves them all (a page of a dozen
+  glass buttons and controls took about four times as many while it
+  animated).
+* Faster: the glass beside a `GlassBackdrop` (over it, in the same `Stack`,
+  not inside it) reads the screen twice in all instead of twice each: the
+  backdrop draws the frost of all of it right after its content, and then
+  each glass is drawn from one read of that. A glass button's label, and a
+  bar item's, is drawn in its glass's pass instead of reading the screen
+  again. Flinging a page of a dozen glass buttons and controls on Android
+  now misses 2% of frames instead of a third (two thirds before any of
+  this); on iOS the buttons and bars draw as before, to the level.
+* Fix: glass over a backdrop with no background of its own (see-through
+  content) took it for black and turned dark.
 
 ## 0.2.2
 

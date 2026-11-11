@@ -380,11 +380,11 @@ class _RenderGlassLabel extends RenderBox {
     _config = c;
     if (c.press != _press) {
       if (attached) {
-        _press?.listenable.removeListener(markNeedsPaint);
-        c.press?.listenable.addListener(markNeedsPaint);
+        _press?.listenable.removeListener(_invalidate);
+        c.press?.listenable.addListener(_invalidate);
       }
       _press = c.press;
-      markNeedsPaint();
+      _invalidate();
     }
     if (old == null ||
         old.label != c.label ||
@@ -425,8 +425,56 @@ class _RenderGlassLabel extends RenderBox {
       _icon.textScaler = c.textScaler;
       markNeedsLayout();
     } else if (old.strength != c.strength || old.pressFade != c.pressFade) {
-      markNeedsPaint();
+      _invalidate();
     }
+  }
+
+  // ---- Drawn by the glass under it.
+
+  // The glass the label is on: it draws the label with its glass, in the
+  // same pass, instead of the label reading the screen again on its own.
+  _RenderGlass? _glass;
+
+  // Whether that glass drew the label when it last painted.
+  bool _hosted = false;
+
+  void _invalidate() {
+    markNeedsPaint();
+    _glass?._changed();
+  }
+
+  /// Called by the glass as it paints: whether it draws the label.
+  void _setHosted(bool hosted) {
+    if (hosted == _hosted) {
+      return;
+    }
+    _hosted = hosted;
+    // Painted after the glass this frame; if not (its layer kept), next.
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      if (attached) {
+        markNeedsPaint();
+      }
+    });
+  }
+
+  /// Whether the glass can draw the label now.
+  bool get _canBeHosted =>
+      _config != null &&
+      hasSize &&
+      _contentWidth > 0 &&
+      ui.ImageFilter.isShaderFilterSupported;
+
+  /// The label's glyphs, as an alpha mask of its glyph box.
+  ui.Image get _glyphMask => _mask ??= _buildMask();
+
+  /// The glyph box on screen (global logical pixels).
+  Rect get _screenBox =>
+      MatrixUtils.transformRect(getTransformTo(null), _bounds);
+
+  /// The label's color times UIKit's offset (rgb) and its strength now.
+  (double, double, double, double) get _vibrantColor {
+    final Color color = _config!.color;
+    return (_offset * color.r, _offset * color.g, _offset * color.b, _strength);
   }
 
   bool get _hasGlyph => _config!.glyph != null;
@@ -510,6 +558,8 @@ class _RenderGlassLabel extends RenderBox {
     size = _sizeFor(constraints);
     _mask?.dispose();
     _mask = null;
+    // The glass draws the new mask, where the label now is.
+    _glass?._changed();
   }
 
   // Where the icon and label are painted: centered together.
@@ -574,12 +624,24 @@ class _RenderGlassLabel extends RenderBox {
   @override
   void attach(PipelineOwner owner) {
     super.attach(owner);
-    _press?.listenable.addListener(markNeedsPaint);
+    _press?.listenable.addListener(_invalidate);
+    for (RenderObject? o = parent; o != null; o = o.parent) {
+      if (o is _RenderGlass) {
+        _glass = o.._labels.add(this);
+        o._changed();
+        break;
+      }
+    }
   }
 
   @override
   void detach() {
-    _press?.listenable.removeListener(markNeedsPaint);
+    _press?.listenable.removeListener(_invalidate);
+    _glass
+      ?.._labels.remove(this)
+      .._changed();
+    _glass = null;
+    _hosted = false;
     super.detach();
   }
 
@@ -615,6 +677,12 @@ class _RenderGlassLabel extends RenderBox {
       } else {
         _paintGlyphs(context.canvas, offset);
       }
+      return;
+    }
+    if (_hosted) {
+      // The glass under it draws it.
+      _clip.layer = null;
+      _filter.layer = null;
       return;
     }
     final ui.Image mask = _mask ??= _buildMask();

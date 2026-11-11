@@ -29,9 +29,6 @@ const vec3 kLuma = vec3(0.2126, 0.7152, 0.0722);
 void main() {
   vec2 p = FlutterFragCoord().xy;
   vec2 uv = p / uSize;
-#ifdef IMPELLER_TARGET_OPENGLES
-  uv.y = 1.0 - uv.y;
-#endif
   vec3 c = texture(uCapture, uv).rgb;
   vec2 m = (p - uRect.xy) / uRect.zw;
   float a = 0.0;

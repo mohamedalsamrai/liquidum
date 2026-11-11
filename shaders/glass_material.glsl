@@ -100,14 +100,10 @@ float sag(float depth, float height) {
 // ---- Sampling.
 
 // Texture coordinates for a point in an image that is `size` big, top-left
-// origin. Impeller's GLES backend keeps the textures it renders to upside
-// down.
+// origin. (Since Flutter 3.47 Impeller's GLES backend no longer keeps its
+// textures upside down, so no backend needs a flip.)
 vec2 texel(vec2 p, vec2 size) {
-  vec2 uv = p / size;
-#ifdef IMPELLER_TARGET_OPENGLES
-  uv.y = 1.0 - uv.y;
-#endif
-  return uv;
+  return p / size;
 }
 
 vec3 capture(vec2 p) {
