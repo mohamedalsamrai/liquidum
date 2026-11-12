@@ -695,6 +695,7 @@ class _RenderGlass extends RenderProxyBox {
     required this._press,
     required this._material,
     required this._devicePixelRatio,
+    this._hidden = false,
   });
 
   final GlassAppearance appearance;
@@ -782,7 +783,19 @@ class _RenderGlass extends RenderProxyBox {
 
   /// How materialized the glass is: UIKit's ease in and out of its
   /// presence.
-  double get amount => Curves.easeInOut.transform(_presence.value);
+  double get amount =>
+      _hidden ? 0 : Curves.easeInOut.transform(_presence.value);
+
+  /// Hidden at once (no dematerializing): while a menu that grew out of
+  /// this glass is open, the menu's morph draws it.
+  bool get hidden => _hidden;
+  bool _hidden;
+  set hidden(bool value) {
+    if (value != _hidden) {
+      _hidden = value;
+      _changed();
+    }
+  }
 
   _GlassHub? get hub => _hub;
   _GlassHub? _hub;

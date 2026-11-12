@@ -47,6 +47,13 @@
   a finger that slides from the button onto a row and lifts, and
   submenus (`GlassMenuItem.submenu`) that open over the menu. `onPressed`
   is now optional on a button with a menu.
+* New: `GlassBarItem.menu`: a bar item opens its menu out of its glass, as
+  UIKit's (`onPressed` is now optional on an item with a menu). Holding a
+  `GlassPage`'s back button for 0.6s opens UIKit's history menu: the titles
+  of the pages under it in its navigator, nearest first; lifting the
+  finger on one goes back to it.
+* Fix: a `GlassButton` with a menu inside a `GlassGroup` kept its glass
+  while its menu was open; and it no longer adds a layer around its glass.
 * Fix: glass in a `GlassGroup` drew its content (a `GlassButton`'s label)
   in the system's look instead of the group's when the group turned light
   or dark with what is behind it.

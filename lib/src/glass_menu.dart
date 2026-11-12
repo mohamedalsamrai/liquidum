@@ -370,13 +370,14 @@ class _GlassMenuOverlayState extends State<_GlassMenuOverlay>
       top = s.bottom - height;
       _up = true;
     }
-    top = top.clamp(
-      safe.top + margin,
-      math.max(
-        safe.top + margin,
-        screen.height - safe.bottom - margin - height,
-      ),
+    // Clear of the screen's insets by a margin, but never away from a
+    // source that sits nearer (a bar item at the bar's top).
+    final double topLimit = math.min(safe.top + margin, s.top);
+    final double bottomLimit = math.max(
+      screen.height - safe.bottom - margin,
+      s.bottom,
     );
+    top = top.clamp(topLimit, math.max(topLimit, bottomLimit - height));
     return Rect.fromLTWH(left, top, _MenuMetrics.width, height);
   }
 
@@ -1054,33 +1055,50 @@ class _MenuGlyphPainter extends CustomPainter {
       old.glyph != glyph || old.color != color;
 }
 
-/// A glass button's source for its menu, as UIKit's buttons that show
-/// their menu as their primary action: the menu opens on touch down; a
-/// finger that slides onto a row highlights it and chooses it when lifted.
-/// The button hides while the menu is open (the menu grows out of it and
-/// morphs back into it).
-class _GlassMenuSource extends StatefulWidget {
-  const _GlassMenuSource({
+/// The source of a glass menu: [child] (a glass button or a bar item's
+/// glass) opens [items] in a menu that grows out of it, as UIKit's. With
+/// [longPress] false, as buttons that show their menu as their primary
+/// action: the menu opens on touch down, and a finger that slides onto a
+/// row highlights it and chooses it when lifted. With [longPress] true, as
+/// the back button's history: the menu opens once the finger has held
+/// still for 0.6s, and lifting it on a row chooses that row; a shorter
+/// touch is [child]'s own tap. While its menu is open the source hides
+/// (its glass at once, even in a [GlassGroup]): the menu morphs out of it
+/// and back into it. [sourceContent] is drawn on the source's glass while
+/// it shrinks away. For Liquidum's bars; not exported.
+class GlassMenuAnchor extends StatefulWidget {
+  const GlassMenuAnchor({
+    super.key,
     required this.items,
     required this.sourceContent,
+    this.longPress = false,
     required this.child,
   });
 
-  final List<GlassMenuItem> items;
+  /// The menu's items, asked for each time it opens.
+  final List<GlassMenuItem> Function() items;
   final Widget sourceContent;
+  final bool longPress;
   final Widget child;
 
+  /// How long UIKit's back button is held before its history opens.
+  static const Duration longPressDelay = Duration(milliseconds: 600);
+
   @override
-  State<_GlassMenuSource> createState() => _GlassMenuSourceState();
+  State<GlassMenuAnchor> createState() => _GlassMenuAnchorState();
 }
 
-class _GlassMenuSourceState extends State<_GlassMenuSource> {
+class _GlassMenuAnchorState extends State<GlassMenuAnchor> {
   GlobalKey<_GlassMenuOverlayState>? _menu;
   int? _pointer;
   Offset _downAt = Offset.zero;
   bool _dragged = false;
+  // Whether the finger that opened the menu chooses where it lifts (after
+  // a long press, as UIKit's), or only after sliding.
+  bool _liftChooses = false;
 
-  // How far a finger must slide before lifting it chooses a row.
+  // How far a finger must slide before lifting it chooses a row (or before
+  // it stops being a long press).
   static const double _slop = 10;
 
   Offset _toOverlay(Offset global) {
@@ -1088,17 +1106,18 @@ class _GlassMenuSourceState extends State<_GlassMenuSource> {
     return box is RenderBox ? box.globalToLocal(global) : global;
   }
 
-  void _down(PointerDownEvent event) {
-    if (_menu != null) {
+  void _open() {
+    if (_menu != null || !mounted) {
       return;
     }
-    _pointer = event.pointer;
-    _downAt = event.position;
-    _dragged = false;
+    final List<GlassMenuItem> items = widget.items();
+    if (items.isEmpty) {
+      return;
+    }
     setState(() {
       _menu = _showGlassMenu(
         context: context,
-        items: widget.items,
+        items: items,
         sourceContent: widget.sourceContent,
         onClosed: () {
           if (mounted) {
@@ -1109,6 +1128,17 @@ class _GlassMenuSourceState extends State<_GlassMenuSource> {
     });
   }
 
+  void _down(PointerDownEvent event) {
+    if (_menu != null || widget.longPress) {
+      return;
+    }
+    _pointer = event.pointer;
+    _downAt = event.position;
+    _dragged = false;
+    _liftChooses = false;
+    _open();
+  }
+
   void _move(PointerMoveEvent event) {
     if (event.pointer != _pointer) {
       return;
@@ -1116,7 +1146,7 @@ class _GlassMenuSourceState extends State<_GlassMenuSource> {
     if ((event.position - _downAt).distance > _slop) {
       _dragged = true;
     }
-    if (_dragged) {
+    if (_dragged || _liftChooses) {
       _menu?.currentState?.track(_toOverlay(event.position));
     }
   }
@@ -1126,7 +1156,7 @@ class _GlassMenuSourceState extends State<_GlassMenuSource> {
       return;
     }
     _pointer = null;
-    if (_dragged) {
+    if (_dragged || _liftChooses) {
       _menu?.currentState?.release(_toOverlay(event.position));
     }
   }
@@ -1138,16 +1168,96 @@ class _GlassMenuSourceState extends State<_GlassMenuSource> {
     }
   }
 
+  void _longPressed(LongPressStartDetails details) {
+    _pointer = -1;
+    _downAt = details.globalPosition;
+    _dragged = false;
+    _liftChooses = true;
+    _open();
+    _menu?.currentState?.track(Offset.infinite);
+  }
+
   @override
   Widget build(BuildContext context) {
-    // Hidden (not painted) while its menu is open: the morph draws it.
-    return Listener(
+    final bool open = _menu != null;
+    Widget child = _GlassHiddenScope(
+      hidden: open,
+      child: _Hidden(hidden: open, child: widget.child),
+    );
+    if (widget.longPress) {
+      // A long press wins over the child's tap; its moves and lift go to
+      // the menu.
+      return RawGestureDetector(
+        behavior: HitTestBehavior.translucent,
+        gestures: <Type, GestureRecognizerFactory>{
+          LongPressGestureRecognizer:
+              GestureRecognizerFactoryWithHandlers<LongPressGestureRecognizer>(
+                () => LongPressGestureRecognizer(
+                  duration: GlassMenuAnchor.longPressDelay,
+                ),
+                (LongPressGestureRecognizer r) {
+                  r
+                    ..onLongPressStart = _longPressed
+                    ..onLongPressMoveUpdate = (LongPressMoveUpdateDetails d) {
+                      _menu?.currentState?.track(_toOverlay(d.globalPosition));
+                    }
+                    ..onLongPressEnd = (LongPressEndDetails d) {
+                      _pointer = null;
+                      _menu?.currentState?.release(
+                        _toOverlay(d.globalPosition),
+                      );
+                    };
+                },
+              ),
+        },
+        child: child,
+      );
+    }
+    child = Listener(
       behavior: HitTestBehavior.opaque,
       onPointerDown: _down,
       onPointerMove: _move,
       onPointerUp: _up,
       onPointerCancel: _cancel,
-      child: Opacity(opacity: _menu != null ? 0 : 1, child: widget.child),
+      child: child,
     );
+    return child;
+  }
+}
+
+/// Skips painting [child] while [hidden], keeping its layout and hit
+/// testing. Unlike an [Opacity], it adds no layer: glass under a layer stops
+/// sharing its screen reads with the glass beside it (see GlassBackdrop).
+class _Hidden extends SingleChildRenderObjectWidget {
+  const _Hidden({required this.hidden, super.child});
+
+  final bool hidden;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderHidden(hidden);
+
+  @override
+  void updateRenderObject(BuildContext context, _RenderHidden renderObject) {
+    renderObject.hidden = hidden;
+  }
+}
+
+class _RenderHidden extends RenderProxyBox {
+  _RenderHidden(this._hidden);
+
+  bool _hidden;
+  set hidden(bool value) {
+    if (value != _hidden) {
+      _hidden = value;
+      markNeedsPaint();
+    }
+  }
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    if (!_hidden) {
+      super.paint(context, offset);
+    }
   }
 }

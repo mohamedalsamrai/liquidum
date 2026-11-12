@@ -771,7 +771,28 @@ class _BarsPageState extends State<_BarsPage> {
       actions: widget.search
           ? const <GlassBarItem>[]
           : <GlassBarItem>[
-              GlassBarItem(icon: CupertinoIcons.ellipsis, onPressed: () {}),
+              GlassBarItem(
+                icon: CupertinoIcons.ellipsis,
+                menu: <GlassMenuItem>[
+                  GlassMenuItem(
+                    label: 'Share',
+                    icon: CupertinoIcons.share,
+                    onPressed: () {},
+                  ),
+                  GlassMenuItem(
+                    label: 'Favorite',
+                    icon: CupertinoIcons.star,
+                    onPressed: () {},
+                  ),
+                  const GlassMenuItem.divider(),
+                  GlassMenuItem(
+                    label: 'Delete',
+                    icon: CupertinoIcons.trash,
+                    destructive: true,
+                    onPressed: () {},
+                  ),
+                ],
+              ),
               GlassBarItem(
                 icon: CupertinoIcons.add,
                 onPressed: () => setState(() => _added++),

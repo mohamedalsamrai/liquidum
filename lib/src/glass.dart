@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
@@ -326,6 +327,11 @@ class _GlassState extends State<Glass> with TickerProviderStateMixin {
   @override
   Widget build(BuildContext context) {
     Widget glass = _GlassSurface(
+      hidden:
+          context
+              .dependOnInheritedWidgetOfExactType<_GlassHiddenScope>()
+              ?.hidden ??
+          false,
       style: widget.style,
       radius: widget.radius,
       tint: widget.tint,
@@ -609,9 +615,11 @@ class _GlassSurface extends SingleChildRenderObjectWidget {
     required this.press,
     required this.material,
     required this.devicePixelRatio,
+    this.hidden = false,
     super.child,
   });
 
+  final bool hidden;
   final GlassStyle style;
   final double? radius;
   final Color? tint;
@@ -637,6 +645,7 @@ class _GlassSurface extends SingleChildRenderObjectWidget {
     press: press,
     material: material,
     devicePixelRatio: devicePixelRatio,
+    hidden: hidden,
   );
 
   @override
@@ -651,7 +660,8 @@ class _GlassSurface extends SingleChildRenderObjectWidget {
       ..repaint = repaint
       ..press = press
       ..material = material
-      ..devicePixelRatio = devicePixelRatio;
+      ..devicePixelRatio = devicePixelRatio
+      ..hidden = hidden;
   }
 }
 
@@ -737,3 +747,15 @@ class _GlassPressScope extends InheritedWidget {
 /// The press of the nearest interactive glass above [context], if any.
 _GlassPressView? _glassPressOf(BuildContext context) =>
     context.dependOnInheritedWidgetOfExactType<_GlassPressScope>()?.press;
+
+/// Hides the [Glass] below at once (its glass, not its content): a menu's
+/// source while the menu that grew out of it is open.
+class _GlassHiddenScope extends InheritedWidget {
+  const _GlassHiddenScope({required this.hidden, required super.child});
+
+  final bool hidden;
+
+  @override
+  bool updateShouldNotify(_GlassHiddenScope oldWidget) =>
+      hidden != oldWidget.hidden;
+}

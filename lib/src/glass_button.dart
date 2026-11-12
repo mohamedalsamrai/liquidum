@@ -208,8 +208,8 @@ class GlassButton extends StatelessWidget {
       return Semantics(
         button: true,
         label: label,
-        child: _GlassMenuSource(
-          items: items,
+        child: GlassMenuAnchor(
+          items: () => items,
           sourceContent: Builder(
             builder: (BuildContext context) {
               final bool dark =

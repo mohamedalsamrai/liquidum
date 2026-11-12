@@ -2,12 +2,15 @@
 // as the research catalog's native menus page, from the same options in
 // `<tmp>/comparison.txt`:
 //
-//   menus [items=<list>] [bg=<background>] [style=dark]
+//   menus|menusnav [items=<list>] [bg=<background>] [style=dark]
 //
 // Items are "Title", "Title/symbol", "Title/symbol/d" (destructive),
 // "Title/symbol/c" (checked), ">Title" (a submenu of three), "-" a divider.
 // Buttons: "Menu" at 20,200; an ellipsis at 200,200; a plus at the right
-// edge; "Bottom" at 20,820; a prominent button at the bottom right. Writes
+// edge; "Bottom" at 20,820; a prominent button at the bottom right.
+// `menusnav`: three GlassPages pushed (First, Second, Third), the last with
+// an ellipsis item whose menu is the items (the back button's long press
+// lists the pages under it). Writes
 // `<tmp>/ready.txt` 2s after the first frame.
 
 import 'dart:async';
@@ -36,7 +39,11 @@ Future<void> main() async {
   WidgetsBinding.instance.addPostFrameCallback((_) {
     Timer(const Duration(seconds: 2), () => ready.writeAsStringSync('ready'));
   });
-  runApp(MenusComparison(options: options));
+  runApp(
+    config.first == 'menusnav'
+        ? MenusNavComparison(options: options)
+        : MenusComparison(options: options),
+  );
 }
 
 const Map<String, IconData> _symbols = <String, IconData>{
@@ -156,6 +163,72 @@ class MenusComparison extends StatelessWidget {
           );
         },
       ),
+    );
+  }
+}
+
+class MenusNavComparison extends StatefulWidget {
+  const MenusNavComparison({super.key, required this.options});
+
+  final Map<String, String> options;
+
+  @override
+  State<MenusNavComparison> createState() => _MenusNavComparisonState();
+}
+
+class _MenusNavComparisonState extends State<MenusNavComparison> {
+  final GlobalKey<NavigatorState> _navigator = GlobalKey<NavigatorState>();
+
+  Widget _page(String title, {bool back = true, bool items = false}) => Builder(
+    builder: (BuildContext context) => GlassPage(
+      title: title,
+      onBack: back ? () => Navigator.pop(context) : null,
+      actions: <GlassBarItem>[
+        if (items)
+          GlassBarItem(
+            icon: CupertinoIcons.ellipsis,
+            menu: _menu(widget.options['items'] ?? 'One,Two'),
+          ),
+      ],
+      child: CustomPaint(
+        painter: _Pattern(widget.options['bg'] ?? 'blocks'),
+        size: Size.infinite,
+      ),
+    ),
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _navigator.currentState!
+        ..push(
+          PageRouteBuilder<void>(pageBuilder: (_, _, _) => _page('Second')),
+        )
+        ..push(
+          PageRouteBuilder<void>(
+            pageBuilder: (_, _, _) => _page('Third', items: true),
+          ),
+        );
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bool dark = widget.options['style'] == 'dark';
+    return CupertinoApp(
+      navigatorKey: _navigator,
+      debugShowCheckedModeBanner: false,
+      theme: CupertinoThemeData(
+        brightness: dark ? Brightness.dark : Brightness.light,
+      ),
+      builder: (BuildContext context, Widget? child) => MediaQuery(
+        data: MediaQuery.of(context).copyWith(
+          platformBrightness: dark ? Brightness.dark : Brightness.light,
+        ),
+        child: child!,
+      ),
+      home: _page('First', back: false),
     );
   }
 }

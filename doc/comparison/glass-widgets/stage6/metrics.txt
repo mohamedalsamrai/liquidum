@@ -60,6 +60,34 @@ Open
     layers; Liquidum's (8pt opening, 12pt closing) is fitted by eye.
   - The source's tilt ("PivotView") during the morph is not copied.
   - The highlight is a light wash, not UIKit's vibrant white fill.
-  - Bar items' menus, the back button's history menu, context menus, the
-    edit menu, the date picker overlay and push/pop transitions are the
-    next parts of Stage 6.
+  - Context menus, the edit menu, the date picker overlay and push/pop
+    transitions are the next parts of Stage 6.
+
+Part 2: bar item menus and the back button's history, 2026-11-12.
+UIKit = a UINavigationController of three pages ("First", "Second",
+"Third"), the last with an ellipsis UIBarButtonItem with a menu (the
+catalog's menusnav page); Liquidum = three GlassPages pushed the same way
+(menus_comparison.dart menusnav).
+
+UIKit's
+  An item with a menu: opens on touch down out of the item's platter (a
+  44pt circle), the same morph and springs as a button's (fitted: omega
+  18.05, zeta 0.751); the menu at the bar's top (62), its right edge on
+  the platter's (UIKit's 3.7pt nudge again).
+  Back button: held still 0.595s (touch down to the morph), the history
+  opens out of it: an ordinary menu of the pages under this one, nearest
+  first ("Second", "First"), 42pt rows, at the button's corner (20,62).
+  Lifting the finger on a row, even where it went down, goes back to that
+  page (the back button sits under the first row: "Second"). The morph
+  starts from the platter swollen by the press (scale 1.12 to 1.33).
+
+Results (7-bar-menus.jpg, UIKit left): both menus' rows, glass and
+  corners as UIKit's; the item's menu 3.7pt left of UIKit's (its nudge).
+  Tests: the item's menu at the platter's right edge and the bar's top;
+  the history lists the pages nearest first, at the back button's corner,
+  and lifting on a row (moved or not) goes back to it.
+
+Open
+  - The morph starts from the platter at rest, not swollen by the press.
+  - Liquidum's history lists GlassPages (by their titles) in the same
+    Navigator; pages without a title are left out.

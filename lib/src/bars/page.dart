@@ -41,6 +41,11 @@ import 'scroll_edge.dart';
 /// content or washed white over light content, the title turning white or
 /// black with it.
 ///
+/// An item with a [GlassBarItem.menu] opens it out of its glass, as
+/// UIKit's. Holding the back button opens UIKit's history: the titles of
+/// the [GlassPage]s under this one in its [Navigator], nearest first;
+/// choosing one goes back to it (lifting the finger on a row chooses it).
+///
 /// [child] gets the bars' heights as its [MediaQueryData.padding], so a
 /// [ListView] or [CustomScrollView] starts below the navigation bar and
 /// ends above the toolbar, and scrolls under both. The page reads the
@@ -262,10 +267,72 @@ class _GlassPageState extends State<GlassPage> with TickerProviderStateMixin {
       _bottomLook.reset(dark: dark);
       _started = true;
     }
+    final NavigatorState? navigator = Navigator.maybeOf(context);
+    if (navigator != _navigator) {
+      _leaveStack();
+      _navigator = navigator;
+      if (navigator != null) {
+        (_stacks[navigator] ??= <_GlassPageState>[]).add(this);
+      }
+    }
+  }
+
+  // The pages open in each navigator, bottom first: the back button's
+  // history (UIKit's long press on the back button lists the pages under
+  // this one, nearest first, and goes back to the one chosen).
+  static final Expando<List<_GlassPageState>> _stacks =
+      Expando<List<_GlassPageState>>();
+  NavigatorState? _navigator;
+
+  void _leaveStack() {
+    final NavigatorState? navigator = _navigator;
+    if (navigator != null) {
+      _stacks[navigator]?.remove(this);
+    }
+  }
+
+  List<GlassMenuItem> _history() {
+    final NavigatorState? navigator = _navigator;
+    final ModalRoute<Object?>? own = ModalRoute.of(context);
+    final List<_GlassPageState>? stack = navigator == null
+        ? null
+        : _stacks[navigator];
+    if (stack == null || own == null) {
+      return const <GlassMenuItem>[];
+    }
+    final List<GlassMenuItem> items = <GlassMenuItem>[];
+    final Set<Route<Object?>> seen = <Route<Object?>>{own};
+    for (final _GlassPageState page in stack.reversed) {
+      if (!page.mounted) {
+        continue;
+      }
+      final ModalRoute<Object?>? route = ModalRoute.of(page.context);
+      final String? title = page.widget.title;
+      if (route == null ||
+          !route.isActive ||
+          seen.contains(route) ||
+          title == null) {
+        continue;
+      }
+      // Only the pages under this one.
+      if (stack.indexOf(page) > stack.indexOf(this)) {
+        continue;
+      }
+      seen.add(route);
+      items.add(
+        GlassMenuItem(
+          label: title,
+          onPressed: () =>
+              navigator!.popUntil((Route<Object?> r) => r == route),
+        ),
+      );
+    }
+    return items;
   }
 
   @override
   void dispose() {
+    _leaveStack();
     _sampler.dispose();
     _searchFocus
       ..removeListener(_focusChanged)
@@ -601,7 +668,8 @@ class _GlassPageState extends State<GlassPage> with TickerProviderStateMixin {
 
   Widget _navigationBar() {
     final List<Widget> leading = <Widget>[
-      if (widget.onBack != null) _BackButton(onPressed: widget.onBack!),
+      if (widget.onBack != null)
+        _BackButton(onPressed: widget.onBack!, history: _history),
       for (final List<GlassBarItem> group in _groups(widget.leading))
         _NavPlatter(items: group),
     ];
@@ -786,12 +854,38 @@ Color _tintOf(BuildContext context, GlassBarItem item) =>
 
 /// UIKit's back button: a 44pt glass circle with the back chevron.
 class _BackButton extends StatelessWidget {
-  const _BackButton({required this.onPressed});
+  const _BackButton({required this.onPressed, required this.history});
 
   final VoidCallback onPressed;
 
+  /// The pages under this one, for UIKit's long press on the back button.
+  final List<GlassMenuItem> Function() history;
+
   @override
   Widget build(BuildContext context) {
+    // No pages under this one (or none with a title): a plain back button.
+    if (history().isEmpty) {
+      return _backButton();
+    }
+    final bool dark =
+        MediaQuery.platformBrightnessOf(context) == Brightness.dark;
+    return GlassMenuAnchor(
+      longPress: true,
+      items: history,
+      sourceContent: Center(
+        child: CustomPaint(
+          size: const Size(16.33, 23),
+          painter: _GlyphPainter(
+            _chevron,
+            dark ? const Color(0xFFFFFFFF) : const Color(0xFF000000),
+          ),
+        ),
+      ),
+      child: _backButton(),
+    );
+  }
+
+  Widget _backButton() {
     return Semantics(
       button: true,
       label: 'Back',
@@ -820,6 +914,20 @@ class _BackButton extends StatelessWidget {
   }
 }
 
+class _GlyphPainter extends CustomPainter {
+  const _GlyphPainter(this.glyph, this.color);
+
+  final GlassGlyph glyph;
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) => glyph(canvas, size, color);
+
+  @override
+  bool shouldRepaint(_GlyphPainter old) =>
+      old.glyph != glyph || old.color != color;
+}
+
 /// A navigation bar platter: one group's glass, 44pt tall.
 class _NavPlatter extends StatelessWidget {
   const _NavPlatter({required this.items});
@@ -834,35 +942,76 @@ class _NavPlatter extends StatelessWidget {
     final List<Widget> children = <Widget>[
       for (final (int i, GlassBarItem item) in items.indexed) ...<Widget>[
         if (i > 0) const SizedBox(width: _Bars.navItemGap),
-        _ItemButton(
-          item: item,
-          highlight: _Bars.navHighlight,
-          height: _Bars.navItem,
-          width: lone ? _Bars.navItem : null,
-          iconSide: _Bars.navIconSide,
-          textSide: _Bars.navTextSide,
+        _menuAnchor(
+          context,
+          item,
+          anchored: !lone,
+          child: _ItemButton(
+            item: item,
+            highlight: _Bars.navHighlight,
+            height: _Bars.navItem,
+            width: lone ? _Bars.navItem : null,
+            iconSide: _Bars.navIconSide,
+            textSide: _Bars.navTextSide,
+          ),
         ),
       ],
     ];
-    return SizedBox(
-      height: _Bars.platter,
-      width: lone ? _Bars.platter : null,
-      child: Glass(
-        interactive: true,
-        tint: prominent && first.onPressed != null
-            ? _tintOf(context, first)
-            : null,
-        child: Padding(
-          padding: const EdgeInsets.all(_Bars.navInset),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: children,
+    return _menuAnchor(
+      context,
+      first,
+      anchored: lone,
+      child: SizedBox(
+        height: _Bars.platter,
+        width: lone ? _Bars.platter : null,
+        child: Glass(
+          interactive: true,
+          tint: prominent && first.isEnabled ? _tintOf(context, first) : null,
+          child: Padding(
+            padding: const EdgeInsets.all(_Bars.navInset),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: children,
+            ),
           ),
         ),
       ),
     );
   }
+}
+
+/// [child], opening [item]'s menu when [anchored] and it has one (as
+/// UIKit's, out of the item's glass: its platter when alone on it, else
+/// its slot).
+Widget _menuAnchor(
+  BuildContext context,
+  GlassBarItem item, {
+  required bool anchored,
+  required Widget child,
+}) {
+  final List<GlassMenuItem>? menu = item.menu;
+  if (!anchored || menu == null) {
+    return child;
+  }
+  final bool dark = MediaQuery.platformBrightnessOf(context) == Brightness.dark;
+  final Color color = item.prominent || dark
+      ? const Color(0xFFFFFFFF)
+      : const Color(0xFF000000);
+  return GlassMenuAnchor(
+    items: () => menu,
+    sourceContent: Center(
+      child: item.icon != null
+          ? Icon(item.icon, size: _Bars.iconSize, color: color)
+          : Text(
+              item.label ?? '',
+              maxLines: 1,
+              style: (item.prominent ? _Bars.prominentItem : _Bars.item)
+                  .copyWith(color: color),
+            ),
+    ),
+    child: child,
+  );
 }
 
 /// One item: its icon or label, drawn vibrantly on the glass, and its tap.
@@ -887,7 +1036,7 @@ class _ItemButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bool enabled = item.onPressed != null;
+    final bool enabled = item.isEnabled;
     final bool icon = item.icon != null;
     return Semantics(
       button: true,
@@ -1065,42 +1214,52 @@ class _ToolGroup extends StatelessWidget {
   Widget build(BuildContext context) {
     final GlassBarItem first = items.first;
     final bool lone = items.length == 1 && first.icon != null;
-    return SizedBox(
-      height: _Bars.toolHeight,
-      width: lone ? _Bars.toolHeight : null,
-      child: Glass(
-        interactive: true,
-        tint: first.prominent && first.onPressed != null
-            ? _tintOf(context, first)
-            : null,
-        child: lone
-            ? _ItemButton(
-                item: first,
-                highlight: _Bars.toolHighlight,
-                height: _Bars.toolHeight,
-                width: _Bars.toolHeight,
-                iconSide: 0,
-                textSide: 0,
-              )
-            : Row(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  for (final (int i, GlassBarItem item)
-                      in items.indexed) ...<Widget>[
-                    if (i > 0) const SizedBox(width: _Bars.slotGap),
-                    Padding(
-                      padding: const EdgeInsets.all(_Bars.toolInset),
-                      child: _ItemButton(
-                        item: item,
-                        highlight: _Bars.toolHighlight,
-                        height: _Bars.toolHeight - 2 * _Bars.toolInset,
-                        iconSide: _Bars.toolIconSide,
-                        textSide: _Bars.toolTextSide,
+    return _menuAnchor(
+      context,
+      first,
+      anchored: lone,
+      child: SizedBox(
+        height: _Bars.toolHeight,
+        width: lone ? _Bars.toolHeight : null,
+        child: Glass(
+          interactive: true,
+          tint: first.prominent && first.isEnabled
+              ? _tintOf(context, first)
+              : null,
+          child: lone
+              ? _ItemButton(
+                  item: first,
+                  highlight: _Bars.toolHighlight,
+                  height: _Bars.toolHeight,
+                  width: _Bars.toolHeight,
+                  iconSide: 0,
+                  textSide: 0,
+                )
+              : Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    for (final (int i, GlassBarItem item)
+                        in items.indexed) ...<Widget>[
+                      if (i > 0) const SizedBox(width: _Bars.slotGap),
+                      Padding(
+                        padding: const EdgeInsets.all(_Bars.toolInset),
+                        child: _menuAnchor(
+                          context,
+                          item,
+                          anchored: true,
+                          child: _ItemButton(
+                            item: item,
+                            highlight: _Bars.toolHighlight,
+                            height: _Bars.toolHeight - 2 * _Bars.toolInset,
+                            iconSide: _Bars.toolIconSide,
+                            textSide: _Bars.toolTextSide,
+                          ),
+                        ),
                       ),
-                    ),
+                    ],
                   ],
-                ],
-              ),
+                ),
+        ),
       ),
     );
   }
