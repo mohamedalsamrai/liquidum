@@ -59,6 +59,16 @@
   beside it on the side with more room. Slide onto a row and lift to
   choose it; a tap outside closes the menu. A shorter touch stays the
   view's own.
+* New: `GlassPage`'s bars between two pages, as UIKit's push and pop: the
+  bars stay while the pages slide under them; a platter whose items change
+  morphs into the other page's, swelling and settling as its items
+  crossfade; one on a single page melts into its neighbor or grows out of
+  it; the back button and a toolbar on one page only materialize or go;
+  titles ride with their pages. A swipe back drives it. Nothing to set.
+* Fix: a tinted `Glass` kept its tint while dematerializing
+  (`visible: false`); the tint now comes and goes with the glass.
+* Fix: hiding glass inside a hidden menu source (a back button with a
+  history) now hides it too.
 * Fix: a `GlassButton` with a menu inside a `GlassGroup` kept its glass
   while its menu was open; and it no longer adds a layer around its glass.
 * Fix: glass in a `GlassGroup` drew its content (a `GlassButton`'s label)

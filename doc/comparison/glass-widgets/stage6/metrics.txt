@@ -60,8 +60,8 @@ Open
     layers; Liquidum's (8pt opening, 12pt closing) is fitted by eye.
   - The source's tilt ("PivotView") during the morph is not copied.
   - The highlight is a light wash, not UIKit's vibrant white fill.
-  - The edit menu, the date picker overlay and push/pop transitions are
-    the next parts of Stage 6.
+  - The edit menu and the date picker overlay are the next parts of
+    Stage 6.
 
 Part 2: bar item menus and the back button's history, 2026-11-12.
 UIKit = a UINavigationController of three pages ("First", "Second",
@@ -147,3 +147,61 @@ Open
     (it looks see-through for a frame or two); Liquidum draws one view.
   - The platter shadow's fade during the lift is not measured (Liquidum
     fades it in with the lift).
+
+
+Part 4: the bars between two pages (push and pop), 2026-11-12.
+UIKit = a UINavigationController whose page has a "Push" button pushing a
+second page (the catalog's barsroot pushbtn=1): "List" with "+" -> "Detail"
+with a back button and "... share" (push1); "List" with [Edit] [+] ->
+"Detail" with "..." -> "Detail" (push2); "List" with "+" -> "Detail" with a
+toolbar [trash] ~ [share] ~ [Done] (push3). Per-frame layer traces and
+screen videos. Liquidum = GlassPages pushed with CupertinoPageRoute
+(bars_comparison.dart pushbtn=1).
+
+UIKit's
+  The bar stays; the pages slide under it (the new page from 440 to 0, the
+  old to -132). Titles ride with their pages: the old one fades out in
+  about 0.1s pushing, at once popping; the one coming shows.
+  Platters pair from the bar's ends inward.
+  - The same (same items): no change at all (Detail -> Detail).
+  - Different items: its width springs to the other's (omega 15.1, zeta
+    0.75, from 0.075s), its items crossfade (omega 15.1 critically damped)
+    through a blur, and it swells and settles (scale 1 + 0.5 e^-zwt
+    sin(w_d t), omega 12.7, zeta 0.53, from 0.035s; peak 1.23). Pop: the
+    same laws.
+  - On the page going only: melts into its neighbor (toward the bar's
+    end), to a circle half its height across at the neighbor's center, on
+    the width's spring; its items fade at once.
+  - On the page coming only: grows out of its neighbor's center from a
+    circle 0.2 of its height, from 0.21s (omega 20, zeta 0.7).
+  - The back button on one page only: materializes in place (omega 13.5,
+    critically damped, from 0.044s; its chevron 12.4, 0.91, from 0.1s), or
+    goes in about 0.15s (28.8, 0.93).
+  - A toolbar on one page only: stays in place and materializes (about
+    omega 25, critically damped, 0.2s) or goes as fast as the back button.
+
+Results (9-bar-transitions.jpg, UIKit left; bar strips at 0.03, 0.08,
+  0.13, 0.2, 0.3, 0.6s after the push or pop)
+  Against the traces, frame by frame (widget-test probe, 60fps): the
+  morphing platter 370.3,58.0 53.9x52.1 at 0.1s (UIKit 370.3,58.0
+  53.9x52.0), 352.7,57.1 74.0x53.9 at 0.15s (351.9,57.0 75.1x54.1); popping
+  314.4,58.9 112.5x50.2 at 0.083s (313.4,58.7 114.1x50.7); the melted
+  platter a 22x22 circle at 387,73 (UIKit's exactly); the one growing back
+  out an 8.8pt circle at 393.6,79.6 at first (UIKit's exactly).
+  The page on top draws both pages' platters, fixed on the screen (an
+  offset, no layer, so the glass still shares its reads); a pop hands the
+  last of its springs to the page under it as it goes.
+  Tests: the morph at UIKit's places, fixed while the page slides, the
+  melt and growth, the same platters still, a swipe back driving it and
+  given up, a toolbar on one page.
+
+Open
+  - The pages slide on Flutter's CupertinoPageRoute: slower at first than
+    UIKit's (at 0.1s, 240 to go against UIKit's 120); Liquidum does not
+    own the route.
+  - UIKit blurs the items as they crossfade; Liquidum's labels are drawn
+    by the glass, out of a blur's reach, so they crossfade sharp.
+  - Two different toolbars crossfade (one goes, the other comes) instead
+    of morphing platter by platter (not measured).
+  - The bottom search field and large titles are not part of the
+    transition yet (they ride with their pages).

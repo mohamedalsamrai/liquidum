@@ -10,7 +10,10 @@
 // Items are "i:<symbol>", "t:<title>", "p:<title>" (prominent), "pi:<symbol>",
 // "|" a fixed space, "~" a flexible space. `bars` is a pushed page (a back
 // button, "Detail", and by default "..." and "+" and a toolbar); `barsroot`
-// the root ("List", Edit, and a search field). Writes `<tmp>/ready.txt` 2s
+// the root ("List", Edit, and a search field). With `pushbtn=1`, as the
+// catalog's: a page with title=/nav=/lead=/tool= and a glass "Push" button
+// at 20,400 that pushes (CupertinoPageRoute) a page with the "2" options
+// and a back button, which has the button too. Writes `<tmp>/ready.txt` 2s
 // after the first frame.
 
 import 'dart:async';
@@ -96,10 +99,58 @@ class _BarsComparisonState extends State<BarsComparison> {
     super.dispose();
   }
 
+  // The catalog's push pages: the root, or a pushed page (the "2" options).
+  Widget _pushPage(BuildContext context, {required bool root}) {
+    final Map<String, String> o = widget.options;
+    String? opt(String k) => root ? o[k] : o['${k}2'];
+    return GlassPage(
+      title: opt('title')?.replaceAll('_', ' ') ?? (root ? 'List' : 'Detail'),
+      onBack: root ? null : () => Navigator.pop(context),
+      leading: opt('lead') == null
+          ? const <GlassBarItem>[]
+          : _items(opt('lead')!),
+      actions: opt('nav') == null
+          ? const <GlassBarItem>[]
+          : _items(opt('nav')!),
+      toolbar: opt('tool') == null
+          ? const <GlassBarItem>[]
+          : _items(opt('tool')!),
+      backgroundColor: const Color(0xFFFFFFFF),
+      child: Stack(
+        children: <Widget>[
+          Positioned.fill(
+            child: CustomPaint(painter: _Pattern(o['bg'] ?? 'blocks')),
+          ),
+          Positioned(
+            left: 20,
+            top: 400,
+            child: GlassButton(
+              label: 'Push',
+              onPressed: () => Navigator.of(context).push(
+                CupertinoPageRoute<void>(
+                  builder: (BuildContext context) =>
+                      _pushPage(context, root: false),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final Map<String, String> o = widget.options;
     final bool root = widget.root;
+    if (o.containsKey('pushbtn')) {
+      return CupertinoApp(
+        debugShowCheckedModeBanner: false,
+        home: Builder(
+          builder: (BuildContext context) => _pushPage(context, root: true),
+        ),
+      );
+    }
     final bool configured =
         o.containsKey('nav') || o.containsKey('lead') || o.containsKey('tool');
     final String title =

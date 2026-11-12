@@ -283,12 +283,14 @@ void main() {
     vec4 face = vec4(uFace.x * amount, 1.0 + (uFace.y - 1.0) * amount,
                      uFace.z * amount, uFace.w);
     c = mix(frosted, glassFace(frosted, face, mix(1.0, uMore.x, amount)), amount);
-    // The tint of the shape whose tint reaches here.
+    // The tint of the shape whose tint reaches here, as materialized as
+    // the glass (it comes and goes with it, as UIKit's).
     for (int i = 0; i < kMaxShapes; i++) {
       if (i == tinted) {
         vec4 bright = uShapeTints[2 * i];
         vec4 dark = uShapeTints[2 * i + 1];
-        c = mix(c, tint(c, p, bright, dark, bright, dark, vec4(0.0)), tintWeight);
+        c = mix(c, tint(c, p, bright, dark, bright, dark, vec4(0.0)),
+                tintWeight * amount);
       }
     }
     // The material over the shape at p (within its own outline).

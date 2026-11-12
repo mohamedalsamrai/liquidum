@@ -152,7 +152,7 @@ class _GlassContextMenuState extends State<GlassContextMenu> {
   Widget build(BuildContext context) {
     final bool shown = _menu != null;
     Widget child = _GlassHiddenScope(
-      hidden: shown,
+      hidden: shown || _GlassHiddenScope.above(context),
       child: _Hidden(hidden: shown, child: widget.child),
     );
     if (widget.items.isEmpty) {

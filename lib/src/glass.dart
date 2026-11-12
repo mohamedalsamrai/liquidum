@@ -329,17 +329,21 @@ class _GlassState extends State<Glass> with TickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) {
+    final Animation<double>? presence = context
+        .dependOnInheritedWidgetOfExactType<GlassPresence>()
+        ?.amount;
     Widget glass = _GlassSurface(
       hidden:
           context
               .dependOnInheritedWidgetOfExactType<_GlassHiddenScope>()
               ?.hidden ??
           false,
+      presenceCurved: presence == null,
       style: widget.style,
       radius: widget.radius,
       tint: widget.tint,
       visible: widget.visible,
-      presence: _presence,
+      presence: presence ?? _presence,
       appearance: _appearance,
       hub: _hub,
       repaint: _repaint,
@@ -607,6 +611,7 @@ class _GlassGroupScope extends InheritedWidget {
 
 class _GlassSurface extends SingleChildRenderObjectWidget {
   const _GlassSurface({
+    this.presenceCurved = true,
     required this.style,
     required this.radius,
     required this.tint,
@@ -628,6 +633,10 @@ class _GlassSurface extends SingleChildRenderObjectWidget {
   final Color? tint;
   final bool visible;
   final Animation<double> presence;
+
+  /// Whether [presence] is eased in and out (Glass.visible's) or drawn as
+  /// it is (a [GlassPresence]'s).
+  final bool presenceCurved;
   final GlassAppearance appearance;
   final _GlassHub? hub;
   final Listenable repaint;
@@ -642,6 +651,7 @@ class _GlassSurface extends SingleChildRenderObjectWidget {
     tint: tint,
     visible: visible,
     presence: presence,
+    presenceCurved: presenceCurved,
     appearance: appearance,
     hub: hub,
     repaint: repaint,
@@ -659,6 +669,7 @@ class _GlassSurface extends SingleChildRenderObjectWidget {
       ..tint = tint
       ..visible = visible
       ..presence = presence
+      ..presenceCurved = presenceCurved
       ..hub = hub
       ..repaint = repaint
       ..press = press
@@ -758,7 +769,42 @@ class _GlassHiddenScope extends InheritedWidget {
 
   final bool hidden;
 
+  /// Whether a scope above [context] hides its glass: a scope nested in a
+  /// hidden one stays hidden.
+  static bool above(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<_GlassHiddenScope>()?.hidden ??
+      false;
+
   @override
   bool updateShouldNotify(_GlassHiddenScope oldWidget) =>
       hidden != oldWidget.hidden;
+}
+
+/// Hides [child] while [hidden]: its glass at once (even in a
+/// [GlassGroup]) and its content, keeping its layout. For Liquidum's bars,
+/// whose platters another page draws while the two morph; not exported.
+class GlassHide extends StatelessWidget {
+  const GlassHide({super.key, required this.hidden, required this.child});
+
+  final bool hidden;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => _GlassHiddenScope(
+    hidden: hidden || _GlassHiddenScope.above(context),
+    child: _Hidden(hidden: hidden, child: child),
+  );
+}
+
+/// Draws the [Glass] below as materialized as [amount] says (0 to 1, as
+/// drawn, no easing), instead of by its own [Glass.visible]: Liquidum's
+/// bars materialize a back button on UIKit's springs. Not exported.
+class GlassPresence extends InheritedWidget {
+  const GlassPresence({super.key, required this.amount, required super.child});
+
+  final Animation<double> amount;
+
+  @override
+  bool updateShouldNotify(GlassPresence oldWidget) =>
+      amount != oldWidget.amount;
 }

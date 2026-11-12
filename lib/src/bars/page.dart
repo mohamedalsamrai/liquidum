@@ -1,15 +1,20 @@
 import 'dart:math' as math;
 
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/rendering.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 
 import '../frame_sampler.dart';
 import '../glass.dart';
 import '../glass_backdrop.dart';
 import '../tab_bar/glyphs.dart';
+import '../tab_bar/spring.dart';
 import '../tab_bar/style.dart';
 import 'item.dart';
 import 'scroll_edge.dart';
+
+part 'transition.dart';
 
 /// A page with UIKit's iOS 26 bars: a navigation bar of glass at the top
 /// (a [title], a back button, [leading] and [actions] items) and a
@@ -40,6 +45,14 @@ import 'scroll_edge.dart';
 /// scroll-edge effect softens it: blurred a little, and dimmed over dark
 /// content or washed white over light content, the title turning white or
 /// black with it.
+///
+/// Pushed over another [GlassPage] or popped back to it, the bars stay
+/// where they are while the pages slide under them, as UIKit's: the titles
+/// ride with their pages; a platter whose items change morphs into the
+/// other page's (it swells and settles as its items crossfade); a platter
+/// on one page only melts into its neighbor or grows out of it; the back
+/// button and a toolbar on one page only materialize or go; the same
+/// platters stay still. A finger swiping back drives it all.
 ///
 /// An item with a [GlassBarItem.menu] opens it out of its glass, as
 /// UIKit's. Holding the back button opens UIKit's history: the titles of
@@ -237,6 +250,27 @@ class _GlassPageState extends State<GlassPage> with TickerProviderStateMixin {
   Rect? _topArea;
   Rect? _bottomArea;
 
+  // Between two pages (UIKit's push and pop): the page on top runs the
+  // transition and draws both pages' platters; the page under it is
+  // covered by it. The page's own platters hide meanwhile.
+  _BarTransition? _transition;
+  _GlassPageState? _coveredBy;
+  // A pop the page on top handed over as it went (its springs still
+  // settling): this page finishes it.
+  _BarTransition? _adopted;
+  late final Ticker _barTicker = createTicker(_barTick);
+  Duration? _barLast;
+  final GlassSpring _title = GlassSpring(
+    response: _BarMotion.titleUnderResponse,
+    dampingRatio: 1,
+    value: 1,
+  );
+  ModalRoute<Object?>? _route;
+  final GlobalKey _pageKey = GlobalKey();
+  final GlobalKey _barKey = GlobalKey();
+  final List<GlobalKey> _leadKeys = <GlobalKey>[];
+  final List<GlobalKey> _trailKeys = <GlobalKey>[];
+
   bool get _hasSearch =>
       widget.searchController != null ||
       widget.onSearchChanged != null ||
@@ -267,6 +301,14 @@ class _GlassPageState extends State<GlassPage> with TickerProviderStateMixin {
       _bottomLook.reset(dark: dark);
       _started = true;
     }
+    final ModalRoute<Object?>? route = ModalRoute.of(context);
+    if (route != _route) {
+      _route?.animation?.removeListener(_routeMoved);
+      _route?.animation?.removeStatusListener(_routeStatus);
+      _route = route;
+      route?.animation?.addListener(_routeMoved);
+      route?.animation?.addStatusListener(_routeStatus);
+    }
     final NavigatorState? navigator = Navigator.maybeOf(context);
     if (navigator != _navigator) {
       _leaveStack();
@@ -291,9 +333,401 @@ class _GlassPageState extends State<GlassPage> with TickerProviderStateMixin {
     }
   }
 
+  /// The page under this one in its navigator, if it is a [GlassPage].
+  _GlassPageState? get _below {
+    final NavigatorState? navigator = _navigator;
+    final List<_GlassPageState>? stack = navigator == null
+        ? null
+        : _stacks[navigator];
+    final int i = stack?.indexOf(this) ?? -1;
+    return i > 0 ? stack![i - 1] : null;
+  }
+
+  // The route's slide moved: a push of this page or a pop of it (by the
+  // back button or a finger) starts the bar's transition.
+  void _routeMoved() {
+    final Animation<double>? a = _route?.animation;
+    if (a == null || _transition != null || !mounted) {
+      return;
+    }
+    final bool gesture = _navigator?.userGestureInProgress ?? false;
+    final bool coming =
+        a.status == AnimationStatus.forward && !gesture && a.value < 1;
+    final bool going =
+        a.status == AnimationStatus.reverse || (gesture && a.value < 1);
+    if (!coming && !going) {
+      return;
+    }
+    final _GlassPageState? below = _below;
+    if (below == null || !below.mounted || below._coveredBy != null) {
+      return;
+    }
+    final _BarTransition t = _BarTransition(below: below, coming: coming);
+    final bool fromBack = (coming ? below : this).widget.onBack != null;
+    final bool toBack = (coming ? this : below).widget.onBack != null;
+    t.backGlass.spring.snap(toBack && !fromBack ? 0 : 1);
+    t.chevron.spring.snap(toBack && !fromBack ? 0 : 1);
+    t.backAmount.value = t.backGlass.value;
+    t.aim(forward: true, backIn: toBack && !fromBack);
+    t.toolSame = _sameToolbar(widget.toolbar, below.widget.toolbar);
+    _transition = t;
+    below._coveredBy = this;
+    // Titles ride with their pages: the one going under fades its own; a
+    // page leaving fades its own at once; the one revealed shows its own.
+    if (coming) {
+      _title.snap(1);
+      below._title
+        ..configure(_BarMotion.titleUnderResponse, 1)
+        ..target = 0;
+    } else {
+      _title
+        ..configure(_BarMotion.titleLeavingResponse, 1)
+        ..target = 0;
+      below._title.snap(1);
+    }
+    below._refresh();
+    _barLast = null;
+    if (!_barTicker.isActive) {
+      _barTicker.start();
+    }
+    setState(() {});
+  }
+
+  // Popped: the page under finishes the bar's transition (its springs
+  // outlast the slide), in the frame this page leaves.
+  void _routeStatus(AnimationStatus status) {
+    final _BarTransition? t = _transition;
+    if (status != AnimationStatus.dismissed || t == null || t.coming) {
+      return;
+    }
+    final _GlassPageState below = t.below;
+    _transition = null;
+    _barTicker.stop();
+    if (!below.mounted || !below._active || t.topLanes == null) {
+      t.dispose();
+      if (below.mounted) {
+        below._coveredBy = null;
+        below._refresh();
+      }
+      return;
+    }
+    // Popped (a finger's pop has followed the slide to its end): the rest
+    // runs on its springs.
+    if (t.gesture) {
+      t
+        ..gesture = false
+        ..aim(forward: true, backIn: false);
+    }
+    below
+      .._coveredBy = null
+      .._adopted = t
+      .._barLast = null;
+    if (!below._barTicker.isActive) {
+      below._barTicker.start();
+    }
+    below._refresh();
+  }
+
+  static bool _sameToolbar(List<GlassBarItem> a, List<GlassBarItem> b) {
+    if (a.length != b.length) {
+      return false;
+    }
+    for (var i = 0; i < a.length; i++) {
+      if (a[i].isSpace != b[i].isSpace ||
+          a[i].icon != b[i].icon ||
+          a[i].label != b[i].label ||
+          a[i].prominent != b[i].prominent ||
+          a[i].tint != b[i].tint) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  // The toolbar between two pages: fixed on the screen; materializing,
+  // going, or (the same on both pages) drawn by the page on top only.
+  Widget _toolbarBetween(Widget toolbar) {
+    final _BarTransition? t =
+        _transition ?? _adopted ?? _coveredBy?._transition;
+    if (t == null) {
+      return toolbar;
+    }
+    final bool top = identical(t, _transition);
+    final bool adopted = identical(t, _adopted);
+    // Push: the page on top's toolbar comes, the other's goes; pop: the
+    // other way round. A page finishing a pop is the one coming.
+    final bool going = adopted ? false : (top ? !t.coming : t.coming);
+    Widget out = toolbar;
+    if (t.toolSame) {
+      if (!top && !adopted) {
+        out = GlassHide(hidden: true, child: out);
+      }
+    } else {
+      final _Amount amount = going ? t.toolOutAmount : t.toolInAmount;
+      out = GlassPresence(
+        amount: amount,
+        child: _ItemStrength(value: amount.value.clamp(0.0, 1.0), child: out),
+      );
+    }
+    final NavigatorState? navigator = _navigator;
+    if (navigator == null) {
+      return out;
+    }
+    return IgnorePointer(
+      child: _ScreenFixed(
+        page: _pageKey,
+        navigator: navigator.context,
+        frame: (t.elapsed * 1000).round(),
+        child: out,
+      ),
+    );
+  }
+
+  void _refresh() {
+    if (mounted && _active) {
+      setState(() {});
+    }
+  }
+
+  // Whether this page is in the tree (not deactivated on its way out).
+  bool _active = true;
+
+  @override
+  void deactivate() {
+    _active = false;
+    super.deactivate();
+  }
+
+  @override
+  void activate() {
+    super.activate();
+    _active = true;
+  }
+
+  // Whether both pages' bars have been laid out (the page coming has, once
+  // it has drawn its first frame).
+  bool _measured(_BarTransition t) =>
+      _lanes() != null && t.below._lanes() != null;
+
+  void _barTick(Duration elapsed) {
+    final double dt = _barLast == null
+        ? 1 / 60
+        : (elapsed - _barLast!).inMicroseconds / 1e6;
+    _barLast = elapsed;
+    final _BarTransition? adopted = _adopted;
+    if (adopted != null) {
+      adopted.step(dt);
+      if (adopted.isSettled || !_active) {
+        _adopted = null;
+        adopted.dispose();
+        _barTicker.stop();
+      }
+      _refresh();
+      return;
+    }
+    final _BarTransition? t = _transition;
+    final Animation<double>? a = _route?.animation;
+    if (t == null || a == null) {
+      _barTicker.stop();
+      return;
+    }
+    if (!_active) {
+      _barTicker.stop();
+      return;
+    }
+    if (!t.below.mounted || !t.below._active) {
+      _endTransition();
+      return;
+    }
+    final bool backIn =
+        (t.coming ? widget.onBack : t.below.widget.onBack) != null &&
+        (t.coming ? t.below.widget.onBack : widget.onBack) == null;
+    final bool gesture = _navigator?.userGestureInProgress ?? false;
+    if (gesture) {
+      // A finger drives the pop: everything follows it.
+      t
+        ..gesture = true
+        ..follow(1 - a.value, backIn: backIn);
+    } else {
+      if (t.gesture) {
+        // Let go: on to the page under (the pop goes on), or back.
+        t.gesture = false;
+        t.aim(
+          forward:
+              a.status == AnimationStatus.reverse ||
+              a.status == AnimationStatus.dismissed,
+          backIn: backIn,
+        );
+      }
+      if (_measured(t)) {
+        t.step(dt);
+      }
+    }
+    _title.step(dt);
+    t.below._title.step(dt);
+    final bool done =
+        !gesture &&
+        (a.status == AnimationStatus.completed ||
+            a.status == AnimationStatus.dismissed) &&
+        t.isSettled &&
+        _title.isSettled;
+    if (done) {
+      _endTransition();
+      return;
+    }
+    setState(() {});
+    t.below._refresh();
+  }
+
+  void _endTransition() {
+    final _BarTransition? t = _transition;
+    _transition = null;
+    _barTicker.stop();
+    if (t != null) {
+      if (identical(t.below._coveredBy, this)) {
+        t.below._coveredBy = null;
+      }
+      t.below._refresh();
+      t.dispose();
+    }
+    _title.snap(1);
+    _refresh();
+  }
+
+  /// This bar's platters, from the bar's ends inward (leading, trailing),
+  /// as laid out; null before the bar's first layout.
+  (List<_Lane>, List<_Lane>)? _lanes() {
+    // Not a page taken out of the tree.
+    if (!mounted || !_active) {
+      return null;
+    }
+    final RenderObject? bar = _barKey.currentContext?.findRenderObject();
+    if (bar is! RenderBox || !bar.hasSize) {
+      return null;
+    }
+    Rect? rectOf(GlobalKey key) {
+      final RenderObject? box = key.currentContext?.findRenderObject();
+      if (box is! RenderBox || !box.hasSize || !box.attached) {
+        return null;
+      }
+      return MatrixUtils.transformRect(
+        box.getTransformTo(bar),
+        Offset.zero & box.size,
+      );
+    }
+
+    final (List<_Lane> lead, List<_Lane> trail) = (<_Lane>[], <_Lane>[]);
+    final List<(bool, List<GlassBarItem>)> leading = _leadingLanes();
+    for (final (int i, (bool back, List<GlassBarItem> items))
+        in leading.indexed) {
+      final Rect? r = i < _leadKeys.length ? rectOf(_leadKeys[i]) : null;
+      if (r == null) {
+        return null;
+      }
+      lead.add(_Lane(rect: r, items: items, back: back));
+    }
+    final List<List<GlassBarItem>> trailing = _groups(widget.actions);
+    for (final (int i, List<GlassBarItem> items) in trailing.indexed) {
+      final Rect? r = i < _trailKeys.length ? rectOf(_trailKeys[i]) : null;
+      if (r == null) {
+        return null;
+      }
+      trail.add(_Lane(rect: r, items: items));
+    }
+    // The trailing platters from the bar's trailing end inward.
+    return (lead, trail.reversed.toList());
+  }
+
+  List<(bool, List<GlassBarItem>)> _leadingLanes() =>
+      <(bool, List<GlassBarItem>)>[
+        if (widget.onBack != null) (true, const <GlassBarItem>[]),
+        for (final List<GlassBarItem> group in _groups(widget.leading))
+          (false, group),
+      ];
+
+  static GlobalKey _keyAt(List<GlobalKey> keys, int i) {
+    while (keys.length <= i) {
+      keys.add(GlobalKey());
+    }
+    return keys[i];
+  }
+
+  // The bar between the two pages, drawn by the page on top, fixed on the
+  // screen: each pair of platters from the bar's ends inward, as UIKit's.
+  Widget _morphLayer(_BarTransition t) {
+    final bool adopted = identical(t, _adopted);
+    final (List<_Lane>, List<_Lane>)? own = adopted ? t.topLanes : _lanes();
+    final (List<_Lane>, List<_Lane>)? under = adopted
+        ? _lanes()
+        : t.below._lanes();
+    if (under == null) {
+      return const SizedBox.shrink();
+    }
+    if (!adopted && own != null) {
+      t.topLanes = own;
+    }
+    // Before this page's bar is laid out (its first frame), the other
+    // page's platters, as they are.
+    final (List<_Lane>, List<_Lane>) from = t.coming ? under : (own ?? under);
+    final (List<_Lane>, List<_Lane>) to = t.coming ? (own ?? under) : under;
+    final List<Widget> lanes = <Widget>[];
+    for (final (List<_Lane> a, List<_Lane> b) in <(List<_Lane>, List<_Lane>)>[
+      (from.$1, to.$1),
+      (from.$2, to.$2),
+    ]) {
+      Rect? neighbor;
+      for (var i = 0; i < math.max(a.length, b.length); i++) {
+        final _Lane? x = i < a.length ? a[i] : null;
+        final _Lane? y = i < b.length ? b[i] : null;
+        lanes.add(
+          _LaneMorph(
+            from: x,
+            to: y,
+            neighbor: neighbor,
+            motion: t,
+            content: _laneContent,
+          ),
+        );
+        neighbor = x != null && y != null
+            ? Rect.lerp(x.rect, y.rect, t.width.value)
+            : (y ?? x)!.rect;
+      }
+    }
+    return IgnorePointer(
+      child: _ScreenFixed(
+        page: _pageKey,
+        navigator: _navigator!.context,
+        frame: (t.elapsed * 1000).round(),
+        child: GlassGroup(child: Stack(children: lanes)),
+      ),
+    );
+  }
+
+  // A lane's items on its glass, as its platter draws them (inert), shown
+  // [strength] strongly.
+  Widget _laneContent(_Lane lane, double strength) {
+    if (lane.back) {
+      return SizedBox.square(
+        dimension: _Bars.platter,
+        child: GlassVibrantLabel(
+          glyph: _chevron,
+          glyphSize: const Size(16.33, 23),
+          style: _Bars.item,
+          pressFade: _Bars.pressFade,
+          strength: strength,
+        ),
+      );
+    }
+    return SizedBox(
+      height: _Bars.platter,
+      width: lane.rect.width,
+      child: _platterRow(lane.items, strength: strength),
+    );
+  }
+
   List<GlassMenuItem> _history() {
     final NavigatorState? navigator = _navigator;
-    final ModalRoute<Object?>? own = ModalRoute.of(context);
+    final ModalRoute<Object?>? own = _route;
     final List<_GlassPageState>? stack = navigator == null
         ? null
         : _stacks[navigator];
@@ -303,10 +737,10 @@ class _GlassPageState extends State<GlassPage> with TickerProviderStateMixin {
     final List<GlassMenuItem> items = <GlassMenuItem>[];
     final Set<Route<Object?>> seen = <Route<Object?>>{own};
     for (final _GlassPageState page in stack.reversed) {
-      if (!page.mounted) {
+      if (!page.mounted || !page._active) {
         continue;
       }
-      final ModalRoute<Object?>? route = ModalRoute.of(page.context);
+      final ModalRoute<Object?>? route = page._route;
       final String? title = page.widget.title;
       if (route == null ||
           !route.isActive ||
@@ -332,6 +766,24 @@ class _GlassPageState extends State<GlassPage> with TickerProviderStateMixin {
 
   @override
   void dispose() {
+    _route?.animation?.removeListener(_routeMoved);
+    _route?.animation?.removeStatusListener(_routeStatus);
+    _adopted?.dispose();
+    _adopted = null;
+    // Popped mid-transition: the page under shows its own bar again.
+    final _BarTransition? t = _transition;
+    if (t != null) {
+      _transition = null;
+      final _GlassPageState below = t.below;
+      if (identical(below._coveredBy, this)) {
+        below._coveredBy = null;
+        below._title.snap(1);
+        // Not while the tree is being finalized.
+        SchedulerBinding.instance.addPostFrameCallback((_) => below._refresh());
+      }
+      t.dispose();
+    }
+    _barTicker.dispose();
     _leaveStack();
     _sampler.dispose();
     _searchFocus
@@ -468,7 +920,9 @@ class _GlassPageState extends State<GlassPage> with TickerProviderStateMixin {
           ),
         );
 
+        final _BarTransition? transition = _transition ?? _adopted;
         final Widget page = Stack(
+          key: _pageKey,
           children: <Widget>[
             // What the glass reads its light or dark look from: the
             // background, the content and the large title.
@@ -542,15 +996,25 @@ class _GlassPageState extends State<GlassPage> with TickerProviderStateMixin {
               right: 0,
               top: top,
               height: _Bars.platter,
-              child: _navigationBar(),
+              child: KeyedSubtree(key: _barKey, child: _navigationBar()),
             ),
+            // Between two pages, the page on top draws both pages'
+            // platters morphing, fixed on the screen.
+            if (transition != null)
+              Positioned(
+                left: 0,
+                right: 0,
+                top: top,
+                height: _Bars.platter,
+                child: _morphLayer(transition),
+              ),
             if (widget.toolbar.isNotEmpty)
               Positioned(
                 left: _Bars.toolSide,
                 right: _Bars.toolSide,
                 top: barTop,
                 height: _Bars.toolHeight,
-                child: _Toolbar(items: widget.toolbar),
+                child: _toolbarBetween(_Toolbar(items: widget.toolbar)),
               ),
             if (_hasSearch)
               Positioned(
@@ -667,23 +1131,44 @@ class _GlassPageState extends State<GlassPage> with TickerProviderStateMixin {
       _systemDark || (_topShown.value > 0.5 && _topLook.black > 0.125);
 
   Widget _navigationBar() {
+    // Its platters hide while a transition draws them.
+    final bool hide =
+        _transition != null || _coveredBy != null || _adopted != null;
+    var lane = 0;
     final List<Widget> leading = <Widget>[
       if (widget.onBack != null)
-        _BackButton(onPressed: widget.onBack!, history: _history),
+        KeyedSubtree(
+          key: _keyAt(_leadKeys, lane++),
+          child: _BackButton(onPressed: widget.onBack!, history: _history),
+        ),
       for (final List<GlassBarItem> group in _groups(widget.leading))
-        _NavPlatter(items: group),
+        KeyedSubtree(
+          key: _keyAt(_leadKeys, lane++),
+          child: _NavPlatter(items: group),
+        ),
     ];
     final List<Widget> trailing = <Widget>[
-      for (final List<GlassBarItem> group in _groups(widget.actions))
-        _NavPlatter(items: group),
+      for (final (int i, List<GlassBarItem> group) in _groups(
+        widget.actions,
+      ).indexed)
+        KeyedSubtree(
+          key: _keyAt(_trailKeys, i),
+          child: _NavPlatter(items: group),
+        ),
     ];
     final String? title = widget.title;
     final Widget bar = GlassGroup(
       child: CustomMultiChildLayout(
         delegate: _NavLayout(textDirection: Directionality.of(context)),
         children: <Widget>[
-          LayoutId(id: _NavSlot.leading, child: _spaced(leading)),
-          LayoutId(id: _NavSlot.trailing, child: _spaced(trailing)),
+          LayoutId(
+            id: _NavSlot.leading,
+            child: GlassHide(hidden: hide, child: _spaced(leading)),
+          ),
+          LayoutId(
+            id: _NavSlot.trailing,
+            child: GlassHide(hidden: hide, child: _spaced(trailing)),
+          ),
           if (title != null)
             LayoutId(
               id: _NavSlot.title,
@@ -697,7 +1182,7 @@ class _GlassPageState extends State<GlassPage> with TickerProviderStateMixin {
                   // (scrolled its row's height), as UIKit's.
                   final bool shown =
                       !widget.largeTitle || offset >= _Bars.largeRow;
-                  return AnimatedSlide(
+                  final Widget slid = AnimatedSlide(
                     offset: Offset(0, shown ? 0 : 15 / 22.67),
                     duration: const Duration(milliseconds: 250),
                     curve: Curves.easeOutCubic,
@@ -722,6 +1207,9 @@ class _GlassPageState extends State<GlassPage> with TickerProviderStateMixin {
                       ),
                     ),
                   );
+                  // Between two pages: fading as its page goes.
+                  final double fade = _title.value.clamp(0.0, 1.0);
+                  return fade >= 1 ? slid : Opacity(opacity: fade, child: slid);
                 },
               ),
             ),
@@ -939,24 +1427,6 @@ class _NavPlatter extends StatelessWidget {
     final GlassBarItem first = items.first;
     final bool prominent = first.prominent;
     final bool lone = items.length == 1 && first.icon != null;
-    final List<Widget> children = <Widget>[
-      for (final (int i, GlassBarItem item) in items.indexed) ...<Widget>[
-        if (i > 0) const SizedBox(width: _Bars.navItemGap),
-        _menuAnchor(
-          context,
-          item,
-          anchored: !lone,
-          child: _ItemButton(
-            item: item,
-            highlight: _Bars.navHighlight,
-            height: _Bars.navItem,
-            width: lone ? _Bars.navItem : null,
-            iconSide: _Bars.navIconSide,
-            textSide: _Bars.navTextSide,
-          ),
-        ),
-      ],
-    ];
     return _menuAnchor(
       context,
       first,
@@ -967,18 +1437,47 @@ class _NavPlatter extends StatelessWidget {
         child: Glass(
           interactive: true,
           tint: prominent && first.isEnabled ? _tintOf(context, first) : null,
-          child: Padding(
-            padding: const EdgeInsets.all(_Bars.navInset),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: children,
-            ),
-          ),
+          child: _platterRow(items, anchors: context),
         ),
       ),
     );
   }
+}
+
+/// A platter's items in a row, 4pt in: as tappable items (with their menus
+/// when [anchors] is given), or inert, drawn by a bar between two pages.
+Widget _platterRow(
+  List<GlassBarItem> items, {
+  BuildContext? anchors,
+  double strength = 1,
+}) {
+  final bool lone = items.length == 1 && items.first.icon != null;
+  return Padding(
+    padding: const EdgeInsets.all(_Bars.navInset),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: <Widget>[
+        for (final (int i, GlassBarItem item) in items.indexed) ...<Widget>[
+          if (i > 0) const SizedBox(width: _Bars.navItemGap),
+          () {
+            final Widget button = _ItemButton(
+              item: item,
+              highlight: _Bars.navHighlight,
+              height: _Bars.navItem,
+              width: lone ? _Bars.navItem : null,
+              iconSide: _Bars.navIconSide,
+              textSide: _Bars.navTextSide,
+              strength: strength,
+            );
+            return anchors == null
+                ? button
+                : _menuAnchor(anchors, item, anchored: !lone, child: button);
+          }(),
+        ],
+      ],
+    ),
+  );
 }
 
 /// [child], opening [item]'s menu when [anchored] and it has one (as
@@ -1023,7 +1522,11 @@ class _ItemButton extends StatelessWidget {
     required this.textSide,
     required this.highlight,
     this.width,
+    this.strength = 1,
   });
+
+  /// How strongly it shows (crossfading between two pages' bars).
+  final double strength;
 
   final GlassBarItem item;
   final double height;
@@ -1062,7 +1565,10 @@ class _ItemButton extends StatelessWidget {
                   enabled: enabled,
                   onTint: item.prominent && enabled,
                   pressFade: _Bars.pressFade,
-                  strength: 1 - (1 - highlight) * pressed,
+                  strength:
+                      strength *
+                      _ItemStrength.of(context) *
+                      (1 - (1 - highlight) * pressed),
                 ),
           ),
         ),

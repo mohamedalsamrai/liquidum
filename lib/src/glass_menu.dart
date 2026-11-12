@@ -1615,7 +1615,7 @@ class _GlassMenuAnchorState extends State<GlassMenuAnchor> {
   Widget build(BuildContext context) {
     final bool open = _menu != null;
     Widget child = _GlassHiddenScope(
-      hidden: open,
+      hidden: open || _GlassHiddenScope.above(context),
       child: _Hidden(hidden: open, child: widget.child),
     );
     if (widget.longPress) {
