@@ -22,6 +22,9 @@ enum GlassButtonSize {
 /// GlassButton(label: 'Done', onPressed: save)
 /// GlassButton(icon: CupertinoIcons.add, onPressed: add)
 /// GlassButton(label: 'Buy', prominent: true, onPressed: buy)
+/// GlassButton(icon: CupertinoIcons.ellipsis, menu: [
+///   GlassMenuItem(label: 'Share', onPressed: share),
+/// ])
 /// ```
 ///
 /// The four styles are UIKit's: [prominent] fills the glass with [tint]
@@ -33,8 +36,15 @@ enum GlassButtonSize {
 /// and darker, so it takes the colors behind the button.
 ///
 /// Pressed, the glass swells, lightens and glows under the finger and
-/// springs back when let go, as UIKit's (see [Glass.interactive]). With no
-/// [onPressed] the button is disabled: still glass, with a faint label.
+/// springs back when let go, as UIKit's (see [Glass.interactive]). With
+/// neither [onPressed] nor [menu] the button is disabled: still glass, with
+/// a faint label.
+///
+/// With a [menu], touching the button opens it, as UIKit's buttons that
+/// show their menu as their primary action: a glass platter grows out of
+/// the button with UIKit's liquid morph, and morphs back into it when a row
+/// is chosen or the screen is tapped elsewhere. A finger can also slide
+/// from the button onto a row and lift to choose it.
 ///
 /// Sizes and spacing as UIKit's on iOS 26.5: a medium button is 38.33pt
 /// tall with 12pt either side of its 17pt label, or a 34.33pt circle with
@@ -42,7 +52,8 @@ enum GlassButtonSize {
 class GlassButton extends StatelessWidget {
   const GlassButton({
     super.key,
-    required this.onPressed,
+    this.onPressed,
+    this.menu,
     this.label,
     this.icon,
     this.prominent = false,
@@ -51,8 +62,12 @@ class GlassButton extends StatelessWidget {
     this.size = GlassButtonSize.medium,
   }) : assert(label != null || icon != null, 'A label, an icon or both.');
 
-  /// Called when the button is tapped; null disables it.
+  /// Called when the button is tapped; null (with no [menu]) disables it.
   final VoidCallback? onPressed;
+
+  /// The menu the button opens when touched (instead of [onPressed]):
+  /// [GlassMenuItem]s and [GlassMenuItem.divider]s.
+  final List<GlassMenuItem>? menu;
 
   final String? label;
 
@@ -70,7 +85,7 @@ class GlassButton extends StatelessWidget {
 
   final GlassButtonSize size;
 
-  bool get _enabled => onPressed != null;
+  bool get _enabled => onPressed != null || menu != null;
 
   static const double _iconGap = 6;
 
@@ -177,6 +192,63 @@ class GlassButton extends StatelessWidget {
         );
       },
     );
+    final Widget button = SizedBox(
+      height: round ? m.circle : m.height,
+      width: round ? m.circle : null,
+      child: Glass._button(
+        _material,
+        style: style,
+        tint: _fill,
+        interactive: _enabled,
+        child: content,
+      ),
+    );
+    final List<GlassMenuItem>? items = menu;
+    if (items != null) {
+      return Semantics(
+        button: true,
+        label: label,
+        child: _GlassMenuSource(
+          items: items,
+          sourceContent: Builder(
+            builder: (BuildContext context) {
+              final bool dark =
+                  MediaQuery.platformBrightnessOf(context) == Brightness.dark;
+              final Color color = white || dark
+                  ? const Color(0xFFFFFFFF)
+                  : const Color(0xFF000000);
+              return Padding(
+                padding: EdgeInsets.symmetric(horizontal: round ? 0 : m.side),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: <Widget>[
+                    if (icon != null) Icon(icon, size: m.icon, color: color),
+                    if (icon != null && label != null)
+                      const SizedBox(width: _iconGap),
+                    if (label != null)
+                      Flexible(
+                        child: Text(
+                          label!,
+                          maxLines: 1,
+                          softWrap: false,
+                          overflow: TextOverflow.clip,
+                          style: TextStyle(
+                            fontSize: m.font,
+                            letterSpacing: m.tracking,
+                            color: color,
+                            decoration: TextDecoration.none,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              );
+            },
+          ),
+          child: button,
+        ),
+      );
+    }
     return Semantics(
       button: true,
       enabled: _enabled,
@@ -184,17 +256,7 @@ class GlassButton extends StatelessWidget {
       child: GestureDetector(
         onTap: onPressed,
         behavior: HitTestBehavior.opaque,
-        child: SizedBox(
-          height: round ? m.circle : m.height,
-          width: round ? m.circle : null,
-          child: Glass._button(
-            _material,
-            style: style,
-            tint: _fill,
-            interactive: _enabled,
-            child: content,
-          ),
-        ),
+        child: button,
       ),
     );
   }

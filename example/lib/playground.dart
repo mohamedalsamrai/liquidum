@@ -525,6 +525,7 @@ class _GlassPageState extends State<_GlassPage> {
   bool _on = true;
   double _amount = 0.4;
   String _segment = 'One';
+  String _sort = 'Name';
 
   @override
   Widget build(BuildContext context) {
@@ -659,6 +660,38 @@ class _GlassPageState extends State<_GlassPage> {
                                 const _BarsPage(),
                           ),
                         ),
+                  ),
+                  // A menu: a touch opens it out of the button with
+                  // UIKit's liquid morph.
+                  GlassButton(
+                    label: 'Sort',
+                    icon: CupertinoIcons.arrow_up_arrow_down,
+                    menu: <GlassMenuItem>[
+                      for (final String by in const <String>[
+                        'Name',
+                        'Date',
+                        'Size',
+                      ])
+                        GlassMenuItem(
+                          label: by,
+                          checked: _sort == by,
+                          onPressed: () => setState(() => _sort = by),
+                        ),
+                      const GlassMenuItem.divider(),
+                      GlassMenuItem.submenu(
+                        label: 'Show',
+                        items: <GlassMenuItem>[
+                          GlassMenuItem(label: 'All', onPressed: () {}),
+                          GlassMenuItem(label: 'Favorites', onPressed: () {}),
+                        ],
+                      ),
+                      GlassMenuItem(
+                        label: 'Delete all',
+                        icon: CupertinoIcons.trash,
+                        destructive: true,
+                        onPressed: () {},
+                      ),
+                    ],
                   ),
                   GlassButton(
                     label: 'Page with search',

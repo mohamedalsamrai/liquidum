@@ -1,0 +1,65 @@
+Stage 6, part 1: pull-down menus (UIButton showsMenuAsPrimaryAction) and
+UIKit's liquid morph, 2026-11-12. UIKit = iOS 26.5 simulator, iPhone 17
+Pro Max (440 x 956), 3 px/pt. Liquidum: GlassButton(menu: [GlassMenuItem])
+in example/lib/menus_comparison.dart, laid out as the research catalog's
+menus page (glass buttons over the 44pt pattern).
+
+Method
+  UIKit's menu measured in a native catalog (simulator only): its views
+  (frames, fonts, colors), its glass archived, and every frame of its two
+  morph views logged (_UIMagicMorphView: scale, center, bounds, crossfade);
+  springs fitted to those frames. Screen video at 60fps (simctl
+  recordVideo) for the look of the morph; screenshots for the rest.
+
+UIKit's menu
+  Platter: 250pt of large regular glass (exactly Stage 1's inputs for its
+  size), continuous corners of 34pt, anchored at the button's top-left
+  corner and covering it; from its right edge near the screen's right; up
+  from its bottom edge, rows reversed, near the bottom.
+  Rows 42pt, 10pt from the top and bottom; groups 21pt apart with a 1pt
+  hairline (black 0.08) 24pt in. SF Regular 17, black 0.96 (white in
+  dark), not vibrant; destructive systemRed. Label 28pt in (79 with
+  icons); icon centered 55pt in; checkmark 21pt in; submenu chevron 214pt
+  in. Highlight: a capsule 10pt in from the sides.
+  Opens on touch down; a finger that slides from the button onto a row and
+  lifts chooses it (the platter leans toward it and glows: flex press).
+  Submenu: its own platter over the menu, a 62pt header (label semibold, a
+  chevron turned down) centered on its row, the menu receding to 0.97 and
+  dimming; it grows out of the row's highlight (omega 15.86, zeta 0.853).
+Morph (fitted, rms under 0.002 in scale)
+  Two shapes melting as one glass: the button (scale 1 -> 0.25, a quarter
+  of the way toward the menu's center, capsule -> circle) and the menu (a
+  circle half the button's height across at its center -> its rect), both
+  on one progress spring: omega 18.1, zeta 0.75 opening; 12.85, 0.80
+  closing. The menu's vertical center has its own spring with a kick along
+  its growth (open omega 18, zeta 0.6, 10 x the height gained pt/s; close
+  16.3, 0.82, 520 + 5.8 x the height lost), so it sags past its place and
+  settles. Content crossfades through a blur; closing, it blurs away
+  within ~0.05s.
+
+Results
+  Open menu (1-menu.jpg; 7 rows with icons, a checkmark, a submenu row, a
+  destructive row): rows within 1pt of UIKit's (text 224.0 vs 225.0pt);
+  the glass off the text within 5.9 levels RMS; dark (2-menu-dark.jpg)
+  4.9 levels.
+  Morph, frame by frame against UIKit's trace (2 rows): the menu's width,
+  height and horizontal travel within 1 to 3pt at every frame, opening and
+  closing; its sag on closing 18pt (UIKit 17.7pt). 3-open.jpg, 4-close.jpg:
+  time-aligned video frames (Liquidum's debug build on the simulator draws
+  ~20fps, so its in-between frames are coarser).
+  Submenu (5-submenu.jpg), drag to choose (6-drag.jpg): same layout and
+  sequence.
+  Android emulator, profile mode: the open menu rasters in 15-20ms a frame
+  while it moves, 4-10ms while the blob is small; at rest it draws nothing.
+
+Open
+  - UIKit nudges the menu 1 to 5pt off the button's corner in some cases
+    (7 rows: 18,199 for a button at 20,200; bottom: 15); Liquidum anchors
+    exactly.
+  - The gaussian blur radius of UIKit's crossfade is not readable from its
+    layers; Liquidum's (8pt opening, 12pt closing) is fitted by eye.
+  - The source's tilt ("PivotView") during the morph is not copied.
+  - The highlight is a light wash, not UIKit's vibrant white fill.
+  - Bar items' menus, the back button's history menu, context menus, the
+    edit menu, the date picker overlay and push/pop transitions are the
+    next parts of Stage 6.

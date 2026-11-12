@@ -37,6 +37,16 @@
   items, a large title that collapses into the bar) and a toolbar or a
   search field at the bottom, with UIKit's metrics, grouping, presses and
   its scroll-edge effect where content scrolls under them, light and dark.
+* New: `GlassButton.menu` and `GlassMenuItem`, UIKit's pull-down menus
+  (`showsMenuAsPrimaryAction`): a touch opens a 250pt platter of large
+  glass that grows out of the button with UIKit's liquid morph (the button
+  and the menu melt as two shapes on UIKit's springs, fitted to its frames
+  on iOS 26.5) and morphs back into it. UIKit's rows, checkmarks, icons,
+  dividers, destructive items and placement (down, or up with the rows
+  reversed near the bottom; from the right edge near the screen's right),
+  a finger that slides from the button onto a row and lifts, and
+  submenus (`GlassMenuItem.submenu`) that open over the menu. `onPressed`
+  is now optional on a button with a menu.
 * Fix: glass in a `GlassGroup` drew its content (a `GlassButton`'s label)
   in the system's look instead of the group's when the group turned light
   or dark with what is behind it.

@@ -14,6 +14,7 @@ import 'tab_bar/style.dart';
 import 'tab_bar/tint.dart';
 
 part 'glass_button.dart';
+part 'glass_menu.dart';
 part 'glass_press.dart';
 part 'glass_render.dart';
 
@@ -53,7 +54,8 @@ class Glass extends StatefulWidget {
     this.visible = true,
     this.interactive = false,
     this.child,
-  }) : _material = null;
+  }) : _material = null,
+       _feed = null;
 
   // A glass button's glass, with UIKit's gray material over it.
   const Glass._button(
@@ -64,7 +66,21 @@ class Glass extends StatefulWidget {
     required this.child,
   }) : radius = null,
        brightness = null,
-       visible = true;
+       visible = true,
+       _feed = null;
+
+  // A menu's glass: interactive, also pressed by a finger that went down
+  // elsewhere (on the button that opened it) and slid onto it.
+  const Glass._fed(
+    this._feed, {
+    required this.radius,
+    required this.brightness,
+    required this.interactive,
+    required this.child,
+  }) : style = GlassStyle.regular,
+       tint = null,
+       visible = true,
+       _material = null;
 
   final GlassStyle style;
 
@@ -102,6 +118,7 @@ class Glass extends StatefulWidget {
   final bool interactive;
 
   final _GlassMaterial? _material;
+  final _GlassPressFeed? _feed;
 
   final Widget? child;
 
@@ -141,6 +158,7 @@ class _GlassState extends State<Glass> with TickerProviderStateMixin {
     if (widget.interactive) {
       _press = _GlassPress();
     }
+    widget._feed?._glass = this;
     _sampler = FrameSampler(
       interval: const Duration(milliseconds: 50),
       sample: _sample,
@@ -162,6 +180,12 @@ class _GlassState extends State<Glass> with TickerProviderStateMixin {
   @override
   void didUpdateWidget(Glass oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget._feed != widget._feed) {
+      if (oldWidget._feed?._glass == this) {
+        oldWidget._feed!._glass = null;
+      }
+      widget._feed?._glass = this;
+    }
     if (widget.interactive != oldWidget.interactive) {
       _press?.dispose();
       _press = widget.interactive ? _GlassPress() : null;
@@ -202,6 +226,30 @@ class _GlassState extends State<Glass> with TickerProviderStateMixin {
     if (!_ticker.isActive) {
       _ticker.start();
     }
+  }
+
+  // A finger from elsewhere, in global coordinates.
+  void _fedDown(Offset global) {
+    final _GlassPress? press = _press;
+    final RenderObject? box = context.findRenderObject();
+    if (press == null || press.pressed || box is! RenderBox) {
+      return;
+    }
+    press.down(box.globalToLocal(global));
+    _wake();
+  }
+
+  void _fedMove(Offset global) {
+    final RenderObject? box = context.findRenderObject();
+    if (box is RenderBox) {
+      _press?.move(box.globalToLocal(global));
+      _wake();
+    }
+  }
+
+  void _fedUp() {
+    _press?.up();
+    _wake();
   }
 
   void _down(PointerDownEvent event) {
@@ -263,6 +311,9 @@ class _GlassState extends State<Glass> with TickerProviderStateMixin {
 
   @override
   void dispose() {
+    if (widget._feed?._glass == this) {
+      widget._feed!._glass = null;
+    }
     _sampler.dispose();
     _ticker.dispose();
     _presence.dispose();
