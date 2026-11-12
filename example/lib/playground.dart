@@ -526,6 +526,7 @@ class _GlassPageState extends State<_GlassPage> {
   double _amount = 0.4;
   String _segment = 'One';
   String _sort = 'Name';
+  final Set<int> _favorites = <int>{};
 
   @override
   Widget build(BuildContext context) {
@@ -708,32 +709,94 @@ class _GlassPageState extends State<_GlassPage> {
               const SizedBox(height: 24),
               // A glass group: glass within its spacing melts together, and
               // glass appearing in it grows out of its neighbors.
-              GlassGroup(
-                spacing: 20,
-                child: Row(
-                  children: <Widget>[
-                    GlassButton(
-                      icon: _more
-                          ? CupertinoIcons.xmark
-                          : CupertinoIcons.ellipsis,
-                      onPressed: () => setState(() => _more = !_more),
+              Row(
+                children: <Widget>[
+                  GlassGroup(
+                    spacing: 20,
+                    child: Row(
+                      children: <Widget>[
+                        GlassButton(
+                          icon: _more
+                              ? CupertinoIcons.xmark
+                              : CupertinoIcons.ellipsis,
+                          onPressed: () => setState(() => _more = !_more),
+                        ),
+                        for (final IconData icon in const <IconData>[
+                          CupertinoIcons.share,
+                          CupertinoIcons.bookmark,
+                          CupertinoIcons.trash,
+                        ]) ...<Widget>[
+                          const SizedBox(width: 6),
+                          Glass(
+                            visible: _more,
+                            child: SizedBox.square(
+                              dimension: 34.33,
+                              child: _more ? Icon(icon, size: 18) : null,
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
-                    for (final IconData icon in const <IconData>[
-                      CupertinoIcons.share,
-                      CupertinoIcons.bookmark,
-                      CupertinoIcons.trash,
-                    ]) ...<Widget>[
-                      const SizedBox(width: 6),
-                      Glass(
-                        visible: _more,
-                        child: SizedBox.square(
-                          dimension: 34.33,
-                          child: _more ? Icon(icon, size: 18) : null,
+                  ),
+                  const Spacer(),
+                  // Context menus: a long press lifts a tile over the
+                  // dimmed screen and grows its menu out of it.
+                  for (final (int i, Color color) in const <(int, Color)>[
+                    (0, Color(0xFF0088FF)),
+                    (1, Color(0xFFFF8D28)),
+                    (2, Color(0xFF34C759)),
+                  ]) ...<Widget>[
+                    const SizedBox(width: 8),
+                    SizedBox.square(
+                      dimension: 56,
+                      child: GlassContextMenu(
+                        items: <GlassMenuItem>[
+                          GlassMenuItem(
+                            label: 'Favorite',
+                            icon: CupertinoIcons.heart,
+                            checked: _favorites.contains(i),
+                            onPressed: () => setState(
+                              () => _favorites.contains(i)
+                                  ? _favorites.remove(i)
+                                  : _favorites.add(i),
+                            ),
+                          ),
+                          GlassMenuItem(
+                            label: 'Copy',
+                            icon: CupertinoIcons.doc_on_doc,
+                            onPressed: () {},
+                          ),
+                          GlassMenuItem(
+                            label: 'Share',
+                            icon: CupertinoIcons.share,
+                            onPressed: () {},
+                          ),
+                          const GlassMenuItem.divider(),
+                          GlassMenuItem(
+                            label: 'Delete',
+                            icon: CupertinoIcons.trash,
+                            destructive: true,
+                            onPressed: () {},
+                          ),
+                        ],
+                        child: ClipRSuperellipse(
+                          borderRadius: const BorderRadius.all(
+                            Radius.circular(12),
+                          ),
+                          child: ColoredBox(
+                            color: color,
+                            child: Icon(
+                              _favorites.contains(i)
+                                  ? CupertinoIcons.heart_fill
+                                  : CupertinoIcons.photo,
+                              color: const Color(0xFFFFFFFF),
+                            ),
+                          ),
                         ),
                       ),
-                    ],
+                    ),
                   ],
-                ),
+                ],
               ),
             ],
           ),

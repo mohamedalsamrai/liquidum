@@ -7,7 +7,9 @@
 // Items are "Title", "Title/symbol", "Title/symbol/d" (destructive),
 // "Title/symbol/c" (checked), ">Title" (a submenu of three), "-" a divider.
 // Buttons: "Menu" at 20,200; an ellipsis at 200,200; a plus at the right
-// edge; "Bottom" at 20,820; a prominent button at the bottom right.
+// edge; "Bottom" at 20,820; a prominent button at the bottom right. Context
+// menus (the same items): a white label at 20,450, a clear label at
+// 300,530, a blue tile at 40,280 and an orange one at 260,640 (140pt).
 // `menusnav`: three GlassPages pushed (First, Second, Third), the last with
 // an ellipsis item whose menu is the items (the back button's long press
 // lists the pages under it). Writes
@@ -141,30 +143,91 @@ class MenusComparison extends StatelessWidget {
                   menu: items,
                 ),
               ),
-              const Positioned(
+              Positioned(
                 left: 20,
                 top: 450,
+                width: 251.67,
                 height: 44,
-                child: ColoredBox(
-                  color: Color(0xFFFFFFFF),
-                  child: Center(
-                    child: Text(
-                      '  Long-press for a context menu  ',
-                      style: TextStyle(
-                        fontSize: 17,
-                        color: Color(0xFF000000),
-                        decoration: TextDecoration.none,
-                      ),
+                child: GlassContextMenu(
+                  items: items,
+                  child: const ColoredBox(
+                    color: Color(0xFFFFFFFF),
+                    child: Center(
+                      child: _Text('Long-press for a context menu'),
                     ),
                   ),
                 ),
               ),
+              Positioned(
+                left: 300,
+                top: 530,
+                width: 110,
+                height: 44,
+                child: GlassContextMenu(
+                  items: items,
+                  child: const Center(child: _Text('Clear')),
+                ),
+              ),
+              for (final (double x, double y, Color color)
+                  in <(double, double, Color)>[
+                    (40, 280, const Color(0xFF0088FF)),
+                    (260, 640, const Color(0xFFFF8D28)),
+                  ])
+                Positioned(
+                  left: x,
+                  top: y,
+                  width: 140,
+                  height: 140,
+                  child: GlassContextMenu(items: items, child: _Tile(color)),
+                ),
             ],
           );
         },
       ),
     );
   }
+}
+
+class _Text extends StatelessWidget {
+  const _Text(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Text(
+    text,
+    style: const TextStyle(
+      fontSize: 17,
+      color: Color(0xFF000000),
+      decoration: TextDecoration.none,
+    ),
+  );
+}
+
+// The catalog's tile: 140pt, continuous corners of 16pt, "Tile" in white.
+class _Tile extends StatelessWidget {
+  const _Tile(this.color);
+
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) => ClipRSuperellipse(
+    borderRadius: const BorderRadius.all(Radius.circular(16)),
+    child: ColoredBox(
+      color: color,
+      child: const Center(
+        child: Text(
+          'Tile',
+          style: TextStyle(
+            fontSize: 22,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFFFFFFFF),
+            decoration: TextDecoration.none,
+          ),
+        ),
+      ),
+    ),
+  );
 }
 
 class MenusNavComparison extends StatefulWidget {

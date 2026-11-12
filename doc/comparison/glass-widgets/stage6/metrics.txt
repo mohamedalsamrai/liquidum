@@ -60,8 +60,8 @@ Open
     layers; Liquidum's (8pt opening, 12pt closing) is fitted by eye.
   - The source's tilt ("PivotView") during the morph is not copied.
   - The highlight is a light wash, not UIKit's vibrant white fill.
-  - Context menus, the edit menu, the date picker overlay and push/pop
-    transitions are the next parts of Stage 6.
+  - The edit menu, the date picker overlay and push/pop transitions are
+    the next parts of Stage 6.
 
 Part 2: bar item menus and the back button's history, 2026-11-12.
 UIKit = a UINavigationController of three pages ("First", "Second",
@@ -91,3 +91,59 @@ Open
   - The morph starts from the platter at rest, not swollen by the press.
   - Liquidum's history lists GlassPages (by their titles) in the same
     Navigator; pages without a title are left out.
+
+Part 3: context menus, 2026-11-12.
+UIKit = UIContextMenuInteraction on the catalog's menus page: a 140pt
+tile (continuous corners 16) at 40,280 and one at 260,640, a white label
+(251.67 x 44) at 20,450 and a clear one (110 x 44) at 300,530; items
+Copy, Share, -, Delete. Liquidum = GlassContextMenu around the same views
+(menus_comparison.dart menus). Per-frame layer traces of warm opens and
+closes, screenshots light and dark.
+
+UIKit's
+  Press: 0.18s after touch down the view is lifted into a platter that
+  grows while the finger rests: its longer side +15.7pt on a critically
+  damped spring (omega 5.77), the same points for any size (152.4 for the
+  140 tile and 264.1 for the 251.67 label at 0.74s), about its center.
+  Open: 0.80s after touch down. The view lifts to 1.15x, or 26pt longer
+  on its longer side when that is less (the label: 277.67 x 48.67), kept
+  20pt from the screen's sides (the label moves 13pt right); one spring,
+  omega 21, zeta 0.8 (closing 20.8, 0.8). The screen dims under a plain
+  overlay of (0.086, 0.082, 0.165) at 0.21, light and dark alike, no
+  blur (omega 20.7 in, 16.1 out). The lifted view casts a shadow from its
+  opaque pixels: black, 0.27, sigma 18.5pt, no offset (a clear label
+  casts none and gets no platter behind it). Its corners are continuous,
+  13pt at the view's own size (14.3 on the label).
+  The menu: the same glass and rows as a pull-down's, 20pt from the view
+  on the side with more room (the clear label at y 552 goes above with
+  room below), from the view's left edge, or its right edge when it would
+  cross the screen's; rows in their order either way. It grows with the
+  liquid morph out of the view's center, from 0.4 of the view (each side
+  at most the menu's shorter side: 56 x 56 for the tile, 66.8 x 17.6 for
+  the label), no source glass; its center travels with the progress, its
+  size grows geometrically a little ahead (q = p + 0.32 p(1 - p); fitted
+  over three views open and close, 0.7pt rms). Closing reverses it.
+  After the open the finger can slide onto a row and lift to choose it;
+  lifting elsewhere leaves the menu open; a tap outside (or on the view)
+  closes it.
+
+Results (8-context.jpg, UIKit left)
+  Screens (mean |difference|, 0-255): the dim 0.3 to 0.9; the lifted
+  tiles 0.4 to 0.5; the shadow band around them 2.2 to 2.6; the label 5.3
+  (its text rendering; its corners within 0.4pt); the menus 8 to 10
+  (2.3 to 3.5 between rows, 10 along the top edge, see Open).
+  Motion against the traces (60fps, same touch): the lifted view within
+  0.4pt; the menu's width within 3.6pt (rms 0.7), height 2.4 (0.5),
+  center 5.2 (0.8) opening; closing 3.5, 2.2 and 1.5.
+  Android (emulator, profile): later opens drop 0 to 1 frames; the very
+  first open after installing compiles once (252ms), not after restarts.
+  Tests: places and sizes of the three views, the lift, the drag onto a
+  row, a short tap left to the view, sliding away cancels.
+
+Open
+  - The menu's glass over sharp text (the white label under its top)
+    shows the text refracted along its rim; UIKit's shows it frosted.
+  - The view crossfades from its pressed to its lifted snapshot in UIKit
+    (it looks see-through for a frame or two); Liquidum draws one view.
+  - The platter shadow's fade during the lift is not measured (Liquidum
+    fades it in with the lift).

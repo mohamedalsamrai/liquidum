@@ -52,6 +52,13 @@
   `GlassPage`'s back button for 0.6s opens UIKit's history menu: the titles
   of the pages under it in its navigator, nearest first; lifting the
   finger on one goes back to it.
+* New: `GlassContextMenu(items:, child:)`, UIKit's context menus
+  (`UIContextMenuInteraction`), measured on iOS 26.5: a resting finger
+  grows the view; after 0.8s it lifts over the dimmed screen with its
+  shadow and the menu grows out of its center with the liquid morph, 20pt
+  beside it on the side with more room. Slide onto a row and lift to
+  choose it; a tap outside closes the menu. A shorter touch stays the
+  view's own.
 * Fix: a `GlassButton` with a menu inside a `GlassGroup` kept its glass
   while its menu was open; and it no longer adds a layer around its glass.
 * Fix: glass in a `GlassGroup` drew its content (a `GlassButton`'s label)

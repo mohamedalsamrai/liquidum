@@ -160,6 +160,59 @@ abstract final class _MorphSprings {
   static const double spacing = 20;
 }
 
+/// UIKit's context menu (`UIContextMenuInteraction`) on iOS 26.5, measured
+/// frame by frame: the touched view grows while the finger rests on it,
+/// lifts over a dimmed screen once it is a long press, and the menu grows
+/// out of its center with the liquid morph, 20pt beside it.
+abstract final class _ContextMetrics {
+  /// The menu opens this long after the finger went down; the view starts
+  /// growing a fifth of a second in.
+  static const Duration openDelay = Duration(milliseconds: 800);
+  static const Duration pressDelay = Duration(milliseconds: 200);
+
+  // While pressed, the view's longer side grows toward 15.7pt more on a
+  // critically damped spring (omega 5.77), whatever its size.
+  static const double pressGrowth = 15.7;
+  static const double pressResponse = 2 * math.pi / 5.77;
+
+  /// Lifted, it is 1.15 times its size, or 26pt longer on its longer side
+  /// when that is less, and kept 20pt from the screen's sides.
+  static const double liftScale = 1.15;
+  static const double liftGrowth = 26;
+  static const double edge = 20;
+
+  /// The menu sits this far from the lifted view, on the side with more
+  /// room.
+  static const double gap = 20;
+
+  /// The view's corners (continuous, at its own size, so they grow as it
+  /// lifts) and its shadow: black at 0.27,
+  /// blurred by a sigma of 18.5pt, from the view's opaque pixels.
+  static const double radius = 13;
+  static const double shadowOpacity = 0.27;
+  static const double shadowSigma = 18.5;
+
+  /// The dim over the screen: this color at 0.21, light or dark.
+  static const Color dim = Color.fromRGBO(22, 21, 42, 0.21);
+
+  /// The menu starts as 0.4 of the view (each side at most the menu's
+  /// shorter side), at the view's center.
+  static const double start = 0.4;
+
+  /// The menu's size runs ahead of the progress by this times p(1 - p).
+  static const double sizeLead = 0.32;
+
+  // One spring lifts the view and grows the menu: omega 21, damping ratio
+  // 0.8 opening; 20.8 and 0.8 closing. The dim: 20.7 and 0.81 in, 16.1
+  // and 0.82 out.
+  static const double openResponse = 2 * math.pi / 21;
+  static const double closeResponse = 2 * math.pi / 20.8;
+  static const double damping = 0.8;
+  static const double dimInResponse = 2 * math.pi / 20.7;
+  static const double dimOutResponse = 2 * math.pi / 16.1;
+  static const double dimDamping = 0.81;
+}
+
 /// Presses a menu's glass with a finger that went down elsewhere (on the
 /// button that opened the menu) and slid onto it, as UIKit's menu leans
 /// toward and glows under that finger. Global coordinates.
@@ -197,6 +250,8 @@ GlobalKey<_GlassMenuOverlayState> _showGlassMenu({
   required List<GlassMenuItem> items,
   required Widget sourceContent,
   required VoidCallback onClosed,
+  Widget? preview,
+  bool pressing = false,
 }) {
   final OverlayState overlay = Overlay.of(context, rootOverlay: true);
   final RenderBox box = context.findRenderObject()! as RenderBox;
@@ -214,6 +269,10 @@ GlobalKey<_GlassMenuOverlayState> _showGlassMenu({
       source: source,
       items: items,
       sourceContent: sourceContent,
+      preview: preview == null
+          ? null
+          : InheritedTheme.captureAll(context, preview, to: overlay.context),
+      pressing: pressing,
       onClosed: () {
         entry.remove();
         entry.dispose();
@@ -232,12 +291,24 @@ class _GlassMenuOverlay extends StatefulWidget {
     required this.items,
     required this.sourceContent,
     required this.onClosed,
+    this.preview,
+    this.pressing = false,
   });
 
   final Rect source;
   final List<GlassMenuItem> items;
   final Widget sourceContent;
   final VoidCallback onClosed;
+
+  /// A context menu's view, drawn lifted over the dimmed screen (the menu
+  /// grows out of its center and no source glass is drawn); null for a
+  /// menu that grows out of glass.
+  final Widget? preview;
+
+  /// A context menu whose finger is still resting: the view grows until
+  /// [_GlassMenuOverlayState.open] (or shrinks back on
+  /// [_GlassMenuOverlayState.cancelPress]).
+  final bool pressing;
 
   @override
   State<_GlassMenuOverlay> createState() => _GlassMenuOverlayState();
@@ -266,6 +337,23 @@ class _GlassMenuOverlayState extends State<_GlassMenuOverlay>
   bool _closing = false;
   Rect? _menu;
   bool _up = false;
+
+  // A context menu: how much the resting finger has grown the view (on its
+  // longer side), the dim, the lifted view's box, and where the lift
+  // starts from (the pressed view opening, the source closing).
+  bool get _isContext => widget.preview != null;
+  late bool _pressing = widget.pressing;
+  final GlassSpring _press = GlassSpring(
+    response: _ContextMetrics.pressResponse,
+    dampingRatio: 1,
+    tolerance: 0.01,
+  );
+  final GlassSpring _dim = GlassSpring(
+    response: _ContextMetrics.dimInResponse,
+    dampingRatio: _ContextMetrics.dimDamping,
+  );
+  Rect? _lift;
+  Rect _from = Rect.zero;
   List<List<GlassMenuItem>> _groups = const <List<GlassMenuItem>>[];
   GlassMenuItem? _highlight;
   final _GlassPressFeed _feed = _GlassPressFeed();
@@ -322,11 +410,76 @@ class _GlassMenuOverlayState extends State<_GlassMenuOverlay>
       setState(() => _highlight = row);
     }
     final RenderObject? box = context.findRenderObject();
-    if (box is RenderBox && position.isFinite) {
+    // A context menu's finger starts on the view: the menu's glass answers
+    // it once it comes over the menu.
+    final bool near =
+        !_isContext || (_menu != null && _menu!.inflate(16).contains(position));
+    if (box is RenderBox && position.isFinite && near) {
       _feed.move(box.localToGlobal(position));
     } else {
       _feed.up();
     }
+  }
+
+  /// A context menu's view: the box it covers while the finger rests (its
+  /// longer side grown by [_press]'s points, up to its lifted size).
+  Rect _pressed() {
+    final Rect s = widget.source;
+    final double longer = math.max(s.longestSide, 1);
+    final double k = math.min(
+      1 + math.max(_press.value, 0) / longer,
+      _liftScale(MediaQuery.sizeOf(context)),
+    );
+    return Rect.fromCenter(
+      center: s.center,
+      width: s.width * k,
+      height: s.height * k,
+    );
+  }
+
+  // 1.15, or 26pt more on the longer side when that is less; no more than
+  // fits between the screen's sides less 20pt each.
+  double _liftScale(Size screen) {
+    final Rect s = widget.source;
+    final double longer = math.max(s.longestSide, 1);
+    double k = math.min(
+      _ContextMetrics.liftScale,
+      (longer + _ContextMetrics.liftGrowth) / longer,
+    );
+    final double room = screen.width - 2 * _ContextMetrics.edge;
+    if (s.width * k > room) {
+      k = math.max(1, room / math.max(s.width, 1));
+    }
+    return k;
+  }
+
+  /// The finger has rested long enough: the view lifts, the screen dims and
+  /// the menu grows out of the view.
+  void open() {
+    if (!_isContext || !_pressing || _closing) {
+      return;
+    }
+    _from = _pressed();
+    _pressing = false;
+    _progress
+      ..configure(_ContextMetrics.openResponse, _ContextMetrics.damping)
+      ..target = 1;
+    _dim.target = 1;
+    setState(() {});
+    _wake();
+  }
+
+  /// The finger lifted or moved away before the menu opened: the view
+  /// shrinks back and the overlay goes.
+  void cancelPress() {
+    if (!_pressing || _closing) {
+      return;
+    }
+    _closing = true;
+    _press
+      ..configure(_ContextMetrics.closeResponse, _ContextMetrics.damping)
+      ..target = 0;
+    _wake();
   }
 
   /// That finger lifted at [position] after dragging: the row under it is
@@ -343,8 +496,22 @@ class _GlassMenuOverlayState extends State<_GlassMenuOverlay>
   @override
   void initState() {
     super.initState();
-    _progress.target = 1;
-    _narrow.target = 1;
+    if (_isContext) {
+      if (_pressing) {
+        _press.target = _ContextMetrics.pressGrowth;
+      } else {
+        // Opened at once (by an assistive technology's long press).
+        _progress.configure(
+          _ContextMetrics.openResponse,
+          _ContextMetrics.damping,
+        );
+        _progress.target = 1;
+        _dim.target = 1;
+      }
+    } else {
+      _progress.target = 1;
+      _narrow.target = 1;
+    }
     _ticker.start();
   }
 
@@ -397,12 +564,29 @@ class _GlassMenuOverlayState extends State<_GlassMenuOverlay>
     }
     final Rect? menu = _menu;
     if (menu == null) {
+      if (_pressing) {
+        cancelPress();
+        return;
+      }
       widget.onClosed();
       return;
     }
     _closing = true;
     // An open submenu folds back as the menu morphs away.
     _subSpring.target = 0;
+    if (_isContext) {
+      // The view settles back into its place, the dim fades, the menu
+      // shrinks back into the view's center.
+      _from = widget.source;
+      _progress
+        ..configure(_ContextMetrics.closeResponse, _ContextMetrics.damping)
+        ..target = 0;
+      _dim
+        ..configure(_ContextMetrics.dimOutResponse, _ContextMetrics.dimDamping)
+        ..target = 0;
+      _wake();
+      return;
+    }
     final Rect s = widget.source;
     final double loss = menu.height - s.height / 2;
     final double dir = menu.center.dy >= s.center.dy ? 1 : -1;
@@ -433,13 +617,17 @@ class _GlassMenuOverlayState extends State<_GlassMenuOverlay>
     _narrow.step(dt);
     _y.step(dt);
     _subSpring.step(dt);
+    _press.step(dt);
+    _dim.step(dt);
     if (_sub != null && _subSpring.target == 0 && _subSpring.isSettled) {
       _sub = null;
     }
     if (_progress.isSettled &&
         _narrow.isSettled &&
         _y.isSettled &&
-        _subSpring.isSettled) {
+        _subSpring.isSettled &&
+        _dim.isSettled &&
+        _press.isSettled) {
       _ticker.stop();
       _last = null;
       if (_closing) {
@@ -506,6 +694,9 @@ class _GlassMenuOverlayState extends State<_GlassMenuOverlay>
   @override
   Widget build(BuildContext context) {
     final MediaQueryData media = MediaQuery.of(context);
+    if (_isContext) {
+      return _buildContext(media);
+    }
     final List<List<GlassMenuItem>> groups = _MenuMetrics.groups(widget.items);
     final double height = _MenuMetrics.height(groups);
     if (_menu == null) {
@@ -599,68 +790,247 @@ class _GlassMenuOverlayState extends State<_GlassMenuOverlay>
                     ),
                   ),
                 ),
-              Positioned.fromRect(
-                rect: menuRect,
-                child: Glass._fed(
-                  _feed,
-                  radius: radius,
-                  brightness: null,
-                  interactive: !_closing,
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(radius),
-                    child: OverflowBox(
-                      alignment: Alignment.topCenter,
-                      maxWidth: double.infinity,
-                      maxHeight: double.infinity,
-                      child: Transform.scale(
-                        scale: km * recede,
-                        alignment: Alignment.topCenter,
-                        child: _blurred(
-                          shown,
-                          SizedBox(
-                            width: _MenuMetrics.width,
-                            height: menu.height,
-                            child: _sub != null
-                                ? GestureDetector(
-                                    behavior: HitTestBehavior.opaque,
-                                    onTap: _closeSub,
-                                    child: Opacity(
-                                      opacity: 1 - 0.55 * q.clamp(0.0, 1.0),
-                                      child: IgnorePointer(
-                                        child: _GlassMenuList(
-                                          groups: _groups,
-                                          dark: dark,
-                                          hidden: _sub,
-                                          highlight: null,
-                                          onHighlight: (_) {},
-                                          onChoose: (_) {},
-                                        ),
-                                      ),
-                                    ),
-                                  )
-                                : IgnorePointer(
-                                    ignoring: _closing || p < 0.5,
-                                    child: _GlassMenuList(
-                                      groups: _groups,
-                                      dark: dark,
-                                      highlight: _highlight,
-                                      onHighlight: (GlassMenuItem? item) =>
-                                          setState(() => _highlight = item),
-                                      onChoose: _choose,
-                                    ),
-                                  ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
+              _menuGlass(
+                menu: menu,
+                menuRect: menuRect,
+                radius: radius,
+                scale: km * recede,
+                q: q,
+                dark: dark,
+                shown: shown,
               ),
             ],
           ),
         ),
         if (_sub != null) _submenu(media, dark, q),
       ],
+    );
+  }
+
+  // Where a context menu's view lifts to, and where its menu goes: the view
+  // grown about its center and kept 20pt from the screen's sides; the menu
+  // 20pt from it on the side with more room (the view moving away when the
+  // menu would not fit there), from its left edge, or from its right edge
+  // near the screen's right. The rows keep their order either way.
+  void _placeContext(Size screen, EdgeInsets safe, double height) {
+    final Rect s = widget.source;
+    final double k = _liftScale(screen);
+    final double w = s.width * k;
+    final double h = s.height * k;
+    const double edge = _ContextMetrics.edge;
+    const double gap = _ContextMetrics.gap;
+    const double margin = 8;
+    final double left = (s.center.dx - w / 2).clamp(
+      edge,
+      math.max(edge, screen.width - edge - w),
+    );
+    double top = s.center.dy - h / 2;
+    final double minY = safe.top + margin;
+    final double maxY = screen.height - safe.bottom - margin;
+    _up = top - minY > maxY - (top + h);
+    if (_up) {
+      top = math.min(math.max(top, minY + height + gap), maxY - h);
+    } else {
+      top = math.max(math.min(top, maxY - height - gap - h), minY);
+    }
+    _lift = Rect.fromLTWH(left, top, w, h);
+    double menuLeft = left;
+    if (menuLeft + _MenuMetrics.width > screen.width - margin) {
+      menuLeft = left + w - _MenuMetrics.width;
+    }
+    menuLeft = menuLeft.clamp(
+      margin,
+      math.max(margin, screen.width - margin - _MenuMetrics.width),
+    );
+    _menu = Rect.fromLTWH(
+      menuLeft,
+      _up ? top - gap - height : top + h + gap,
+      _MenuMetrics.width,
+      height,
+    );
+  }
+
+  // A context menu: the dim, the menu growing out of the view's center
+  // (from 0.4 of the view, a capsule), and the view, lifted, over both.
+  Widget _buildContext(MediaQueryData media) {
+    final Rect s = widget.source;
+    final bool dark = media.platformBrightness == Brightness.dark;
+    if (_menu == null && !_pressing && !_closing) {
+      _groups = _MenuMetrics.groups(widget.items);
+      _placeContext(media.size, media.padding, _MenuMetrics.height(_groups));
+      if (_from == Rect.zero) {
+        _from = s;
+      }
+    }
+    final Rect? menu = _menu;
+    final double p = _progress.value;
+    final double pc = p.clamp(0.0, 1.0);
+    final Rect view = menu == null ? _pressed() : Rect.lerp(_from, _lift, p)!;
+    final double dim = _dim.value.clamp(0.0, 1.0);
+    final double q = _sub == null ? 0 : _subSpring.value;
+    final List<Widget> children = <Widget>[
+      Positioned.fill(
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: close,
+          child: dim > 0.001
+              ? ColoredBox(
+                  color: _ContextMetrics.dim.withValues(
+                    alpha: _ContextMetrics.dim.a * dim,
+                  ),
+                )
+              : null,
+        ),
+      ),
+    ];
+    if (menu != null) {
+      final double side = math.min(_MenuMetrics.width, menu.height);
+      final double w0 = math.max(
+        _ContextMetrics.start * math.min(s.width, side),
+        1,
+      );
+      final double h0 = math.max(
+        _ContextMetrics.start * math.min(s.height, side),
+        1,
+      );
+      // Its center travels with the progress; its size grows by ratios
+      // (geometrically), a little ahead of it (fitted to UIKit's frames
+      // within 0.7pt rms).
+      final double g = p + _ContextMetrics.sizeLead * p * (1 - p);
+      final Rect morph = Rect.fromCenter(
+        center: Offset.lerp(s.center, menu.center, p)!,
+        width: w0 * math.pow(menu.width / w0, g),
+        height: h0 * math.pow(menu.height / h0, g),
+      );
+      final double km = morph.width / _MenuMetrics.width;
+      // A capsule at first, round until about halfway, then its corners.
+      final double radius = math.min(
+        morph.shortestSide / 2,
+        km *
+            ui.lerpDouble(
+              _MenuMetrics.width / 2,
+              _MenuMetrics.radius,
+              pc * pc,
+            )!,
+      );
+      final double recede = 1 - 0.03 * q;
+      children.add(
+        GlassGroup(
+          brightness: media.platformBrightness,
+          child: Stack(
+            children: <Widget>[
+              _menuGlass(
+                menu: menu,
+                menuRect: Rect.fromLTWH(
+                  morph.left,
+                  morph.top,
+                  morph.width * recede,
+                  morph.height * recede,
+                ),
+                radius: math.max(radius, 0),
+                scale: km * recede,
+                q: q,
+                dark: dark,
+                shown: pc,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    children.add(
+      Positioned.fromRect(
+        rect: view,
+        child: IgnorePointer(
+          child: _ContextPreview(
+            size: s.size,
+            scale: view.width / math.max(s.width, 1),
+            shadow: menu == null ? 0 : pc,
+            child: widget.preview!,
+          ),
+        ),
+      ),
+    );
+    if (_sub != null) {
+      children.add(_submenu(media, dark, q));
+    }
+    // While the finger rests (or the view shrinks back), touches go to the
+    // page.
+    return IgnorePointer(
+      ignoring: menu == null,
+      child: Stack(children: children),
+    );
+  }
+
+  // The menu's glass at [menuRect], its rows laid out at [menu]'s size and
+  // scaled by [scale] from the top center, fading in through a blur by
+  // [shown]; dimmed under a submenu open by [q].
+  Widget _menuGlass({
+    required Rect menu,
+    required Rect menuRect,
+    required double radius,
+    required double scale,
+    required double q,
+    required bool dark,
+    required double shown,
+  }) {
+    final double p = _progress.value;
+    return Positioned.fromRect(
+      rect: menuRect,
+      child: Glass._fed(
+        _feed,
+        radius: radius,
+        brightness: null,
+        interactive: !_closing,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(radius),
+          child: OverflowBox(
+            alignment: Alignment.topCenter,
+            maxWidth: double.infinity,
+            maxHeight: double.infinity,
+            child: Transform.scale(
+              scale: scale,
+              alignment: Alignment.topCenter,
+              child: _blurred(
+                shown,
+                SizedBox(
+                  width: _MenuMetrics.width,
+                  height: menu.height,
+                  child: _sub != null
+                      ? GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: _closeSub,
+                          child: Opacity(
+                            opacity: 1 - 0.55 * q.clamp(0.0, 1.0),
+                            child: IgnorePointer(
+                              child: _GlassMenuList(
+                                groups: _groups,
+                                dark: dark,
+                                hidden: _sub,
+                                highlight: null,
+                                onHighlight: (_) {},
+                                onChoose: (_) {},
+                              ),
+                            ),
+                          ),
+                        )
+                      : IgnorePointer(
+                          ignoring: _closing || p < 0.5,
+                          child: _GlassMenuList(
+                            groups: _groups,
+                            dark: dark,
+                            highlight: _highlight,
+                            onHighlight: (GlassMenuItem? item) =>
+                                setState(() => _highlight = item),
+                            onChoose: _choose,
+                          ),
+                        ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -1053,6 +1423,70 @@ class _MenuGlyphPainter extends CustomPainter {
   @override
   bool shouldRepaint(_MenuGlyphPainter old) =>
       old.glyph != glyph || old.color != color;
+}
+
+/// A context menu's view in the overlay: [child] laid out at [size] and
+/// drawn [scale] times larger, its corners continuous (13pt at its own
+/// size), over a shadow cast by its opaque pixels ([shadow] of UIKit's: black at 0.27, a sigma
+/// of 18.5pt).
+class _ContextPreview extends StatelessWidget {
+  const _ContextPreview({
+    required this.size,
+    required this.scale,
+    required this.shadow,
+    required this.child,
+  });
+
+  final Size size;
+  final double scale;
+  final double shadow;
+  final Widget child;
+
+  // The corners are the view's own 13pt, growing with it (14.3pt on a
+  // label lifted 1.103 times, as UIKit's).
+  Widget _view() => OverflowBox(
+    alignment: Alignment.topLeft,
+    minWidth: size.width,
+    maxWidth: size.width,
+    minHeight: size.height,
+    maxHeight: size.height,
+    child: Transform.scale(
+      scale: scale,
+      alignment: Alignment.topLeft,
+      child: ClipRSuperellipse(
+        borderRadius: const BorderRadius.all(
+          Radius.circular(_ContextMetrics.radius),
+        ),
+        child: child,
+      ),
+    ),
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      fit: StackFit.expand,
+      clipBehavior: Clip.none,
+      children: <Widget>[
+        if (shadow > 0.002)
+          ImageFiltered(
+            imageFilter: ui.ImageFilter.compose(
+              outer: ui.ImageFilter.blur(
+                sigmaX: _ContextMetrics.shadowSigma,
+                sigmaY: _ContextMetrics.shadowSigma,
+                tileMode: TileMode.decal,
+              ),
+              inner: ui.ColorFilter.mode(
+                Color.fromRGBO(0, 0, 0, _ContextMetrics.shadowOpacity * shadow),
+                BlendMode.srcIn,
+              ),
+            ),
+            child: _view(),
+          ),
+        _view(),
+      ],
+    );
+  }
 }
 
 /// The source of a glass menu: [child] (a glass button or a bar item's
