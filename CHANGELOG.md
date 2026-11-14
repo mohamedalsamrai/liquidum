@@ -73,6 +73,13 @@
   across its top. For a text field,
   `contextMenuBuilder: GlassEditMenu.builder`; your own actions with
   `GlassEditMenu(anchors:, items:)`.
+* New: `GlassDatePicker`, UIKit's compact date picker (`UIDatePicker`,
+  `.compact`) on iOS 26.5: the date, the time or both on gray capsules; a
+  tap opens UIKit's calendar (the month with its arrows, today in blue,
+  the chosen day on a circle, the month and year on wheels from the title)
+  or its time wheels on a platter of glass, which grows out of the label
+  and unfolds on UIKit's spring, below it or above it near the bottom. A
+  tap elsewhere closes it.
 * Fix: menu rows with icons but no checkmark start their icon and label
   where UIKit's do (40 and 64pt; 55 and 79 only beside a checkmark).
 * Fix: a tinted `Glass` kept its tint while dematerializing

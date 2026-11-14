@@ -16,8 +16,11 @@
 // [show=<s,...>] [hide=<s,...>]`: the catalog's edit menu page, a text
 // view at 20,160 (400 x 120, 22pt) with "brown" selected and a blue box at
 // 120,420 (200 x 120); GlassEditMenu shows at the given seconds (on the
-// text's selection, or on=box at the point at=x,y in the box). Writes
-// `<tmp>/ready.txt` 2s after the first frame.
+// text's selection, or on=box at the point at=x,y in the box).
+// `datepicker [at=x,y] [mode=date|time|both] [date=yyyy-MM-dd_HH:mm]`: a
+// GlassDatePicker whose capsule's top left is at x,y (UIKit's label, read
+// from the catalog's views dump). Writes `<tmp>/ready.txt` 2s after the
+// first frame.
 
 import 'dart:async';
 import 'dart:io';
@@ -50,6 +53,8 @@ Future<void> main() async {
         ? MenusNavComparison(options: options)
         : config.first == 'editmenu'
         ? EditMenuComparison(options: options)
+        : config.first == 'datepicker'
+        ? DatePickerComparison(options: options)
         : MenusComparison(options: options),
   );
 }
@@ -519,6 +524,70 @@ class _EditMenuComparisonState extends State<EditMenuComparison> {
               width: 200,
               height: 120,
               child: ColoredBox(key: _box, color: const Color(0xFF0088FF)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The catalog's date picker page: a compact GlassDatePicker over the
+/// pattern.
+class DatePickerComparison extends StatefulWidget {
+  const DatePickerComparison({super.key, required this.options});
+
+  final Map<String, String> options;
+
+  @override
+  State<DatePickerComparison> createState() => _DatePickerComparisonState();
+}
+
+class _DatePickerComparisonState extends State<DatePickerComparison> {
+  late DateTime _value = () {
+    final String spec = (widget.options['date'] ?? '2026-11-14_09:41')
+        .replaceAll('_', ' ');
+    return DateTime.tryParse(spec) ?? DateTime.now();
+  }();
+
+  @override
+  Widget build(BuildContext context) {
+    final bool dark = widget.options['style'] == 'dark';
+    final List<double> at = (widget.options['at'] ?? '32,200')
+        .split(',')
+        .map(double.parse)
+        .toList();
+    return CupertinoApp(
+      debugShowCheckedModeBanner: false,
+      theme: CupertinoThemeData(
+        brightness: dark ? Brightness.dark : Brightness.light,
+      ),
+      builder: (BuildContext context, Widget? child) => MediaQuery(
+        data: MediaQuery.of(context).copyWith(
+          platformBrightness: dark ? Brightness.dark : Brightness.light,
+        ),
+        child: child!,
+      ),
+      home: GlassBackdrop(
+        child: Stack(
+          children: <Widget>[
+            Positioned.fill(
+              child: CustomPaint(
+                painter: _Pattern(widget.options['bg'] ?? 'blocks'),
+              ),
+            ),
+            Positioned(
+              left: at[0],
+              top: at[1],
+              child: GlassDatePicker(
+                value: _value,
+                mode: switch (widget.options['mode']) {
+                  'time' => GlassDatePickerMode.time,
+                  'both' => GlassDatePickerMode.dateAndTime,
+                  _ => GlassDatePickerMode.date,
+                },
+                onChanged: (DateTime d) => setState(() => _value = d),
+              ),
             ),
           ],
         ),

@@ -6,6 +6,7 @@ import 'package:flutter/cupertino.dart'
     show
         CupertinoIcons,
         CupertinoLocalizations,
+        CupertinoPicker,
         CupertinoTextSelectionToolbarButton;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/rendering.dart';
@@ -23,6 +24,7 @@ import 'tab_bar/tint.dart';
 
 part 'glass_button.dart';
 part 'glass_context_menu.dart';
+part 'glass_date_picker.dart';
 part 'glass_edit_menu.dart';
 part 'glass_menu.dart';
 part 'glass_press.dart';

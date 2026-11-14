@@ -268,3 +268,89 @@ Open
   - The tiles' press highlight and the menu's press-drag across actions
     (UIKit slides the highlight along under the finger) are not measured.
   - Not checked on Android.
+
+Part 6: the date picker overlay (UIDatePicker, .compact), 2026-11-14.
+
+UIKit (iOS 26.5, en_US; catalog page `datepicker`, traced per frame)
+  The compact picker: the date on a capsule of the tertiary fill (light
+  118,118,128 @0.12, dark @0.24), SF 17 in the label color, 12pt either
+  side, 34.33 tall; the time 36 tall, and the date too when it sits beside
+  the time, 4pt apart. While its platter is open the label is blue.
+  The platter: large regular glass, radius 28, with large glass's fixed
+  face (archived: light and dark as Stage 1's large glass); the calendar
+  320 x 332, the time wheels 232 x 204. Its edge nearer the label is 6.17pt
+  below the label's middle (it covers the label's lower part), or, when
+  that would come within about 90pt of the safe area's bottom, its bottom
+  is 5.83pt above the middle; its right edge 6pt short of the label's
+  middle, kept 20pt from the screen's sides (so it sits at 20 unless the
+  label is near the right edge). No dim; a touch anywhere else closes it
+  (and goes no further: a tap on the label closes it without reopening).
+  Open and close: one spring p (open omega 19.56, zeta 0.798; close 17.6 to
+  18.0, zeta 0.84 to 0.85), the platter scaled 0.2 + 0.8p about the
+  label's middle on its near edge (x kept within the platter), its alpha
+  p, and its glass 0.15 + 0.85p of its height from that edge (it unfolds;
+  the contents stay at the glass's top and are clipped). Laws hold to
+  0.0005 on every frame of four opens and closes. UIKit starts the open
+  0.10s (0.26s cold) after the touch ends, and the close about 0.055s
+  after.
+  The calendar (UICalendarView): the title (SF Semibold 17) 20pt in and
+  16pt down with a blue chevron.right 4pt after it; chevron.backward and
+  .forward in 43.33 x 37.67 buttons at 231.33 and 274.67, the label color
+  through the glass's vibrancy; the weekdays (SUN...SAT, SF Semibold 13,
+  secondary label, vibrant) 69.67pt down in columns 42.72 apart from 16;
+  the days in seven columns 42.67 wide from 10.33, 85.33pt down, the rows
+  sharing 228.33pt (5 rows of 45.67, 6 of 38); SF 20, today in blue, the
+  chosen day semibold on a circle (min of the cell's width and height):
+  solid blue with white text when it is today, blue at 0.12 with blue
+  text otherwise. Choosing a day keeps the calendar open. The arrows slide
+  the month in about 0.3s (ease in and out); a swipe pages too.
+  The title: the month and year on wheels in place of the days (288 x 216,
+  16pt in, 76.83pt down), crossfading in 0.25s (ease in and out) as the
+  title turns blue and its chevron turns down. Months (looping) left-
+  aligned 44pt in, in a column 155 wide; years 34pt into the next, 111
+  wide; rows 32, the middle one magnified 1.119 (SF 21 to 23.5), the rest
+  at 0.447.
+  The time wheels (the hour right-aligned 44.3pt into the 218 x 172 wheels,
+  the minute centered at 103.7, AM/PM at 166.7; hours and minutes loop;
+  hours past 12 turn the period). The wheels' selection: a 32pt capsule
+  16pt in from the platter's sides in the secondary system fill (light
+  120,120,128 @0.16, dark @0.32).
+
+Liquidum: `GlassDatePicker(value:, onChanged:, mode:, firstDate:,
+  lastDate:)`, `GlassDatePickerMode.date | time | dateAndTime`. The platter
+  is an overlay entry with UIKit's spring, unfold and placement; the days
+  page in a PageView; the wheels are CupertinoPicker columns at UIKit's
+  places with UIKit's band.
+
+Results (11-date-picker.jpg, UIKit above)
+  The calendar's glass, between and below the rows: light 3.0 and 3.3
+  levels mean (|d|), dark 2.7 and 3.6; the whole platter, text included,
+  4.3 in both. The rows at UIKit's places (each row's ink within 0.3pt
+  once the rows share 228.33). The month and year wheels (dark) 6.7 over
+  the platter, the time wheels (light) 5.8.
+  Opening, against the trace (widget-test probe, 60 frames a second):
+  0.20, 0.236, 0.320, 0.426, 0.536, 0.639, 0.730, 0.807, 0.868, 0.915,
+  0.950, 0.975, 0.992, 1.003, 1.009, 1.012, 1.0125 (UIKit 0.20, 0.211,
+  0.276, 0.375, 0.485, 0.593, 0.690, 0.774, 0.842, 0.895, ..., 1.006,
+  1.010, 1.012: the same curve within a frame of phase); the close
+  likewise.
+  Tests: below and above the label, the right edge, the growth and unfold,
+  a day chosen with the calendar left open, a tap outside, the arrows,
+  the month and year wheels, the time wheels (a minute, and the hours
+  past 12 turning AM to PM), days before firstDate.
+
+Open
+  - English only: the month and weekday names, the date and time formats
+    and Sunday as the first day are en_US's.
+  - UIKit's wheels fade their outermost rows sooner; Liquidum's (Flutter's
+    wheel geometry) shows a faint extra row at the top and bottom.
+  - The weekday labels are the secondary label darkened to UIKit's ink
+    over light glass (vibrancy measured, not modelled); the arrows and
+    chevron are strokes in place of UIKit's symbols (their region within
+    5 levels mean).
+  - The flip threshold (about 90pt above the safe area's bottom) is
+    bracketed between 86.67 and 96.67pt, not pinned.
+  - Not measured: the label's press, a day's selection animation, and how
+    UIKit's wheels show months and years outside firstDate and lastDate
+    (Liquidum keeps the choice within them).
+  - Not checked on Android.

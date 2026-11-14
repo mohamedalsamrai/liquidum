@@ -7,6 +7,8 @@ export 'src/glass.dart'
         GlassButton,
         GlassButtonSize,
         GlassContextMenu,
+        GlassDatePicker,
+        GlassDatePickerMode,
         GlassEditMenu,
         GlassGroup,
         GlassMenuItem,

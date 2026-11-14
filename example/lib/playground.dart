@@ -524,6 +524,7 @@ class _GlassPageState extends State<_GlassPage> {
   // The lens controls' values.
   bool _on = true;
   double _amount = 0.4;
+  DateTime _when = DateTime.now();
   String _segment = 'One';
   String _sort = 'Name';
   final Set<int> _favorites = <int>{};
@@ -804,6 +805,17 @@ class _GlassPageState extends State<_GlassPage> {
               const CupertinoTextField(
                 placeholder: 'Select text for the edit menu',
                 contextMenuBuilder: GlassEditMenu.builder,
+              ),
+              const SizedBox(height: 12),
+              // The compact date picker: the calendar, or the time wheels,
+              // on glass.
+              Align(
+                alignment: Alignment.centerLeft,
+                child: GlassDatePicker(
+                  value: _when,
+                  mode: GlassDatePickerMode.dateAndTime,
+                  onChanged: (DateTime d) => setState(() => _when = d),
+                ),
               ),
             ],
           ),
