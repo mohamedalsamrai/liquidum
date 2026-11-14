@@ -205,3 +205,66 @@ Open
     of morphing platter by platter (not measured).
   - The bottom search field and large titles are not part of the
     transition yet (they ride with their pages).
+
+Part 5: the edit menu (UIEditMenuInteraction), 2026-11-14.
+
+UIKit (iOS 26.5, iPhone 17 Pro Max; a text view with a word selected, and
+a view with UIEditMenuInteraction and its own actions)
+  The menu: one small regular glass capsule, 46pt tall, r 23, 4pt in; each
+  action 16pt either side of its label (SF 15, vibrant), side by side; a
+  1 x 20 line between actions. Actions that do not fit across the screen
+  less 20pt a side give way to a 36pt circle (a faint fill) with a
+  chevron, 4pt from the end. Labels only (icons for actions without one).
+  Its glass keeps the system's appearance with large glass's fixed face
+  (light: black 0.5, white 1.03, white fill 0.4; dark: 0.2, 0.6, black
+  fill 0.4; archived), small as it is; its other inputs follow its 46pt.
+  Placement: 15pt below the selection (the text system's own menu too),
+  above it (15pt over it) only when it does not fit below; its list (the
+  glass less 8pt, 6 with the chevron) centered on the selection's middle,
+  20pt from the screen's sides.
+  Showing: scale 0.2 to 1 about the selection's middle on the edge facing
+  it, and opacity 0 to 1, on one spring: omega 22.8, zeta 0.85 (rms 0.0002
+  of the scale); hiding the same way back, omega 19.1, zeta 0.85, as soon
+  as an action is chosen.
+  Pressed: the glass swells as interactive glass (1.071 for 223 x 46, the
+  Stage 3 law); the held action gets a capsule 38pt tall across its width
+  (tertiary fill), and the lines beside it go.
+  The chevron: the capsule melts into the full menu of every action with
+  part 1's liquid morph (fit omega 17.0, zeta 0.75), the capsule narrowing
+  into its chevron's end, the menu growing from there: 250 wide, its top
+  at the capsule's top, its right edge at the capsule's; Cut, Copy and
+  Paste as tiles across its top (78 x 77 each for three: icon centered 29pt
+  down, SF Medium 12 label from 43.67pt), a hairline at their bottom and
+  11pt to the rows; rows without a checkmark column have their icon at 40
+  and label at 64 (part 1's 55 and 79 are with one). A choice or a tap
+  outside shrinks it into the selection (part 1's close spring); the
+  capsule does not come back.
+
+Liquidum: `GlassEditMenu`
+  `CupertinoTextField(contextMenuBuilder: GlassEditMenu.builder)`, or
+  `GlassEditMenu(anchors:, items:)` through a ContextMenuController, or
+  `GlassEditMenu.buttonItems(anchors:, buttonItems:)` for Flutter's text
+  actions (SelectableRegion). Flutter removes a context menu at once; a
+  hidden copy of the menu above it takes its place in that same frame and
+  hides on UIKit's spring.
+
+Results (10-edit-menu.jpg, UIKit left; the comparison page wrapped in a
+  GlassBackdrop, as GlassPage is)
+  The capsule's glass: light over the white text view 252 / 252; dark over
+  the black text view 30 / 30; light over the blue box 149,220,255 /
+  147,220,255; dark over it 0,70,134 / 0,68,136 (0-3 levels). Labels and
+  lines at UIKit's places (SF 15 at -0.23 tracking gives UIKit's widths);
+  the dark vibrant labels 178,249,255 both.
+  Showing, against the trace (widget-test probe): 0.454 of the width at
+  47ms, 0.838 at 112ms (UIKit's). The full menu as UIKit's (its glass is
+  part 1's).
+  Tests: the place below and above, 20pt from the side, the growth, a
+  choice and the hiding copy (no frame without the menu), the chevron's
+  full menu and a tap outside it, a CupertinoTextField's Copy.
+
+Open
+  - Flutter has no Replace… or Translate; its text actions are Cut, Copy,
+    Paste, Select All, Look Up, Search Web, Share and Scan Text.
+  - The tiles' press highlight and the menu's press-drag across actions
+    (UIKit slides the highlight along under the finger) are not measured.
+  - Not checked on Android.

@@ -65,6 +65,16 @@
   crossfade; one on a single page melts into its neighbor or grows out of
   it; the back button and a toolbar on one page only materialize or go;
   titles ride with their pages. A swipe back drives it. Nothing to set.
+* New: `GlassEditMenu`, UIKit's edit menu (`UIEditMenuInteraction`) on
+  iOS 26.5: the row of actions on a capsule of glass, 15pt below the
+  selection (above it without room), growing out of it and shrinking back
+  on UIKit's springs; actions that do not fit give way to a chevron that
+  melts the capsule into the full menu, Cut, Copy and Paste as tiles
+  across its top. For a text field,
+  `contextMenuBuilder: GlassEditMenu.builder`; your own actions with
+  `GlassEditMenu(anchors:, items:)`.
+* Fix: menu rows with icons but no checkmark start their icon and label
+  where UIKit's do (40 and 64pt; 55 and 79 only beside a checkmark).
 * Fix: a tinted `Glass` kept its tint while dematerializing
   (`visible: false`); the tint now comes and goes with the glass.
 * Fix: hiding glass inside a hidden menu source (a back button with a

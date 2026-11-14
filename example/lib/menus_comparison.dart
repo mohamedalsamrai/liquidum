@@ -12,7 +12,11 @@
 // 300,530, a blue tile at 40,280 and an orange one at 260,640 (140pt).
 // `menusnav`: three GlassPages pushed (First, Second, Third), the last with
 // an ellipsis item whose menu is the items (the back button's long press
-// lists the pages under it). Writes
+// lists the pages under it). `editmenu [on=box] [items=] [at=x,y]
+// [show=<s,...>] [hide=<s,...>]`: the catalog's edit menu page, a text
+// view at 20,160 (400 x 120, 22pt) with "brown" selected and a blue box at
+// 120,420 (200 x 120); GlassEditMenu shows at the given seconds (on the
+// text's selection, or on=box at the point at=x,y in the box). Writes
 // `<tmp>/ready.txt` 2s after the first frame.
 
 import 'dart:async';
@@ -44,6 +48,8 @@ Future<void> main() async {
   runApp(
     config.first == 'menusnav'
         ? MenusNavComparison(options: options)
+        : config.first == 'editmenu'
+        ? EditMenuComparison(options: options)
         : MenusComparison(options: options),
   );
 }
@@ -352,4 +358,171 @@ class _Pattern extends CustomPainter {
   @override
   bool shouldRepaint(_Pattern oldDelegate) =>
       oldDelegate.background != background;
+}
+
+/// The catalog's edit menu page (see the top of the file).
+class EditMenuComparison extends StatefulWidget {
+  const EditMenuComparison({super.key, required this.options});
+
+  final Map<String, String> options;
+
+  @override
+  State<EditMenuComparison> createState() => _EditMenuComparisonState();
+}
+
+class _EditMenuComparisonState extends State<EditMenuComparison> {
+  final TextEditingController _text = TextEditingController(
+    text: 'The quick brown fox jumps over the lazy dog.',
+  );
+  final FocusNode _focus = FocusNode();
+  final GlobalKey<EditableTextState> _field = GlobalKey<EditableTextState>();
+  final GlobalKey _box = GlobalKey();
+  final ContextMenuController _controller = ContextMenuController();
+  final List<Timer> _timers = <Timer>[];
+
+  bool get _onBox => widget.options['on'] == 'box';
+
+  List<double> _times(String key) => <double>[
+    for (final String t in (widget.options[key] ?? '').split(','))
+      if (double.tryParse(t) != null) double.parse(t),
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_onBox) {
+        _focus.requestFocus();
+        // Selected as a double tap selects a word (a selection set in code
+        // gets no handles and no menu).
+        _timers.add(
+          Timer(const Duration(milliseconds: 300), () {
+            final EditableTextState? field = _field.currentState;
+            field?.userUpdateTextEditingValue(
+              _text.value.copyWith(
+                selection: const TextSelection(
+                  baseOffset: 10,
+                  extentOffset: 15,
+                ),
+              ),
+              SelectionChangedCause.doubleTap,
+            );
+            field?.hideToolbar();
+          }),
+        );
+      }
+      for (final double t in _times('show')) {
+        _timers.add(Timer(Duration(milliseconds: (t * 1000).round()), _show));
+      }
+      for (final double t in _times('hide')) {
+        _timers.add(Timer(Duration(milliseconds: (t * 1000).round()), _hide));
+      }
+    });
+  }
+
+  void _show() {
+    if (!_onBox) {
+      _field.currentState?.showToolbar();
+      return;
+    }
+    final RenderBox box = _box.currentContext!.findRenderObject()! as RenderBox;
+    final List<double> at = (widget.options['at'] ?? '100,0')
+        .split(',')
+        .map(double.parse)
+        .toList();
+    _controller.show(
+      context: _box.currentContext!,
+      contextMenuBuilder: (BuildContext context) => GlassEditMenu(
+        anchors: TextSelectionToolbarAnchors(
+          primaryAnchor: box.localToGlobal(Offset(at[0], at[1])),
+        ),
+        items: _menu(widget.options['items'] ?? 'Copy,Paste,Delete'),
+      ),
+    );
+  }
+
+  void _hide() {
+    if (_onBox) {
+      _controller.remove();
+    } else {
+      _field.currentState?.hideToolbar();
+    }
+  }
+
+  @override
+  void dispose() {
+    for (final Timer t in _timers) {
+      t.cancel();
+    }
+    _text.dispose();
+    _focus.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bool dark = widget.options['style'] == 'dark';
+    return CupertinoApp(
+      debugShowCheckedModeBanner: false,
+      theme: CupertinoThemeData(
+        brightness: dark ? Brightness.dark : Brightness.light,
+      ),
+      builder: (BuildContext context, Widget? child) => MediaQuery(
+        data: MediaQuery.of(context).copyWith(
+          platformBrightness: dark ? Brightness.dark : Brightness.light,
+        ),
+        child: child!,
+      ),
+      // The page is a backdrop: small glass over it (the menu) adapts to
+      // it, as over a GlassPage.
+      home: GlassBackdrop(
+        child: Stack(
+          children: <Widget>[
+            Positioned.fill(
+              child: CustomPaint(
+                painter: _Pattern(widget.options['bg'] ?? 'blocks'),
+              ),
+            ),
+            Positioned(
+              left: 20,
+              top: 160,
+              width: 400,
+              height: 120,
+              child: Container(
+                color: dark ? const Color(0xFF000000) : const Color(0xFFFFFFFF),
+                padding: const EdgeInsets.fromLTRB(5, 8, 5, 8),
+                child: EditableText(
+                  key: _field,
+                  controller: _text,
+                  focusNode: _focus,
+                  maxLines: null,
+                  // UITextView's insets: 8pt down, 5pt in.
+                  style: TextStyle(
+                    fontSize: 22,
+                    color: dark
+                        ? const Color(0xFFFFFFFF)
+                        : const Color(0xFF000000),
+                  ),
+                  cursorColor: const Color(0xFF146FE1),
+                  backgroundCursorColor: const Color(0xFF8E8E93),
+                  selectionColor: const Color(0x33146FE1),
+                  selectionControls: cupertinoTextSelectionHandleControls,
+                  contextMenuBuilder: GlassEditMenu.builder,
+                  showSelectionHandles: true,
+                  rendererIgnoresPointer: false,
+                ),
+              ),
+            ),
+            Positioned(
+              left: 120,
+              top: 420,
+              width: 200,
+              height: 120,
+              child: ColoredBox(key: _box, color: const Color(0xFF0088FF)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

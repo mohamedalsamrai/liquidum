@@ -798,6 +798,13 @@ class _GlassPageState extends State<_GlassPage> {
                   ],
                 ],
               ),
+              const SizedBox(height: 12),
+              // The edit menu: select a word for Cut, Copy, Paste... on
+              // glass (the chevron opens the full menu).
+              const CupertinoTextField(
+                placeholder: 'Select text for the edit menu',
+                contextMenuBuilder: GlassEditMenu.builder,
+              ),
             ],
           ),
         ),

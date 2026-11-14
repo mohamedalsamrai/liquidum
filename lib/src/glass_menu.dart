@@ -87,6 +87,21 @@ abstract final class _MenuMetrics {
   static const double chevron = 214;
   static const double labelEnd = 28;
 
+  // Without the checkmark column (no item checked): an icon's center and
+  // the label's start after icons.
+  static const double plainIconCenter = 40;
+  static const double plainLabelWithIcons = 64;
+
+  // The edit menu's leading actions (Cut, Copy, Paste) as tiles across the
+  // top: 77pt tall, sharing the width less 8pt a side; the icon centered
+  // 29pt down, the label (SF Medium 12, two lines) from 43.67pt; a hairline
+  // at their bottom and the first row 11pt below it.
+  static const double tile = 77;
+  static const double tileSide = 8;
+  static const double tileGap = 11;
+  static const double tileIcon = 29;
+  static const double tileLabel = 43.67;
+
   // A submenu's header: its height, and its turned chevron's left edge.
   static const double header = 62;
   static const double chevronDown = 212.67;
@@ -111,12 +126,18 @@ abstract final class _MenuMetrics {
     return out;
   }
 
-  static double height(List<List<GlassMenuItem>> groups) {
+  static double height(List<List<GlassMenuItem>> groups, {bool tiles = false}) {
     final int rows = groups.fold(
       0,
       (int n, List<GlassMenuItem> g) => n + g.length,
     );
-    return 2 * pad + rows * row + (groups.length - 1) * groupGap;
+    if (tiles && rows == 0) {
+      return tile;
+    }
+    return (tiles ? tile + tileGap : pad) +
+        pad +
+        rows * row +
+        (groups.length - 1) * groupGap;
   }
 }
 
@@ -252,23 +273,42 @@ GlobalKey<_GlassMenuOverlayState> _showGlassMenu({
   required VoidCallback onClosed,
   Widget? preview,
   bool pressing = false,
+  Rect? source,
+  bool fromEnd = false,
+  Offset? closeTo,
+  int tiles = 0,
 }) {
   final OverlayState overlay = Overlay.of(context, rootOverlay: true);
-  final RenderBox box = context.findRenderObject()! as RenderBox;
   final RenderBox overlayBox = overlay.context.findRenderObject()! as RenderBox;
-  final Rect source = MatrixUtils.transformRect(
-    box.getTransformTo(overlayBox),
-    Offset.zero & box.size,
-  );
+  // The source's box in the overlay: [context]'s, or [source] (global).
+  final Rect local;
+  if (source != null) {
+    local = Rect.fromPoints(
+      overlayBox.globalToLocal(source.topLeft),
+      overlayBox.globalToLocal(source.bottomRight),
+    );
+  } else {
+    final RenderBox box = context.findRenderObject()! as RenderBox;
+    local = MatrixUtils.transformRect(
+      box.getTransformTo(overlayBox),
+      Offset.zero & box.size,
+    );
+  }
+  final Offset? closeLocal = closeTo == null
+      ? null
+      : overlayBox.globalToLocal(closeTo);
   final GlobalKey<_GlassMenuOverlayState> key =
       GlobalKey<_GlassMenuOverlayState>();
   late final OverlayEntry entry;
   entry = OverlayEntry(
     builder: (BuildContext context) => _GlassMenuOverlay(
       key: key,
-      source: source,
+      source: local,
       items: items,
       sourceContent: sourceContent,
+      fromEnd: fromEnd,
+      closeTo: closeLocal,
+      tiles: tiles,
       preview: preview == null
           ? null
           : InheritedTheme.captureAll(context, preview, to: overlay.context),
@@ -293,9 +333,24 @@ class _GlassMenuOverlay extends StatefulWidget {
     required this.onClosed,
     this.preview,
     this.pressing = false,
+    this.fromEnd = false,
+    this.closeTo,
+    this.tiles = 0,
   });
 
   final Rect source;
+
+  /// The source melts from its end (its trailing circle): an edit menu's
+  /// capsule into its chevron, the menu growing out of there.
+  final bool fromEnd;
+
+  /// Where the menu shrinks away to when it closes (the source is gone by
+  /// then: an edit menu's, which does not come back); null for the source.
+  final Offset? closeTo;
+
+  /// How many of [items] lead as tiles across the top (an edit menu's Cut,
+  /// Copy and Paste).
+  final int tiles;
   final List<GlassMenuItem> items;
   final Widget sourceContent;
   final VoidCallback onClosed;
@@ -355,6 +410,23 @@ class _GlassMenuOverlayState extends State<_GlassMenuOverlay>
   Rect? _lift;
   Rect _from = Rect.zero;
   List<List<GlassMenuItem>> _groups = const <List<GlassMenuItem>>[];
+  List<GlassMenuItem> _tiles = const <GlassMenuItem>[];
+
+  // The source the menu grows out of and goes back into: a point once an
+  // edit menu's capsule is gone ([_GlassMenuOverlay.closeTo]).
+  late Rect _src = widget.source;
+  bool _sourceGone = false;
+
+  // Where the source melts to and the menu grows from: the source, or the
+  // circle at its end.
+  Rect get _origin => widget.fromEnd && !_sourceGone
+      ? Rect.fromLTWH(
+          _src.right - _src.height,
+          _src.top,
+          _src.height,
+          _src.height,
+        )
+      : _src;
   GlassMenuItem? _highlight;
   final _GlassPressFeed _feed = _GlassPressFeed();
 
@@ -375,7 +447,11 @@ class _GlassMenuOverlayState extends State<_GlassMenuOverlay>
     if (menu == null) {
       return;
     }
-    var y = menu.top + _MenuMetrics.pad;
+    var y =
+        menu.top +
+        (_tiles.isEmpty
+            ? _MenuMetrics.pad
+            : _MenuMetrics.tile + _MenuMetrics.tileGap);
     for (var g = 0; g < _groups.length; g++) {
       if (g > 0) {
         y += _MenuMetrics.groupGap;
@@ -520,10 +596,10 @@ class _GlassMenuOverlayState extends State<_GlassMenuOverlay>
   // UIKit's); from its left edge, or its right edge near the screen's
   // right.
   Rect _place(Size screen, EdgeInsets safe, double height) {
-    final Rect s = widget.source;
+    final Rect s = _src;
     const double margin = 8;
     double left = s.left;
-    if (left + _MenuMetrics.width > screen.width - margin) {
+    if (widget.fromEnd || left + _MenuMetrics.width > screen.width - margin) {
       left = s.right - _MenuMetrics.width;
     }
     left = left.clamp(
@@ -549,7 +625,7 @@ class _GlassMenuOverlayState extends State<_GlassMenuOverlay>
   }
 
   void _start(Rect menu) {
-    final Rect s = widget.source;
+    final Rect s = _src;
     final double gain = menu.height - s.height / 2;
     final double dir = menu.center.dy >= s.center.dy ? 1 : -1;
     _y
@@ -587,7 +663,11 @@ class _GlassMenuOverlayState extends State<_GlassMenuOverlay>
       _wake();
       return;
     }
-    final Rect s = widget.source;
+    if (widget.closeTo != null) {
+      _src = Rect.fromCenter(center: widget.closeTo!, width: 0, height: 0);
+      _sourceGone = true;
+    }
+    final Rect s = _src;
     final double loss = menu.height - s.height / 2;
     final double dir = menu.center.dy >= s.center.dy ? 1 : -1;
     _progress
@@ -697,28 +777,39 @@ class _GlassMenuOverlayState extends State<_GlassMenuOverlay>
     if (_isContext) {
       return _buildContext(media);
     }
-    final List<List<GlassMenuItem>> groups = _MenuMetrics.groups(widget.items);
-    final double height = _MenuMetrics.height(groups);
+    final int tiles = math.min(widget.tiles, widget.items.length);
+    final List<List<GlassMenuItem>> groups = _MenuMetrics.groups(
+      widget.items.sublist(tiles),
+    );
+    final double height = _MenuMetrics.height(groups, tiles: tiles > 0);
     if (_menu == null) {
       _menu = _place(media.size, media.padding, height);
       _start(_menu!);
-      _groups = _up
+      _tiles = widget.items.sublist(0, tiles);
+      // Rows reversed when the menu goes up (tiles stay on top).
+      _groups = _up && tiles == 0
           ? groups.reversed
                 .map((List<GlassMenuItem> g) => g.reversed.toList())
                 .toList()
           : groups;
     }
     final Rect menu = _menu!;
-    final Rect s = widget.source;
+    final Rect s = _src;
+    final Rect o = _origin;
     final double p = _progress.value;
     final bool dark = media.platformBrightness == Brightness.dark;
 
     // The source: shrinks to a quarter, a quarter of the way to the
     // menu's center, its capsule narrowing to a circle.
     final double ks = 1 + (_MorphSprings.sourceEnd - 1) * p;
+    // (Melting from its end, it narrows into its end's circle.)
     final double sw = ui.lerpDouble(s.width, s.height, _narrow.value)!;
+    final Offset base = Offset(
+      ui.lerpDouble(s.center.dx, o.center.dx, _narrow.value)!,
+      s.center.dy,
+    );
     final Offset sc =
-        s.center + (menu.center - s.center) * (_MorphSprings.sourceEnd * p);
+        base + (menu.center - base) * (_MorphSprings.sourceEnd * p);
     final Rect sourceRect = Rect.fromCenter(
       center: sc,
       width: math.max(sw * ks, 0),
@@ -742,7 +833,7 @@ class _GlassMenuOverlayState extends State<_GlassMenuOverlay>
     final double q = _sub == null ? 0 : _subSpring.value;
     final double recede = 1 - 0.03 * q;
     final Rect morphRect = Rect.fromCenter(
-      center: Offset(ui.lerpDouble(s.center.dx, menu.center.dx, p)!, _y.value),
+      center: Offset(ui.lerpDouble(o.center.dx, menu.center.dx, p)!, _y.value),
       width: math.max(_MenuMetrics.width * km, 0),
       height: math.max(bh * km, 0),
     );
@@ -767,7 +858,7 @@ class _GlassMenuOverlayState extends State<_GlassMenuOverlay>
           brightness: media.platformBrightness,
           child: Stack(
             children: <Widget>[
-              if (p < 0.999 || _closing)
+              if ((p < 0.999 || _closing) && !_sourceGone)
                 Positioned.fromRect(
                   rect: sourceRect,
                   child: Glass(
@@ -1005,6 +1096,7 @@ class _GlassMenuOverlayState extends State<_GlassMenuOverlay>
                             child: IgnorePointer(
                               child: _GlassMenuList(
                                 groups: _groups,
+                                tiles: _tiles,
                                 dark: dark,
                                 hidden: _sub,
                                 highlight: null,
@@ -1018,6 +1110,7 @@ class _GlassMenuOverlayState extends State<_GlassMenuOverlay>
                           ignoring: _closing || p < 0.5,
                           child: _GlassMenuList(
                             groups: _groups,
+                            tiles: _tiles,
                             dark: dark,
                             highlight: _highlight,
                             onHighlight: (GlassMenuItem? item) =>
@@ -1186,6 +1279,7 @@ class _GlassMenuOverlayState extends State<_GlassMenuOverlay>
 class _GlassMenuList extends StatelessWidget {
   const _GlassMenuList({
     required this.groups,
+    this.tiles = const <GlassMenuItem>[],
     required this.dark,
     this.hidden,
     required this.highlight,
@@ -1194,6 +1288,9 @@ class _GlassMenuList extends StatelessWidget {
   });
 
   final List<List<GlassMenuItem>> groups;
+
+  /// Items shown as tiles across the top (an edit menu's Cut, Copy, Paste).
+  final List<GlassMenuItem> tiles;
   final bool dark;
 
   /// A row left blank: the one an open submenu covers.
@@ -1213,8 +1310,47 @@ class _GlassMenuList extends StatelessWidget {
     final Color divider = dark
         ? const Color(0x14FFFFFF)
         : const Color(0x14000000);
+    final bool rows = groups.any((List<GlassMenuItem> g) => g.isNotEmpty);
     final List<Widget> children = <Widget>[
-      const SizedBox(height: _MenuMetrics.pad),
+      if (tiles.isEmpty) const SizedBox(height: _MenuMetrics.pad),
+      if (tiles.isNotEmpty)
+        SizedBox(
+          height: _MenuMetrics.tile,
+          width: _MenuMetrics.width,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: _MenuMetrics.tileSide,
+            ),
+            child: Row(
+              children: <Widget>[
+                for (final GlassMenuItem item in tiles)
+                  Expanded(
+                    child: _GlassMenuTile(
+                      item: item,
+                      dark: dark,
+                      highlighted: identical(item, highlight),
+                      onHighlight: onHighlight,
+                      onChoose: onChoose,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      if (tiles.isNotEmpty && rows)
+        SizedBox(
+          height: _MenuMetrics.tileGap,
+          child: Align(
+            alignment: Alignment.topCenter,
+            child: Container(
+              height: 1,
+              margin: const EdgeInsets.symmetric(
+                horizontal: _MenuMetrics.dividerInset,
+              ),
+              color: divider,
+            ),
+          ),
+        ),
     ];
     for (var g = 0; g < groups.length; g++) {
       if (g > 0) {
@@ -1283,8 +1419,14 @@ class _GlassMenuRow extends StatelessWidget {
         : item.destructive
         ? GlassTabBarStyle.resolve(GlassTabBarStyle.systemRed, dark: dark)
         : base;
+    // A checkmark column only when an item is checked.
+    final double iconCenter = checks
+        ? _MenuMetrics.iconCenter
+        : _MenuMetrics.plainIconCenter;
     final double labelStart = icons
-        ? _MenuMetrics.labelWithIcons
+        ? (checks
+              ? _MenuMetrics.labelWithIcons
+              : _MenuMetrics.plainLabelWithIcons)
         : checks
         ? _MenuMetrics.iconCenter - 11
         : _MenuMetrics.label;
@@ -1340,7 +1482,7 @@ class _GlassMenuRow extends StatelessWidget {
                 ),
               if (item.icon != null)
                 Positioned(
-                  left: _MenuMetrics.iconCenter - 12,
+                  left: iconCenter - 12,
                   width: 24,
                   top: 0,
                   bottom: 0,
@@ -1375,6 +1517,88 @@ class _GlassMenuRow extends StatelessWidget {
                 ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// An edit menu's leading action as a tile (UIKit's medium menu element):
+/// its icon over its label, centered.
+class _GlassMenuTile extends StatelessWidget {
+  const _GlassMenuTile({
+    required this.item,
+    required this.dark,
+    required this.highlighted,
+    required this.onHighlight,
+    required this.onChoose,
+  });
+
+  final GlassMenuItem item;
+  final bool dark;
+  final bool highlighted;
+  final ValueChanged<GlassMenuItem?> onHighlight;
+  final ValueChanged<GlassMenuItem> onChoose;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool enabled = item.onPressed != null;
+    final Color base = dark ? const Color(0xF5FFFFFF) : const Color(0xF5000000);
+    final Color color = !enabled
+        ? base.withValues(alpha: 0.3)
+        : item.destructive
+        ? GlassTabBarStyle.resolve(GlassTabBarStyle.systemRed, dark: dark)
+        : base;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTapDown: enabled ? (_) => onHighlight(item) : null,
+      onTapCancel: () => onHighlight(null),
+      onTapUp: enabled ? (_) => onHighlight(null) : null,
+      onTap: enabled ? () => onChoose(item) : null,
+      child: Semantics(
+        button: true,
+        enabled: enabled,
+        label: item.label,
+        child: Stack(
+          children: <Widget>[
+            if (highlighted)
+              Positioned.fill(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: dark
+                        ? const Color(0x24FFFFFF)
+                        : const Color(0x14000000),
+                    borderRadius: BorderRadius.circular(_MenuMetrics.row / 2),
+                  ),
+                ),
+              ),
+            if (item.icon != null)
+              Positioned(
+                left: 0,
+                right: 0,
+                top: _MenuMetrics.tileIcon - 12,
+                height: 24,
+                child: Center(child: Icon(item.icon, size: 21, color: color)),
+              ),
+            Positioned(
+              left: 2,
+              right: 2,
+              top: _MenuMetrics.tileLabel,
+              child: Text(
+                item.label ?? '',
+                maxLines: 2,
+                textAlign: TextAlign.center,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 12,
+                  height: 16.33 / 12,
+                  fontWeight: FontWeight.w500,
+                  color: color,
+                  decoration: TextDecoration.none,
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );

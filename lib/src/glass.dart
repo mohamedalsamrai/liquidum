@@ -2,6 +2,11 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
+import 'package:flutter/cupertino.dart'
+    show
+        CupertinoIcons,
+        CupertinoLocalizations,
+        CupertinoTextSelectionToolbarButton;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
@@ -18,6 +23,7 @@ import 'tab_bar/tint.dart';
 
 part 'glass_button.dart';
 part 'glass_context_menu.dart';
+part 'glass_edit_menu.dart';
 part 'glass_menu.dart';
 part 'glass_press.dart';
 part 'glass_render.dart';
@@ -59,7 +65,22 @@ class Glass extends StatefulWidget {
     this.interactive = false,
     this.child,
   }) : _material = null,
-       _feed = null;
+       _feed = null,
+       _fixedFace = false;
+
+  // An edit menu's glass: small, yet with the system's appearance and large
+  // glass's fixed face, as UIKit's.
+  const Glass._fixedFace({
+    required this.radius,
+    required this.interactive,
+    required this.child,
+  }) : style = GlassStyle.regular,
+       tint = null,
+       brightness = null,
+       visible = true,
+       _material = null,
+       _feed = null,
+       _fixedFace = true;
 
   // A glass button's glass, with UIKit's gray material over it.
   const Glass._button(
@@ -71,7 +92,8 @@ class Glass extends StatefulWidget {
   }) : radius = null,
        brightness = null,
        visible = true,
-       _feed = null;
+       _feed = null,
+       _fixedFace = false;
 
   // A menu's glass: interactive, also pressed by a finger that went down
   // elsewhere (on the button that opened it) and slid onto it.
@@ -84,7 +106,8 @@ class Glass extends StatefulWidget {
   }) : style = GlassStyle.regular,
        tint = null,
        visible = true,
-       _material = null;
+       _material = null,
+       _fixedFace = false;
 
   final GlassStyle style;
 
@@ -123,6 +146,7 @@ class Glass extends StatefulWidget {
 
   final _GlassMaterial? _material;
   final _GlassPressFeed? _feed;
+  final bool _fixedFace;
 
   final Widget? child;
 
@@ -208,6 +232,7 @@ class _GlassState extends State<Glass> with TickerProviderStateMixin {
     final Brightness? forced = widget.brightness;
     _appearance
       ..adaptive = forced == null
+      ..fixed = widget._fixedFace
       ..system = forced ?? MediaQuery.platformBrightnessOf(context);
     _dark.value = _appearance.isDark;
     _wake();
@@ -283,6 +308,7 @@ class _GlassState extends State<Glass> with TickerProviderStateMixin {
         _hub != null ||
         _presence.value == 0 ||
         _appearance.isLarge ||
+        _appearance.fixed ||
         widget.style == GlassStyle.clear) {
       return;
     }

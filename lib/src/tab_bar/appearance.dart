@@ -77,6 +77,22 @@ class GlassAppearance {
   /// appearance whatever is behind it, and its inputs are fixed.
   bool get isLarge => _height > 64;
 
+  /// Whether the glass keeps the system's appearance and large glass's
+  /// fixed face at any size (UIKit's edit menu: 46pt, yet it does not
+  /// follow what is behind it). Its other inputs still follow its size.
+  bool get fixed => _fixed;
+  bool _fixed = false;
+  set fixed(bool value) {
+    if (value == _fixed) {
+      return;
+    }
+    _fixed = value;
+    _decide();
+    _snap();
+  }
+
+  bool get _fixedFace => _fixed || isLarge;
+
   /// The backdrop's luma, as last sampled.
   double get luma => _luma;
 
@@ -187,7 +203,7 @@ class GlassAppearance {
 
   void _decide() {
     final bool darkMode = _system == Brightness.dark;
-    if (!_adaptive || isLarge) {
+    if (!_adaptive || _fixedFace) {
       _dark = darkMode;
       return;
     }
@@ -284,7 +300,7 @@ class GlassAppearance {
   bool get _filled => (_contrast || _reduceTransparency) && !_dark;
 
   List<double> get _glassTargets {
-    if (isLarge) {
+    if (_fixedFace) {
       final List<double> v = _dark ? _largeDark : _largeLight;
       return <double>[
         v[0],
