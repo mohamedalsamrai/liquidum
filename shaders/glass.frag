@@ -49,7 +49,8 @@ uniform vec4 uShapeTints[16];
 // Large glass's bleed (UIKit's glass filter blends a second rendering of the
 // glass over it, more as the glass grows): [0..2] a color matrix taking the
 // glass's color (and 1) to the bleed's red, green and blue; [3].x how much
-// of it shows.
+// of it shows, [3].y its brightest, [3].z times the glass's luma squared
+// added to it.
 uniform vec4 uBleed[4];
 // A gray material over each shape (UIKit's prominent clear and disabled
 // prominent glass buttons): the color times .x plus its luma times .y plus
@@ -321,7 +322,10 @@ void main() {
     }
     if (uBleed[3].x > 0.0) {
       vec4 b = vec4(c, 1.0);
-      vec3 bleed = clamp(vec3(dot(uBleed[0], b), dot(uBleed[1], b), dot(uBleed[2], b)), 0.0, 1.0);
+      float luma = dot(c, kLuma);
+      vec3 bleed = clamp(vec3(dot(uBleed[0], b), dot(uBleed[1], b), dot(uBleed[2], b)) +
+                             uBleed[3].z * luma * luma,
+                         0.0, uBleed[3].y);
       c = mix(c, bleed, uBleed[3].x * amount);
     }
     // The rim, by true distance: where shapes blend the field grows slower

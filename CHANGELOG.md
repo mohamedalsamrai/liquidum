@@ -89,6 +89,20 @@
   and, past halfway, turns opaque. Drag it between its detents, down or a
   tap outside to dismiss it; a finger on it swells it as UIKit's
   interactive glass.
+* New: `showGlassAlert(context:, title:, message:, actions:, textFields:)`
+  and `showGlassActionSheet(...)`, UIKit's alert (`UIAlertController`) on
+  iOS 26.5: a panel of large glass in the middle of the screen with its
+  actions (`GlassAlertAction(label:, onPressed:, destructive:, cancel:)`)
+  as capsules, side by side for two and stacked otherwise, and optional
+  text fields (`GlassAlertTextField`). It grows in from 1.2 times its size
+  over the dimmed screen on UIKit's spring and fades away once an action
+  is chosen; a finger can slide between the actions before letting go. An
+  action sheet that no view presents from is shown the same way (as iOS
+  26.5 does), and a tap outside it cancels it.
+* Fix: large glass's bleed (alerts, menus, panels over 64pt) is refitted to
+  UIKit's over grays as well as colors: it no longer tints glass over white
+  (by up to 5 levels), and dark glass over dark or bright backdrops is
+  within 1 to 2 levels of UIKit's (was 3 to 17).
 * Fix: menu rows with icons but no checkmark start their icon and label
   where UIKit's do (40 and 64pt; 55 and 79 only beside a checkmark).
 * Fix: a tinted `Glass` kept its tint while dematerializing

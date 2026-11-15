@@ -850,6 +850,25 @@ class _GlassPageState extends State<_GlassPage> {
                   ),
                 ),
               ),
+              const SizedBox(height: 12),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: GlassButton(
+                  label: 'Alert',
+                  onPressed: () => showGlassAlert(
+                    context: context,
+                    title: 'Delete the photo?',
+                    message: 'It will be deleted from all your devices.',
+                    actions: <GlassAlertAction>[
+                      const GlassAlertAction(label: 'Cancel', cancel: true),
+                      const GlassAlertAction(
+                        label: 'Delete',
+                        destructive: true,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ],
           ),
         ),

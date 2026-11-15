@@ -144,20 +144,27 @@ class _GlassOptics {
       ((math.min(h, 160) - 64) / (dark ? 120 : 192)).clamp(0.0, 1.0);
 
   // The bleed's color, from the glass's (rows: to red, green, blue; columns:
-  // from red, green, blue, and 1). Fitted to UIKit's bleed layer over color
-  // blocks (iOS 26.5) at 100 to 400pt: within 2 to 4 levels of its glass
-  // in light, 1 to 2 in dark (3.7 at 160pt). UIKit computes it otherwise,
-  // from inputs not modeled yet.
+  // from red, green, blue, and 1), plus [bleedDarkCurve] times its luma
+  // squared in the dark appearance, and no brighter than [bleedLightCap] in
+  // the light one. Fitted to UIKit's glass (iOS 26.5) with its bleed
+  // opacity set to 0 and to 1, over color blocks, white, gray and black:
+  // light on its alert (320 x 264, the screen dimmed behind it), within 0.6
+  // to 2.5 levels; dark on the alert and on 360pt panels over an undimmed
+  // screen, within 0.5 to 2.6 (the last fit, over blocks alone, was 3 to
+  // 17 levels off over grays). UIKit computes it otherwise (a wide blur of
+  // what is behind the glass, through a color matrix).
   static const List<List<double>> bleedLight = <List<double>>[
-    <double>[0.565, 0.367, 0.141, -0.003],
-    <double>[0.188, 0.704, 0.138, 0.006],
-    <double>[0.176, 0.275, 0.471, 0.119],
+    <double>[0.586, 0.423, 0.100, -0.030],
+    <double>[0.146, 0.748, 0.092, 0.054],
+    <double>[0.143, 0.394, 0.540, -0.008],
   ];
+  static const double bleedLightCap = 0.948;
   static const List<List<double>> bleedDark = <List<double>>[
-    <double>[0.787, 0.083, 0.037, 0.034],
-    <double>[0.062, 0.861, 0.049, 0.022],
-    <double>[0.069, 0.139, 0.792, 0.001],
+    <double>[1.077, 1.074, 0.182, -0.195],
+    <double>[0.380, 1.783, 0.187, -0.199],
+    <double>[0.373, 1.080, 0.876, -0.197],
   ];
+  static const double bleedDarkCurve = -2.072;
 }
 
 /// One shape of glass to draw: its box in the painting render object's
@@ -475,6 +482,8 @@ class _GlassPasses {
           isClear || !bleed
               ? 0
               : _GlassOptics.bleedOpacity(large, dark: appearance.isDark),
+          appearance.isDark ? 1 : _GlassOptics.bleedLightCap,
+          appearance.isDark ? _GlassOptics.bleedDarkCurve : 0,
         );
       for (var i = 0; i < maxShapes; i++) {
         if (i >= shapes.length) {
@@ -1197,11 +1206,16 @@ class _GlassUniforms {
   final ui.UniformArray<ui.UniformVec4Slot> labelMasks;
   final ui.UniformArray<ui.UniformVec4Slot> labelColors;
 
-  void setBleed(List<List<double>> matrix, double opacity) {
+  void setBleed(
+    List<List<double>> matrix,
+    double opacity,
+    double cap,
+    double curve,
+  ) {
     for (var i = 0; i < 3; i++) {
       bleed[i].set(matrix[i][0], matrix[i][1], matrix[i][2], matrix[i][3]);
     }
-    bleed[3].set(opacity, 0, 0, 0);
+    bleed[3].set(opacity, cap, curve, 0);
   }
 
   /// Shape [i]'s tint: one color (no gradient).

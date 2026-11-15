@@ -4,6 +4,8 @@ library;
 export 'src/glass.dart'
     show
         Glass,
+        GlassAlertAction,
+        GlassAlertTextField,
         GlassButton,
         GlassButtonSize,
         GlassContextMenu,
@@ -14,6 +16,8 @@ export 'src/glass.dart'
         GlassMenuItem,
         GlassSheetDetent,
         GlassStyle,
+        showGlassActionSheet,
+        showGlassAlert,
         showGlassSheet;
 export 'src/bars/item.dart' show GlassBarItem;
 export 'src/bars/page.dart' show GlassPage;

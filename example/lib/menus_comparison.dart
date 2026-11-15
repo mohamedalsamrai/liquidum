@@ -22,7 +22,10 @@
 // from the catalog's views dump). `present kind=sheet [detents=medium,large|
 // h<pt>,...] [style=dark] [show=<s>]`: the catalog's presentation page (gray
 // "Show" and "Anchor" labels where UIKit's dimmed buttons are) and, after
-// `show` seconds (0.5), a sheet with a "Sheet" headline at 24,24. Writes
+// `show` seconds (0.5), a sheet with a "Sheet" headline at 24,24; `present
+// kind=alert [title=] [message=] [actions=Cancel:c,OK,Delete:d] [field=<n>]
+// [fieldtext=]` (as the catalog's: "_" for spaces, "none" for no text) an
+// alert instead. Writes
 // `<tmp>/ready.txt` 2s after the first frame.
 
 import 'dart:async';
@@ -623,6 +626,47 @@ class _PresentComparisonState extends State<PresentComparison> {
   void _show() {
     final BuildContext? context = _navigator.currentContext;
     if (context == null) {
+      return;
+    }
+    final String kind = widget.options['kind'] ?? 'sheet';
+    if (kind == 'alert' || kind == 'actionsheet') {
+      String? text(String key, String fallback) {
+        final String v = widget.options[key] ?? fallback;
+        return v == 'none' ? null : v.replaceAll('_', ' ');
+      }
+
+      showGlassAlert(
+        context: context,
+        title: text('title', 'Title'),
+        message: text('message', 'A_message'),
+        actions: <GlassAlertAction>[
+          for (final String spec
+              in (widget.options['actions'] ?? 'Cancel:c,OK,Delete:d').split(
+                ',',
+              ))
+            GlassAlertAction(
+              label: spec.split(':').first.replaceAll('_', ' '),
+              cancel: spec.endsWith(':c'),
+              destructive: spec.endsWith(':d'),
+            ),
+        ],
+        textFields: <GlassAlertTextField>[
+          for (
+            var i = 0;
+            i < (int.tryParse(widget.options['field'] ?? '') ?? 0);
+            i++
+          )
+            GlassAlertTextField(
+              placeholder: i == 0 ? 'Name' : 'Password',
+              obscureText: i > 0,
+              controller: i == 0 && widget.options['fieldtext'] != null
+                  ? TextEditingController(
+                      text: widget.options['fieldtext']!.replaceAll('_', ' '),
+                    )
+                  : null,
+            ),
+        ],
+      );
       return;
     }
     final List<GlassSheetDetent> detents = <GlassSheetDetent>[

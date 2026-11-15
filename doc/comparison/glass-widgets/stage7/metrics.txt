@@ -80,3 +80,97 @@ Open
     content's text is drawn as it is.
   - UIKit picked no detent above medium for XCUITest's fast upward drag
     (1500pt/s): its rule for a let-go drag is not measured.
+
+Part 2: the alert and action sheet (UIAlertController), 2026-11-15
+  showGlassAlert(context:, title:, message:, actions:, textFields:) and
+  showGlassActionSheet(context:, title:, message:, actions:), with
+  GlassAlertAction(label:, onPressed:, destructive:, cancel:) and
+  GlassAlertTextField(controller:, placeholder:, obscureText:,
+  keyboardType:). 2-alert.jpg: UIKit above, Liquidum below; three actions,
+  dark, two actions, long text, two text fields, pressed on OK.
+
+UIKit's laws (layer dumps, archived glass group, traced every frame)
+  Place: 320pt wide, in the middle of the safe area; corners 34. Glass:
+    Stage 1's large regular glass, with its bleed (0.5 light, 0.8 dark).
+    Dim: a plain black view at 0.2 (0.48 dark); a tap on it does nothing.
+  Text: title 17 semibold, 22pt down, 30pt in, leading; message 15 regular
+    7.4pt below it; lines 22 and 20pt apart (the first and last keep the
+    font's height: 20.3, 18). A title or a message alone: 17 regular,
+    centered, 21.7pt down. Then 4.3pt (4 alone) + 16 to the actions.
+    Colors (vibrant on the glass; measured over grays, light / dark): title
+    black / white 0.95, message black 0.548 / white 0.6.
+  Actions: capsules 48pt tall, 16pt in from the sides and the bottom, 8pt
+    apart. Fill: black at 0.12 / white at 0.108 (over the glass: 0.86-0.88
+    times it, no hue change, RMS 0.6 over blocks). Labels 17 medium (w500,
+    by ink and width against SF's weights), black / white, red FF383C /
+    FF4245. Two side by side (140pt each), the cancel action left; one or
+    more than two stacked, the cancel action last. A pressed capsule's fill
+    at 0.4. A finger can slide to another action before it lifts.
+  Text fields: 48pt rows with the actions' fill, 15pt in, 12pt below the
+    text, one rounded box (24pt corners) with a 1pt line between rows
+    (15pt in; black 0.25 / white 0.15); text 17 regular 15pt in; placeholder
+    (60, 60, 67, 0.3) / (235, 235, 245, 0.3); cursor (0.26, 0.42, 0.95),
+    2 x 23. The first is focused. Then 4 + 16pt to the actions.
+  Motion: opacity 0 -> 1 and scale 1.2 -> 1 together on one critically
+    damped spring, omega 22.9 (fitted RMS 0.0004 / 0.0001); dismissed:
+    opacity only, the same spring. The dim eases out (cubic) over 0.275s
+    both ways (RMS 0.01). A finger on the alert swells it by 4pt (Stage 3's
+    large glass: 1.0125 after an 8% overshoot).
+  Action sheet: with no view to present from, iOS 26.5 shows it exactly as
+    the alert (layout, glass, springs), but a tap outside dismisses it. With
+    one (popoverPresentationController.sourceView) it is a 240pt popover by
+    that view, without its cancel action: part 3.
+
+Large glass's bleed (refitted)
+  UIKit's bleed, as Stage 1 found, is linear in its opacity; here it was
+  captured with opacity 0 and 1 (kvc) behind the alert over blocks, white,
+  gray and black, and (dark) behind 360pt panels over an undimmed screen.
+  Over grays it is not a matrix of the glass Stage 1's blocks-only fit
+  could follow: light, min(G + 12.5, 241) levels; dark, it darkens more
+  over darker backdrops (30 -> 12 over black). Now: light, an affine
+  matrix of the glass capped at 0.948; dark, an affine matrix plus -2.07
+  times the glass's luma squared (shaders/glass.frag uBleed[3].y, .z).
+  Against UIKit's own glass, final RMS: light 0.6-2.5, dark 0.5-2.6
+  (Stage 1's fit: light 1.8-4.0, dark 1.7-17).
+  Stage 1's panels (360 x 200 / 250 / 300, comparison app `big`), middle,
+  HEAD -> now: light blocks 3.7-3.8 -> 3.7-3.8; light white 3.0-3.2 ->
+  2.8-3.0; light black 1.3-1.8 -> 0.7-1.2; dark blocks 3.1-3.6 -> 3.7-4.0;
+  dark white 2.5-4.0 -> 0.7-1.3; dark black 1.7-2.4 -> 0.3-1.0.
+
+Liquidum
+  An overlay route over the root navigator (as the sheet's): the dim, then
+  the alert, a Glass(radius: 34, interactive: true) under GlassPresence
+  (its glass materializes with the spring; its content's colors fade with
+  it), scaled. Capsules and fields are plain fills over the glass; text in
+  the measured colors (not vibrant). Fields are CupertinoTextFields with
+  the edit menu (GlassEditMenu.builder); the alert keeps to the middle of
+  the space above the keyboard.
+
+Results (screenshots, settled; middle 12pt in / whole alert)
+  three actions over blocks: light 2.5 / 2.8, dark 2.0 / 2.2 (before the
+    bleed refit: 2.9 / 3.2 and 4.6 / 4.8).
+  over white: light 0.8 / 0.8, dark 1.0 / 1.1; over black: light 0.6 /
+    1.0, dark 1.1 / 1.1; over gray: light 1.3 / 1.5.
+  two actions 2.9 / 3.2; title alone 2.3 / 2.5; long text (two-line title,
+    four-line message, four actions) 3.0 / 3.8; two text fields 0.9 / 0.9
+    (light over white), 1.2 / 1.3 (dark).
+  pressed on OK (held): 2.9 / 3.1; the pressed capsule 1.1.
+  Glass between capsules 1.5 (light and dark); capsules 1.0 (light), 1.3-
+  1.5 (dark); text ink colors within 2 levels.
+  Widget tests (test/glass_alert_test.dart): the three-action, two-action,
+  no-text and text-field layouts against UIKit's frames; choosing,
+  sliding between actions, a tap outside (alert: nothing; action sheet:
+  its cancel action); the scale 0.05s into the rise.
+
+Open
+  - Titles and messages are drawn in fixed colors; UIKit's are vibrant
+    (over strongly colored glass they would differ a little).
+  - When two actions stop fitting side by side (estimated: a label wider
+    than 116pt) is not measured; nor UIKit's preferredAction (bold), the
+    keyboard's effect on the alert's place (the simulator's hardware
+    keyboard hides it), or an alert taller than the screen (its text
+    scrolls here).
+  - The action sheet presented from a view (a popover): part 3.
+  - The 0.2s UIKit waits before its alert appears in the catalog is not
+    copied (likely its first layout).
+  - Liquidum's alert has not been compared on Android.
