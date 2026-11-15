@@ -1,0 +1,30 @@
+name: Feature request
+description: Suggest something new for Liquidum.
+labels: ["c: new feature", "in triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the idea. Please search the [existing issues](https://github.com/mohamedalsamrai/liquidum/issues) first, it may already be there.
+  - type: textarea
+    id: use-case
+    attributes:
+      label: Use case
+      description: |
+        What are you building, and what gets in the way today? Tell us what you tried instead.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: |
+        What you'd like Liquidum to do. A sketch, a screenshot, or the code you'd like to be able to write all help.
+    validations:
+      required: true
+  - type: textarea
+    id: uikit
+    attributes:
+      label: UIKit reference
+      description: |
+        If iOS already does this, where? The UIKit or SwiftUI API, or an Apple app that shows it.

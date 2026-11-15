@@ -1,0 +1,52 @@
+name: Doesn't match UIKit
+description: Liquidum looks or moves differently from the native iOS 26 control.
+labels: ["a: fidelity", "in triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Liquidum is measured against UIKit on iOS 26, so a difference from the native control counts as a bug.
+
+        Side-by-side captures make these much faster to fix: the native control and Liquidum in the same state, on the same device, with the same content behind them.
+  - type: textarea
+    id: difference
+    attributes:
+      label: What's different
+      description: Size, color, timing, a spring, a transition, behavior on press or drag...
+    validations:
+      required: true
+  - type: textarea
+    id: uikit
+    attributes:
+      label: UIKit
+      description: |
+        A screenshot or screen recording of the native control, and where it's from (an Apple app, or a small UIKit or SwiftUI sample).
+    validations:
+      required: true
+  - type: textarea
+    id: liquidum
+    attributes:
+      label: Liquidum
+      description: The same state in Liquidum.
+    validations:
+      required: true
+  - type: textarea
+    id: code
+    attributes:
+      label: Code sample
+      description: The Flutter code used for the Liquidum capture, if it isn't the example app.
+      render: dart
+  - type: input
+    id: version
+    attributes:
+      label: Liquidum version
+      placeholder: "0.2.2"
+    validations:
+      required: true
+  - type: input
+    id: ios
+    attributes:
+      label: iOS version and device
+      placeholder: "iOS 26.1, iPhone 16 Pro Simulator"
+    validations:
+      required: true

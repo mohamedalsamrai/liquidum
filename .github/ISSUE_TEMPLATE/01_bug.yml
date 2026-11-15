@@ -1,0 +1,113 @@
+name: Report a bug
+description: Something in Liquidum crashes, throws, or doesn't work as documented.
+labels: ["c: bug", "in triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this.
+
+        Before you fill in the form:
+        - Search the [existing issues](https://github.com/mohamedalsamrai/liquidum/issues), someone may have reported it already.
+        - If it works but looks or moves differently from iOS, use the **Doesn't match UIKit** form instead.
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Exactly what to do to see the problem.
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected results
+      description: What should happen.
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual results
+      description: What happens instead.
+    validations:
+      required: true
+  - type: textarea
+    id: code
+    attributes:
+      label: Code sample
+      description: |
+        A minimal `main.dart` that shows the problem. Start from `flutter create bug`, run `flutter pub add liquidum`, and cut everything the bug doesn't need.
+
+        Without a sample that reproduces it, the issue is hard to act on and may be closed.
+
+        Please paste code as text, not screenshots.
+      value: |
+        <details open><summary>Code sample</summary>
+
+        ```dart
+        [Paste your code here]
+        ```
+
+        </details>
+    validations:
+      required: true
+  - type: textarea
+    id: media
+    attributes:
+      label: Screenshots or video
+      description: For anything visual, a screen recording helps a lot.
+      value: |
+        <details open><summary>Screenshots / Video</summary>
+
+        [Upload media here]
+
+        </details>
+  - type: input
+    id: version
+    attributes:
+      label: Liquidum version
+      description: From your pubspec.lock.
+      placeholder: "0.2.2"
+    validations:
+      required: true
+  - type: dropdown
+    id: platforms
+    attributes:
+      label: Platforms
+      description: Where do you see it?
+      multiple: true
+      options:
+        - iOS
+        - Android
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Device and OS version
+      placeholder: "iPhone 16 Pro, iOS 26.1 / Pixel 8, Android 16 / iOS Simulator"
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Errors, stack traces or console output, pasted as text.
+      render: console
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Flutter Doctor output
+      description: The full output of `flutter doctor -v`.
+      value: |
+        <details open><summary>Doctor output</summary>
+
+        ```console
+        [Paste your output here]
+        ```
+
+        </details>
+    validations:
+      required: true
