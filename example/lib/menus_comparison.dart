@@ -19,8 +19,11 @@
 // text's selection, or on=box at the point at=x,y in the box).
 // `datepicker [at=x,y] [mode=date|time|both] [date=yyyy-MM-dd_HH:mm]`: a
 // GlassDatePicker whose capsule's top left is at x,y (UIKit's label, read
-// from the catalog's views dump). Writes `<tmp>/ready.txt` 2s after the
-// first frame.
+// from the catalog's views dump). `present kind=sheet [detents=medium,large|
+// h<pt>,...] [style=dark] [show=<s>]`: the catalog's presentation page (gray
+// "Show" and "Anchor" labels where UIKit's dimmed buttons are) and, after
+// `show` seconds (0.5), a sheet with a "Sheet" headline at 24,24. Writes
+// `<tmp>/ready.txt` 2s after the first frame.
 
 import 'dart:async';
 import 'dart:io';
@@ -55,6 +58,8 @@ Future<void> main() async {
         ? EditMenuComparison(options: options)
         : config.first == 'datepicker'
         ? DatePickerComparison(options: options)
+        : config.first == 'present'
+        ? PresentComparison(options: options)
         : MenusComparison(options: options),
   );
 }
@@ -591,6 +596,99 @@ class _DatePickerComparisonState extends State<DatePickerComparison> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class PresentComparison extends StatefulWidget {
+  const PresentComparison({super.key, required this.options});
+
+  final Map<String, String> options;
+
+  @override
+  State<PresentComparison> createState() => _PresentComparisonState();
+}
+
+class _PresentComparisonState extends State<PresentComparison> {
+  final GlobalKey<NavigatorState> _navigator = GlobalKey<NavigatorState>();
+
+  @override
+  void initState() {
+    super.initState();
+    final double show = double.tryParse(widget.options['show'] ?? '') ?? 0.5;
+    Timer(Duration(milliseconds: (show * 1000).round()), _show);
+  }
+
+  void _show() {
+    final BuildContext? context = _navigator.currentContext;
+    if (context == null) {
+      return;
+    }
+    final List<GlassSheetDetent> detents = <GlassSheetDetent>[
+      for (final String d
+          in (widget.options['detents'] ?? 'medium,large').split(','))
+        d == 'medium'
+            ? GlassSheetDetent.medium
+            : d == 'large'
+            ? GlassSheetDetent.large
+            : GlassSheetDetent.height(double.parse(d.substring(1))),
+    ];
+    showGlassSheet<void>(
+      context: context,
+      detents: detents,
+      builder: (BuildContext context) => Align(
+        alignment: Alignment.topLeft,
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            'Sheet',
+            style: TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.w600,
+              letterSpacing: -0.43,
+              color: CupertinoColors.label.resolveFrom(context),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bool dark = widget.options['style'] == 'dark';
+    const TextStyle dimmed = TextStyle(fontSize: 15, color: Color(0xCC868686));
+    return CupertinoApp(
+      navigatorKey: _navigator,
+      debugShowCheckedModeBanner: false,
+      theme: CupertinoThemeData(
+        brightness: dark ? Brightness.dark : Brightness.light,
+      ),
+      builder: (BuildContext context, Widget? child) => MediaQuery(
+        data: MediaQuery.of(context).copyWith(
+          platformBrightness: dark ? Brightness.dark : Brightness.light,
+        ),
+        child: child!,
+      ),
+      home: Stack(
+        children: <Widget>[
+          Positioned.fill(
+            child: CustomPaint(
+              painter: _Pattern(widget.options['bg'] ?? 'blocks'),
+            ),
+          ),
+          const Positioned(
+            left: 41,
+            top: 133,
+            child: Text('Show', style: dimmed),
+          ),
+          const Positioned(
+            left: 195,
+            top: 413,
+            child: Text('Anchor', style: dimmed),
+          ),
+        ],
       ),
     );
   }

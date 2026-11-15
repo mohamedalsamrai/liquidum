@@ -25,10 +25,24 @@ uniform vec4 uFrost;     // frost: full depth, light blur sigma (points), ramp p
 uniform vec4 uGlow;      // fingertip glow: center.xy, 1 / (2 variance) (pixels), peak alpha
 // Each shape: center.xy and half size.zw (capture pixels); and its corner
 // radius (pixels), how materialized it is (0 to 1), whether it melts with
-// the others (1) or stands apart (0, while it dematerializes), whether it
-// is tinted.
+// the others (+1; not while it dematerializes) and whether it is tinted
+// (+2), and its bottom corners' radius (pixels; 0: the same).
 uniform vec4 uShapes[8];
 uniform vec4 uShapeInfo[8];
+
+// A shape's corner radius on p's side of it: its bottom corners may be
+// rounder (a sheet's).
+float shapeRadius(vec4 shape, vec4 info, vec2 p) {
+  return info.w > 0.0 && p.y > shape.y ? info.w : info.x;
+}
+
+bool shapeJoins(vec4 info) {
+  return mod(info.z, 2.0) > 0.5;
+}
+
+bool shapeTinted(vec4 info) {
+  return info.z > 1.5;
+}
 // Each shape's tint (UIGlassEffect.tintColor), as the bar's: over white
 // glass (.rgb) with its alpha, and over black glass (.rgb; .w: painted).
 uniform vec4 uShapeTints[16];
@@ -156,10 +170,10 @@ float groupAt(vec2 p, out vec2 n, out vec2 slope, out float amount,
     if (i >= count) {
       break;
     }
-    d[i] = continuousBox(p, uShapes[i], uShapeInfo[i].x);
+    d[i] = continuousBox(p, uShapes[i], shapeRadius(uShapes[i], uShapeInfo[i], p));
     g[i] = roundOutward(
         p, uShapes[i],
-        min(uShapeInfo[i].x * kGradientRound, min(uShapes[i].z, uShapes[i].w)),
+        min(shapeRadius(uShapes[i], uShapeInfo[i], p) * kGradientRound, min(uShapes[i].z, uShapes[i].w)),
         uPass.w);
     if (d[i] < best) {
       best = d[i];
@@ -170,7 +184,7 @@ float groupAt(vec2 p, out vec2 n, out vec2 slope, out float amount,
     if (uShapeInfo[i].y < 1.0) {
       amount = mix(amount, uShapeInfo[i].y, clamp(0.5 - d[i], 0.0, 1.0));
     }
-    if (uShapeInfo[i].w > 0.5) {
+    if (shapeTinted(uShapeInfo[i])) {
       float w = 1.0 - smoothstep(kTintReach.x, kTintReach.y, d[i] / uPass.y);
       if (w > tintWeight) {
         tintWeight = w;
@@ -186,14 +200,14 @@ float groupAt(vec2 p, out vec2 n, out vec2 slope, out float amount,
     if (i >= count) {
       break;
     }
-    if (uShapeInfo[i].z < 0.5) {
+    if (!shapeJoins(uShapeInfo[i])) {
       continue;
     }
     for (int j = 0; j < kMaxShapes; j++) {
       if (j >= count) {
         break;
       }
-      if (j <= i || uShapeInfo[j].z < 0.5) {
+      if (j <= i || !shapeJoins(uShapeInfo[j])) {
         continue;
       }
       float k = spacing * 0.5 * (1.0 - dot(g[i], g[j]));
@@ -300,7 +314,7 @@ void main() {
       }
       vec4 m = uShapeMaterials[i];
       if (m.w > 0.0) {
-        float inside = clamp(0.5 - continuousBox(p, uShapes[i], uShapeInfo[i].x), 0.0, 1.0);
+        float inside = clamp(0.5 - continuousBox(p, uShapes[i], shapeRadius(uShapes[i], uShapeInfo[i], p)), 0.0, 1.0);
         vec3 gray = clamp(m.x * c + m.y * dot(c, kLuma) + m.z, 0.0, 1.0);
         c = mix(c, gray, m.w * inside * amount);
       }
@@ -324,7 +338,7 @@ void main() {
       float reach = 1.0;
       for (int i = 0; i < kMaxShapes; i++) {
         if (i == pressed && shapeCount() > 1) {
-          float di = continuousBox(p, uShapes[i], uShapeInfo[i].x) / k;
+          float di = continuousBox(p, uShapes[i], shapeRadius(uShapes[i], uShapeInfo[i], p)) / k;
           reach = 1.0 - smoothstep(kTintReach.x, kTintReach.y, di);
         }
       }

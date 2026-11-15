@@ -80,6 +80,15 @@
   or its time wheels on a platter of glass, which grows out of the label
   and unfolds on UIKit's spring, below it or above it near the bottom. A
   tap elsewhere closes it.
+* New: `showGlassSheet(context:, builder:, detents:)`, UIKit's sheet
+  (`UISheetPresentationController`) on iOS 26.5: it rises over the dimmed
+  screen to its smallest detent (`GlassSheetDetent.medium`, `.large` or
+  `.height(...)`) on UIKit's spring. Below the large detent it is a panel of
+  large glass held 8pt off the screen's sides and bottom, its corners
+  concentric with the screen's; dragged up it grows to the screen's width
+  and, past halfway, turns opaque. Drag it between its detents, down or a
+  tap outside to dismiss it; a finger on it swells it as UIKit's
+  interactive glass.
 * Fix: menu rows with icons but no checkmark start their icon and label
   where UIKit's do (40 and 64pt; 55 and 79 only beside a checkmark).
 * Fix: a tinted `Glass` kept its tint while dematerializing

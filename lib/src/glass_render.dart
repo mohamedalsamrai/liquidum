@@ -168,6 +168,7 @@ class _GlassShape {
   const _GlassShape({
     required this.rect,
     required this.radius,
+    this.bottomRadius,
     required this.height,
     required this.amount,
     required this.joins,
@@ -180,6 +181,9 @@ class _GlassShape {
 
   final Rect rect;
   final double radius;
+
+  /// The bottom corners' radius, when it is not [radius].
+  final double? bottomRadius;
   final double height;
   final double amount;
   final bool joins;
@@ -348,6 +352,7 @@ class _GlassPasses {
     required GlassAppearance appearance,
     required double spacing,
     required double devicePixelRatio,
+    bool bleed = true,
   }) {
     final ui.FragmentProgram? program = Glass._program.program;
     if (shapes.isEmpty || program == null) {
@@ -467,7 +472,7 @@ class _GlassPasses {
         ..glow.set(glow.$1, glow.$2, glow.$3, glow.$4)
         ..setBleed(
           appearance.isDark ? _GlassOptics.bleedDark : _GlassOptics.bleedLight,
-          isClear
+          isClear || !bleed
               ? 0
               : _GlassOptics.bleedOpacity(large, dark: appearance.isDark),
         );
@@ -496,8 +501,8 @@ class _GlassPasses {
         u.info[i].set(
           shape.radius * k,
           shape.amount,
-          shape.joins ? 1 : 0,
-          shape.tint == null ? 0 : 1,
+          (shape.joins ? 1 : 0) + (shape.tint == null ? 0 : 2),
+          (shape.bottomRadius ?? 0) * k,
         );
         u.setTint(i, GlassTint(shape.tint, darkAppearance: appearance.isDark));
       }
@@ -651,10 +656,15 @@ class _GlassPasses {
     _glassLayer.layer = null;
     final Path path = Path();
     for (final _GlassShape shape in shapes) {
+      final Radius top = Radius.circular(shape.radius);
+      final Radius bottom = Radius.circular(shape.bottomRadius ?? shape.radius);
       path.addRRect(
-        RRect.fromRectAndRadius(
+        RRect.fromRectAndCorners(
           shape.rect.shift(offset),
-          Radius.circular(shape.radius),
+          topLeft: top,
+          topRight: top,
+          bottomLeft: bottom,
+          bottomRight: bottom,
         ),
       );
     }
@@ -686,6 +696,8 @@ class _RenderGlass extends RenderProxyBox {
   _RenderGlass({
     required this._style,
     required this._radius,
+    this._bottomRadius,
+    this._bleeds = true,
     required this._tint,
     required this._visible,
     required this._presence,
@@ -744,6 +756,26 @@ class _RenderGlass extends RenderProxyBox {
   set radius(double? value) {
     if (value != _radius) {
       _radius = value;
+      _changed();
+    }
+  }
+
+  /// The bottom corners' radius, when it differs from [radius].
+  double? get bottomRadius => _bottomRadius;
+  double? _bottomRadius;
+  set bottomRadius(double? value) {
+    if (value != _bottomRadius) {
+      _bottomRadius = value;
+      _changed();
+    }
+  }
+
+  /// Whether large glass shows its bleed (a sheet's does not).
+  bool get bleeds => _bleeds;
+  bool _bleeds;
+  set bleeds(bool value) {
+    if (value != _bleeds) {
+      _bleeds = value;
       _changed();
     }
   }
@@ -913,6 +945,9 @@ class _RenderGlass extends RenderProxyBox {
             _GlassShape(
               rect: Offset.zero & size,
               radius: cornerRadius,
+              bottomRadius: _bottomRadius == null
+                  ? null
+                  : math.min(_bottomRadius!, size.shortestSide / 2),
               height: size.shortestSide,
               amount: amount,
               joins: true,
@@ -927,6 +962,7 @@ class _RenderGlass extends RenderProxyBox {
         appearance: appearance,
         spacing: 0,
         devicePixelRatio: _devicePixelRatio,
+        bleed: _bleeds,
       );
       for (final _RenderGlassLabel label in _labels) {
         label._setHosted(hosted.contains(label));
@@ -1060,6 +1096,11 @@ class _RenderGlassGroup extends RenderProxyBox {
         _GlassShape(
           rect: rect,
           radius: glass.cornerRadius * rect.height / glass.size.height,
+          bottomRadius: glass.bottomRadius == null
+              ? null
+              : math.min(glass.bottomRadius!, glass.size.shortestSide / 2) *
+                    rect.height /
+                    glass.size.height,
           height: glass.size.shortestSide,
           amount: amount,
           joins: glass.visible,

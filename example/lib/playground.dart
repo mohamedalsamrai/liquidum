@@ -817,6 +817,39 @@ class _GlassPageState extends State<_GlassPage> {
                   onChanged: (DateTime d) => setState(() => _when = d),
                 ),
               ),
+              const SizedBox(height: 12),
+              // A sheet: glass at its medium detent, opaque dragged up to
+              // its large one; drag it down or tap outside to close it.
+              Align(
+                alignment: Alignment.centerLeft,
+                child: GlassButton(
+                  label: 'Sheet',
+                  onPressed: () => showGlassSheet<void>(
+                    context: context,
+                    builder: (BuildContext context) => Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text(
+                            'Sheet',
+                            style: CupertinoTheme.of(
+                              context,
+                            ).textTheme.navTitleTextStyle,
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            'Drag me up, down, or tap outside.',
+                            style: CupertinoTheme.of(
+                              context,
+                            ).textTheme.textStyle,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
             ],
           ),
         ),

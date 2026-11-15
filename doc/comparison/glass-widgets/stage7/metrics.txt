@@ -1,0 +1,82 @@
+Stage 7, presentations. UIKit = iOS 26.5 simulator, iPhone 17 Pro Max
+(440 x 956pt, safe area 62 / 34, 3 px/pt). Levels: 0-255, mean absolute
+difference between UIKit's screenshot and Liquidum's (example/lib/
+menus_comparison.dart `present`), unless RMS is said.
+
+Part 1: the sheet (UISheetPresentationController), 2026-11-15
+  showGlassSheet(context:, builder:, detents:) with GlassSheetDetent.medium,
+  .large and .height(h). 1-sheet.jpg: UIKit above, Liquidum below; medium
+  light, medium dark, large.
+
+UIKit's laws (traced every frame: the presented UIDropShadowView's
+presentation layer, its layer dump and its archived glass group)
+  Detents: the screen minus both safe areas is the maximum (860pt); medium
+    is 0.56 of it (481.6pt), large all of it; a custom detent is its height.
+    Rounded to the screen's pixels (481.67). The sheet's frame is the detent
+    plus the bottom safe area (515.67, 894), its bottom at the screen's.
+  Scale: the whole sheet (content included) is scaled about its middle, by
+    1 - 16/W (0.9636) at and below the medium detent, so that it keeps 8pt
+    off the sides and the bottom; between medium and large the scale grows
+    with the frame's height to 1 at large. The inset at the sides and the
+    bottom is always (1 - scale) W / 2. Medium on screen: 8, 451.08,
+    424 x 496.92; large: 0, 62, 440 x 894.
+  Corners (cornerRadii, before the scale): top 38; bottom 62 - 14 (1 - h /
+    894) for a frame h tall (56.17 at medium, 53.29 at 334, the screen's 62
+    at large): about concentric with the screen at medium.
+  Glass: large regular glass with its fixed face (light: black 0.5, white
+    1.03, white fill 0.4; dark: 0.2, 0.6, black fill 0.4), blur 4,
+    refraction 60 at 20, shadow 0.25, radius 24, offset 8: Stage 1's large
+    glass, but its bleed is off (opacity 0).
+  Opaque: past halfway from the medium detent's frame to the large one's
+    (its top crossing about y 257-263) a fill fades in, white or (28, 28,
+    30) in the dark, on a critically damped spring (omega 18.27); it fades
+    out the same way going down.
+  Dim: black at 0.2 (0.48 in the dark) over the screen, with how far the
+    sheet is in (presenting, dismissing) or how far it is from its lowest
+    detent to gone (dragged). A tap on it dismisses the sheet.
+  Present: from below the screen, critically damped, omega 18.1 (0.347s),
+    starting about 0.08s after present(); the sheet comes in from the left
+    of its place by its inset (its x drifts 0 -> 8 with the rise).
+    Dismiss: the same spring (a drag let go: omega 15.4 with its speed).
+  Drag: the sheet follows the finger 1:1; its frame grows above its lowest
+    detent (with the scale), it slides down below it. Let go: to a detent,
+    springing omega 12.9, damping 0.845 with the finger's speed, or away.
+  Touch: the sheet is interactive glass: a finger on it swells it by 4pt
+    (424 -> 428 wide, scale 0.9636 -> 0.9725) on Stage 3's springs; a fast
+    drag stretches it along the drag (scale 0.944 across, 0.995 along at
+    about 1500pt/s).
+
+Liquidum
+  An overlay route over the root navigator: the dim, then the sheet laid
+  out at the screen's width and its frame's height (MediaQuery padding:
+  the bottom safe area) and scaled. Glass._sheet: large glass without
+  bleed and with its own bottom corner radius (glass shapes now carry one;
+  shaders/glass.frag picks it below the shape's middle). Springs:
+  GlassSpring, stepped by a ticker. A let-go drag goes to the detent
+  nearest to where its speed would carry it (UIScrollView's projection,
+  0.499s), or away.
+
+Results (screenshots, settled)
+  medium, light: dimmed page 0.03; sheet middle 2.0 (RMS 2.9); edge band
+    (12pt inside its outline) 3.8; whole sheet 2.3.
+  medium, dark: dimmed page 0.02; middle 1.4; edge 3.4; label strip 2.5;
+    whole sheet 1.7.
+  large, light: middle 0.00; edge 0.7; whole sheet 0.1.
+  Rise: Liquidum's curve against four UIKit traces, start aligned: RMS
+    0.4-0.9pt, 2.5-5.4pt at most (the first frame, about a frame of phase).
+  Widget tests (test/glass_sheet_test.dart): medium, large, a custom
+  detent within 0.05pt of UIKit's frames; the rise 0.1s in.
+
+Open
+  - Scroll views in the sheet take its vertical drags: UIKit's sheet grows
+    when its content is scrolled at its top edge; Liquidum's does not yet.
+  - The drag's stretch (fast drags) and the press glow are not copied; the
+    swell is.
+  - The grabber (prefersGrabberVisible), largestUndimmedDetent, a keyboard,
+    detents changed in code, and the page's tint dimming (UIKit grays the
+    page's tint while a sheet is up) are not done.
+  - The screen's corner radius is the 6.9" iPhone's 62pt on every screen.
+  - Labels on UIKit's glass sheet are vibrant (vibrantColorMatrix); the
+    content's text is drawn as it is.
+  - UIKit picked no detent above medium for XCUITest's fast upward drag
+    (1500pt/s): its rule for a let-go drag is not measured.

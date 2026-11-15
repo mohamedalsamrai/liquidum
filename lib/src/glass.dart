@@ -29,6 +29,7 @@ part 'glass_edit_menu.dart';
 part 'glass_menu.dart';
 part 'glass_press.dart';
 part 'glass_render.dart';
+part 'glass_sheet.dart';
 
 /// UIKit's styles of glass (`UIGlassEffect.Style`).
 enum GlassStyle {
@@ -68,7 +69,9 @@ class Glass extends StatefulWidget {
     this.child,
   }) : _material = null,
        _feed = null,
-       _fixedFace = false;
+       _fixedFace = false,
+       _bottomRadius = null,
+       _bleeds = true;
 
   // An edit menu's glass: small, yet with the system's appearance and large
   // glass's fixed face, as UIKit's.
@@ -82,7 +85,25 @@ class Glass extends StatefulWidget {
        visible = true,
        _material = null,
        _feed = null,
-       _fixedFace = true;
+       _fixedFace = true,
+       _bottomRadius = null,
+       _bleeds = true;
+
+  // A sheet's glass: large glass without its bleed, its bottom corners
+  // rounder than its top ones, as UIKit's.
+  const Glass._sheet({
+    required this.radius,
+    required double this._bottomRadius,
+    required this.child,
+  }) : style = GlassStyle.regular,
+       tint = null,
+       brightness = null,
+       visible = true,
+       interactive = false,
+       _material = null,
+       _feed = null,
+       _fixedFace = false,
+       _bleeds = false;
 
   // A glass button's glass, with UIKit's gray material over it.
   const Glass._button(
@@ -95,7 +116,9 @@ class Glass extends StatefulWidget {
        brightness = null,
        visible = true,
        _feed = null,
-       _fixedFace = false;
+       _fixedFace = false,
+       _bottomRadius = null,
+       _bleeds = true;
 
   // A menu's glass: interactive, also pressed by a finger that went down
   // elsewhere (on the button that opened it) and slid onto it.
@@ -109,7 +132,9 @@ class Glass extends StatefulWidget {
        tint = null,
        visible = true,
        _material = null,
-       _fixedFace = false;
+       _fixedFace = false,
+       _bottomRadius = null,
+       _bleeds = true;
 
   final GlassStyle style;
 
@@ -149,6 +174,8 @@ class Glass extends StatefulWidget {
   final _GlassMaterial? _material;
   final _GlassPressFeed? _feed;
   final bool _fixedFace;
+  final double? _bottomRadius;
+  final bool _bleeds;
 
   final Widget? child;
 
@@ -369,6 +396,8 @@ class _GlassState extends State<Glass> with TickerProviderStateMixin {
       presenceCurved: presence == null,
       style: widget.style,
       radius: widget.radius,
+      bottomRadius: widget._bottomRadius,
+      bleeds: widget._bleeds,
       tint: widget.tint,
       visible: widget.visible,
       presence: presence ?? _presence,
@@ -642,6 +671,8 @@ class _GlassSurface extends SingleChildRenderObjectWidget {
     this.presenceCurved = true,
     required this.style,
     required this.radius,
+    this.bottomRadius,
+    this.bleeds = true,
     required this.tint,
     required this.visible,
     required this.presence,
@@ -658,6 +689,8 @@ class _GlassSurface extends SingleChildRenderObjectWidget {
   final bool hidden;
   final GlassStyle style;
   final double? radius;
+  final double? bottomRadius;
+  final bool bleeds;
   final Color? tint;
   final bool visible;
   final Animation<double> presence;
@@ -676,6 +709,8 @@ class _GlassSurface extends SingleChildRenderObjectWidget {
   RenderObject createRenderObject(BuildContext context) => _RenderGlass(
     style: style,
     radius: radius,
+    bottomRadius: bottomRadius,
+    bleeds: bleeds,
     tint: tint,
     visible: visible,
     presence: presence,
@@ -694,6 +729,8 @@ class _GlassSurface extends SingleChildRenderObjectWidget {
     (renderObject as _RenderGlass)
       ..style = style
       ..radius = radius
+      ..bottomRadius = bottomRadius
+      ..bleeds = bleeds
       ..tint = tint
       ..visible = visible
       ..presence = presence

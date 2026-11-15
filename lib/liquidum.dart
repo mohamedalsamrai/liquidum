@@ -12,7 +12,9 @@ export 'src/glass.dart'
         GlassEditMenu,
         GlassGroup,
         GlassMenuItem,
-        GlassStyle;
+        GlassSheetDetent,
+        GlassStyle,
+        showGlassSheet;
 export 'src/bars/item.dart' show GlassBarItem;
 export 'src/bars/page.dart' show GlassPage;
 export 'src/controls/segmented.dart' show GlassSegmentedControl;
