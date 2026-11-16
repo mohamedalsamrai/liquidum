@@ -40,7 +40,7 @@ body:
     id: version
     attributes:
       label: Liquidum version
-      placeholder: "0.2.2"
+      placeholder: "1.0.0"
     validations:
       required: true
   - type: input

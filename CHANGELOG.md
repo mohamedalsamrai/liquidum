@@ -1,4 +1,12 @@
-## Unreleased
+## 1.0.0
+
+Liquidum 1.0 brings all of UIKit's iOS 26 Liquid Glass to Flutter, each
+widget rebuilt from UIKit and measured against it on iOS 26.5: the glass
+and its groups, buttons, the switch, slider and segmented control, the tab
+bar, navigation bars and toolbars, pull-down and context menus, the edit
+menu, the date picker, sheets, alerts, action sheets and popovers. The API
+in `package:liquidum/liquidum.dart` is now stable and follows semantic
+versioning; `package:liquidum/liquidum_debug.dart` stays outside it.
 
 * `Glass` is now UIKit's glass (`UIGlassEffect`), measured at 30 to 400pt:
   the tab bar's material at any size, with the inputs UIKit gives each size
@@ -142,6 +150,9 @@
   this); on iOS the buttons and bars draw as before, to the level.
 * Fix: glass over a backdrop with no background of its own (see-through
   content) took it for black and turned dark.
+* Docs: every public member has a doc comment. A new example app,
+  `example/lib/showcase.dart`, uses every widget in a travel and home app,
+  light and dark, over photos; the README is rewritten around it.
 
 ## 0.2.2
 

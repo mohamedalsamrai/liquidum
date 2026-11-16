@@ -3,7 +3,7 @@ description: >-
   Apple's iOS 26 Liquid Glass for Flutter, measured against UIKit: glass,
   buttons, controls, tab and navigation bars, menus, sheets, alerts and
   popovers.
-version: 0.2.2
+version: 1.0.0
 repository: https://github.com/mohamedalsamrai/liquidum
 issue_tracker: https://github.com/mohamedalsamrai/liquidum/issues
 topics:
