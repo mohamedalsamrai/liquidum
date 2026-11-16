@@ -22,6 +22,7 @@ import 'motion.dart';
 /// With no [onChanged] the slider is disabled: dimmed, and still. It fills
 /// the width it is given, 34pt tall.
 class GlassSlider extends StatefulWidget {
+  /// A slider showing [value], between [min] and [max].
   const GlassSlider({
     super.key,
     required this.value,
@@ -36,12 +37,17 @@ class GlassSlider extends StatefulWidget {
   }) : assert(min <= max),
        assert(divisions == null || divisions > 0);
 
+  /// The value shown, from [min] to [max].
   final double value;
 
   /// Called with the new value as the thumb is dragged; null disables the
   /// slider.
   final ValueChanged<double>? onChanged;
+
+  /// The value at the track's start: 0 by default.
   final double min;
+
+  /// The value at the track's end: 1 by default.
   final double max;
 
   /// Steps the value snaps to, if any.
@@ -55,6 +61,8 @@ class GlassSlider extends StatefulWidget {
 
   /// Called with the value when a drag starts and when it ends.
   final ValueChanged<double>? onChangeStart;
+
+  /// Called with the value when a drag ends.
   final ValueChanged<double>? onChangeEnd;
 
   @override

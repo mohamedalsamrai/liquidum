@@ -50,6 +50,8 @@ enum GlassButtonSize {
 /// tall with 12pt either side of its 17pt label, or a 34.33pt circle with
 /// only an icon.
 class GlassButton extends StatelessWidget {
+  /// A button with a [label], an [icon] or both, that calls [onPressed]
+  /// when tapped, or opens [menu].
   const GlassButton({
     super.key,
     this.onPressed,
@@ -69,6 +71,7 @@ class GlassButton extends StatelessWidget {
   /// [GlassMenuItem]s and [GlassMenuItem.divider]s.
   final List<GlassMenuItem>? menu;
 
+  /// The button's text.
   final String? label;
 
   /// Shown before the label (as UIKit's image), or alone in a circle.
@@ -77,12 +80,15 @@ class GlassButton extends StatelessWidget {
   /// UIKit's prominent glass: filled with [tint], with a white label.
   final bool prominent;
 
+  /// Regular glass (the default), or clear glass: UIKit's `clearGlass()`
+  /// and `prominentClearGlass()`.
   final GlassStyle style;
 
   /// The fill of a [prominent] button: the system blue by default. UIKit's
   /// plain and clear glass buttons ignore it.
   final Color? tint;
 
+  /// UIKit's button size: [GlassButtonSize.medium] by default.
   final GlassButtonSize size;
 
   bool get _enabled => onPressed != null || menu != null;

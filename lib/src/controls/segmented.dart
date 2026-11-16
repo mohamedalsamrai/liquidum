@@ -29,6 +29,7 @@ import 'motion.dart';
 /// wide as its widest segment times their number, or as wide as it is
 /// made.
 class GlassSegmentedControl<T extends Object> extends StatefulWidget {
+  /// A segmented control of [children], with [groupValue] selected.
   const GlassSegmentedControl({
     super.key,
     required this.children,

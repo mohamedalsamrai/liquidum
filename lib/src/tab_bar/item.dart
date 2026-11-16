@@ -7,6 +7,8 @@ import 'tab_bar.dart';
 /// and the others).
 @immutable
 class GlassTabItem {
+  /// A tab showing [icon] (and [selectedIcon] while selected) over its
+  /// [label].
   const GlassTabItem({
     required this.icon,
     this.selectedIcon,

@@ -71,7 +71,10 @@ class GlassEditMenu extends StatefulWidget {
   /// Where the menu goes, in global coordinates.
   final TextSelectionToolbarAnchors anchors;
 
+  /// Your own actions, from the unnamed constructor.
   final List<GlassMenuItem>? items;
+
+  /// Flutter's text editing actions, from the `buttonItems` constructor.
   final List<ContextMenuButtonItem>? buttonItems;
 
   @override

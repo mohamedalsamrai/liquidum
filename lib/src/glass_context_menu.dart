@@ -29,11 +29,13 @@ part of 'glass.dart';
 /// corners of 13pt (at its own size, growing as it lifts); its shadow
 /// follows its opaque pixels.
 class GlassContextMenu extends StatefulWidget {
+  /// A context menu of [items] for [child].
   const GlassContextMenu({super.key, required this.items, required this.child});
 
   /// The menu's rows (see [GlassMenuItem]). With none, [child] has no menu.
   final List<GlassMenuItem> items;
 
+  /// The view a long press lifts. Its own taps work as before.
   final Widget child;
 
   @override

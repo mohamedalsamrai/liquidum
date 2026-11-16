@@ -22,6 +22,7 @@ import 'spring.dart';
 /// UIKit's lens trails the finger through a spring, this lens follows it
 /// exactly.
 class GlassTabBarPhysics {
+  /// Physics for a bar of [count] tabs, with [selectedIndex] selected.
   GlassTabBarPhysics({required int count, required int selectedIndex})
     : assert(count > 0),
       _count = count,
@@ -54,7 +55,10 @@ class GlassTabBarPhysics {
   bool _search = false;
   int _selected;
 
+  /// The bar's size, as last laid out.
   Size get size => _size;
+
+  /// The number of tabs.
   int get count => _count;
 
   /// The tab that the lens rests on when released.
@@ -104,6 +108,7 @@ class GlassTabBarPhysics {
     return count * tab - _overlap(count, search: search) + horizontal;
   }
 
+  /// The height of a tab's pill: the bar's, less its padding.
   double get pillHeight => math.max(_size.height - _padding.vertical, 0);
 
   /// Center of tab [index]: the end tabs' pills sit at the padding, and the
@@ -120,6 +125,7 @@ class GlassTabBarPhysics {
   /// The tabs' vertical center.
   double get tabMiddle => _padding.top + pillHeight / 2;
 
+  /// The tab whose center is nearest [x], in bar coordinates.
   int nearestTab(double x) {
     var best = 0;
     for (var i = 1; i < _count; i++) {
@@ -175,6 +181,7 @@ class GlassTabBarPhysics {
   // The platter swells 3.55% while pressed. It rises on the small lens's
   // lift spring (541.5/29.09: overshoot 8%) and falls on the large flex
   // spring (304.6/20.94: undershoot 9%).
+  /// How much the platter swells while pressed: 3.55%.
   static const double pressedScale = 1.0355;
   static final (double, double) _swell = (
     _r(541.54208),
@@ -260,6 +267,8 @@ class GlassTabBarPhysics {
   // Lift progress: the clear optics (UIKit's lens lift progress,
   // 631.65/50.27, critically damped in 0.25s). A quick tap keeps the lens
   // lifted for [lensHangTime] after the finger leaves.
+  /// How long a quick tap keeps the lens lifted after the finger leaves,
+  /// in seconds.
   static const double lensHangTime = 0.22;
 
   // UIKit starts the lift a frame after the touch; the platter at once.
@@ -304,8 +313,14 @@ class GlassTabBarPhysics {
   static const (double, double) _pressRise = (0.181, 0.865);
   static const (double, double) _pressFall = (0.499, 1.0);
   static const (double, double) _spreading = (0.53, 0.96);
+
+  /// The fingertip glow's diameter, in points.
   static const double glowDiameter = 93;
+
+  /// The fingertip glow's blur (gaussian sigma), in points.
   static const double glowBlur = 46.5;
+
+  /// The fingertip glow's opacity under a full press.
   static const double glowOpacity = 0.2845;
   final GlassSpring _press = GlassSpring(
     response: 0.181,
@@ -370,6 +385,7 @@ class GlassTabBarPhysics {
   final ListQueue<(double, double)> _history = ListQueue<(double, double)>();
   double _anchorVelocity = 0;
 
+  /// Whether a finger is on the bar.
   bool get pressed => _touch != null;
 
   /// The finger, in bar coordinates, while pressed.
@@ -410,6 +426,8 @@ class GlassTabBarPhysics {
     _pending.add(_TouchEvent(_Touch.down, time, position));
   }
 
+  /// The finger moved to [position], in bar coordinates, at [time] (see
+  /// [pointerDown]).
   void pointerMove(Offset position, {double? time}) {
     if (_reported == null) {
       return;
@@ -430,6 +448,7 @@ class GlassTabBarPhysics {
     return _selected;
   }
 
+  /// Ends the touch without choosing a tab.
   void pointerCancel({double? time}) {
     if (_reported == null) {
       return;
@@ -766,6 +785,8 @@ class GlassTabBarPhysics {
 
   /// The lens's flex scale (x, y) and drift, as drawn.
   Size get flexScale => _flex.scale;
+
+  /// The lens's flex drift, as drawn.
   double get flexDrift => _flex.drift;
 
   /// The soft-body state that drives the flex.
@@ -784,7 +805,11 @@ class GlassTabBarPhysics {
   /// The glow's diameter and blur (gaussian sigma) on screen, and its
   /// opacity.
   double get glowSize => glowDiameter * (1 + _spread.value) * platterScaleX;
+
+  /// The glow's blur on screen (gaussian sigma).
   double get glowSigma => glowBlur * platterScaleX;
+
+  /// The glow's opacity.
   double get glowAlpha =>
       glowOpacity * press * (1 - _spread.value.clamp(0.0, 1.0) / 2);
 

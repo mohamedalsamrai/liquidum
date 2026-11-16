@@ -17,6 +17,7 @@ part of 'glass.dart';
 /// ```
 @immutable
 class GlassMenuItem {
+  /// A row labeled [label] that calls [onPressed] when chosen.
   const GlassMenuItem({
     required String this.label,
     this.icon,
@@ -46,7 +47,10 @@ class GlassMenuItem {
        checked = false,
        _divider = false;
 
+  /// The row's text; null for a divider.
   final String? label;
+
+  /// A symbol before the label, as UIKit's `image`.
   final IconData? icon;
 
   /// Called when the item is chosen (the menu closes); null disables it.

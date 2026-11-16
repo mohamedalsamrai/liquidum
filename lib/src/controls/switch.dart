@@ -22,6 +22,7 @@ import 'motion.dart';
 /// off gray to [activeColor] as it toggles. With no [onChanged] the switch
 /// is disabled: dimmed, and still.
 class GlassSwitch extends StatefulWidget {
+  /// A switch showing [value].
   const GlassSwitch({
     super.key,
     required this.value,
@@ -30,6 +31,7 @@ class GlassSwitch extends StatefulWidget {
     this.thumbColor,
   });
 
+  /// Whether the switch is on.
   final bool value;
 
   /// Called with the new value when the switch is toggled; null disables

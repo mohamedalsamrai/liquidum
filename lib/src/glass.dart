@@ -63,6 +63,8 @@ enum GlassStyle {
 /// [Stack]), and not inside an [Opacity], a [ShaderMask] or another save
 /// layer: it reads the pixels already painted behind it.
 class Glass extends StatefulWidget {
+  /// Glass behind [child]: regular unless [style] says otherwise, and a
+  /// capsule unless [radius] is given.
   const Glass({
     super.key,
     this.style = GlassStyle.regular,
@@ -160,6 +162,7 @@ class Glass extends StatefulWidget {
       _bottomRadius = null,
       _bleeds = true;
 
+  /// Regular glass (the default), or clear glass for rich content.
   final GlassStyle style;
 
   /// The corners' radius. A capsule (half the short side) when null.
@@ -202,6 +205,7 @@ class Glass extends StatefulWidget {
   final bool _bleeds;
   final ValueListenable<_GlassArrow?>? _arrow;
 
+  /// The content on the glass; the glass takes its size.
   final Widget? child;
 
   /// How long the glass takes to materialize or dematerialize.
@@ -484,6 +488,8 @@ class _GlassState extends State<Glass> with TickerProviderStateMixin {
 /// over: its glass is painted where the group is in the paint order, before
 /// anything in [child].
 class GlassGroup extends StatefulWidget {
+  /// A group that draws the [Glass] in [child] as one glass, melting
+  /// where it comes within [spacing].
   const GlassGroup({
     super.key,
     this.spacing = 0,
@@ -499,6 +505,7 @@ class GlassGroup extends StatefulWidget {
   /// what is behind their glass, and large ones the system.
   final Brightness? brightness;
 
+  /// The widgets whose [Glass], at any depth, the group draws.
   final Widget child;
 
   @override

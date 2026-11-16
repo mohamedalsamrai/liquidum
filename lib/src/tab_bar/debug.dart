@@ -54,6 +54,7 @@ abstract final class GlassTabBarOptics {
   /// The press: the wash over the platter and the fingertip glow.
   static const int press = 256;
 
+  /// Every stage.
   static const int all = 511;
 }
 
@@ -61,6 +62,7 @@ abstract final class GlassTabBarOptics {
 /// [GlassTabBarDebug] above it.
 @immutable
 class GlassTabBarDebugOptions {
+  /// Settings that draw the bar as it ships, unless changed.
   const GlassTabBarDebugOptions({
     this.view = GlassTabBarDebugView.none,
     this.shareBackdrop = true,
@@ -125,12 +127,14 @@ class GlassTabBarDebugOptions {
 
 /// Gives [options] to the [GlassTabBar]s below it.
 class GlassTabBarDebug extends InheritedWidget {
+  /// Gives [options] to the bars in [child].
   const GlassTabBarDebug({
     super.key,
     required this.options,
     required super.child,
   });
 
+  /// The settings the bars below use.
   final GlassTabBarDebugOptions options;
 
   /// The options of the closest [GlassTabBarDebug], or the defaults.

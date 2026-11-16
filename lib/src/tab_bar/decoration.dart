@@ -26,6 +26,8 @@ enum GlassFill {
 /// ```
 @immutable
 class GlassDecoration {
+  /// A decoration with a [color] or a [gradient] (filled as [fill] says),
+  /// and [shadows] and [innerShadows].
   const GlassDecoration({
     this.color,
     this.gradient,

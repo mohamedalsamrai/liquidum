@@ -15,6 +15,8 @@ import 'spring.dart';
 /// Larger glass (see [height]) does not read the backdrop: it takes the
 /// system's appearance and fixed inputs.
 class GlassAppearance {
+  /// An appearance starting from the [system]'s, before any backdrop is
+  /// read.
   GlassAppearance({Brightness system = Brightness.light}) : _system = system {
     _dark = system == Brightness.dark;
     _luma = _dark ? 0 : 1;
@@ -401,6 +403,8 @@ class GlassAppearance {
   /// The platter's and the lens's rim matrices.
   (double, double, double) get platterRim =>
       (_glassValues[5].value, _glassValues[6].value, _glassValues[7].value);
+
+  /// The lens's rim matrix.
   (double, double, double) get lensRim =>
       (_glassValues[8].value, _glassValues[9].value, _glassValues[10].value);
 

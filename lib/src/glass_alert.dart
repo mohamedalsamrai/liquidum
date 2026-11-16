@@ -4,6 +4,7 @@ part of 'glass.dart';
 /// [showGlassActionSheet]): UIKit's `UIAlertAction`.
 @immutable
 class GlassAlertAction {
+  /// An action labeled [label].
   const GlassAlertAction({
     required this.label,
     this.onPressed,
@@ -11,6 +12,7 @@ class GlassAlertAction {
     this.cancel = false,
   });
 
+  /// The action's text.
   final String label;
 
   /// Called when the action is chosen, as the alert goes.
@@ -29,6 +31,7 @@ class GlassAlertAction {
 /// `UIAlertController.addTextField`, a capsule above the actions.
 @immutable
 class GlassAlertTextField {
+  /// A text field; it starts with the [controller]'s text, if any.
   const GlassAlertTextField({
     this.controller,
     this.placeholder,
@@ -46,6 +49,7 @@ class GlassAlertTextField {
   /// Hides the text, for a password.
   final bool obscureText;
 
+  /// The keyboard it opens, such as [TextInputType.emailAddress].
   final TextInputType? keyboardType;
 }
 

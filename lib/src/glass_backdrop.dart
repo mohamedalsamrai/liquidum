@@ -16,8 +16,10 @@ import 'frame_sampler.dart';
 /// the glass over a backdrop then reads the screen once for its frost,
 /// instead of once each, which keeps a page with many glass smooth.
 class GlassBackdrop extends StatefulWidget {
+  /// Marks [child] as content that glass floats over.
   const GlassBackdrop({super.key, required this.child});
 
+  /// The content, without the glass that floats over it.
   final Widget child;
 
   static final Set<GlassBackdropState> _mounted = <GlassBackdropState>{};
@@ -321,9 +323,15 @@ class _RenderBackdropBoundary extends RenderProxyBox {
 /// [builder] gets 0 for light glass and 1 for dark, animating in between.
 /// Without a [GlassBackdrop] under it, it follows the system appearance.
 class GlassBrightness extends StatefulWidget {
+  /// Builds with how dark the glass at this place is.
   const GlassBrightness({super.key, required this.builder, this.child});
 
+  /// Builds the content: its value is 0 for light glass and 1 for dark,
+  /// animating in between.
   final ValueWidgetBuilder<double> builder;
+
+  /// Passed to [builder] as it is: a part that does not change with the
+  /// brightness.
   final Widget? child;
 
   @override

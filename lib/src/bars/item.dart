@@ -24,6 +24,8 @@ import '../glass.dart';
 /// [GlassButton.menu]).
 @immutable
 class GlassBarItem {
+  /// An item showing [icon] (or [label] when there is no icon) that calls
+  /// [onPressed] when tapped, or opens [menu].
   const GlassBarItem({
     this.icon,
     this.label,
@@ -46,6 +48,8 @@ class GlassBarItem {
       semanticLabel = null,
       _space = true;
 
+  /// The item's symbol. Icons side by side share one capsule of glass, as
+  /// UIKit's.
   final IconData? icon;
 
   /// Shown when there is no [icon]; otherwise the icon's accessibility

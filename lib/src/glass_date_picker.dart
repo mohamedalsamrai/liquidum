@@ -30,6 +30,7 @@ enum GlassDatePickerMode {
 /// )
 /// ```
 class GlassDatePicker extends StatefulWidget {
+  /// A picker showing [value]: its date, its time or both, by [mode].
   const GlassDatePicker({
     super.key,
     required this.value,
@@ -45,6 +46,7 @@ class GlassDatePicker extends StatefulWidget {
   /// Called with the new date and time (null disables the picker).
   final ValueChanged<DateTime>? onChanged;
 
+  /// Whether it shows the date (the default), the time or both.
   final GlassDatePickerMode mode;
 
   /// The earliest day that can be chosen (any, by default).

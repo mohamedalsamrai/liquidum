@@ -70,6 +70,8 @@ part 'transition.dart';
 /// a search field, not both). Tapped, the field makes room for a close
 /// button and the navigation bar steps aside, as UIKit's.
 class GlassPage extends StatefulWidget {
+  /// A page with UIKit's bars over [child]: a navigation bar with [title],
+  /// and a [toolbar] or a search field at the bottom.
   const GlassPage({
     super.key,
     this.title,
@@ -92,6 +94,8 @@ class GlassPage extends StatefulWidget {
          'A page has a toolbar or a search field, not both.',
        );
 
+  /// The page's title: centered in the navigation bar, or large under it
+  /// with [largeTitle].
   final String? title;
 
   /// Shows [title] large under the bar (UIKit's large title), scrolling away
@@ -116,12 +120,18 @@ class GlassPage extends StatefulWidget {
 
   /// Shown while the search field is empty.
   final String searchPlaceholder;
+
+  /// Called as the search text changes.
   final ValueChanged<String>? onSearchChanged;
+
+  /// Called when the search text is submitted from the keyboard.
   final ValueChanged<String>? onSearchSubmitted;
 
   /// Painted behind [child]. Defaults to the theme's background.
   final Color? backgroundColor;
 
+  /// The page's content, which scrolls under the bars. It gets their
+  /// heights as its [MediaQueryData.padding].
   final Widget child;
 
   @override

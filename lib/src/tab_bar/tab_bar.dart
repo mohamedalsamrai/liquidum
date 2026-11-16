@@ -39,6 +39,8 @@ import 'tint.dart';
 /// In a right-to-left [Directionality], the first tab is on the right, as in
 /// UIKit.
 class GlassTabBar extends StatefulWidget {
+  /// A bar of [items] with [selectedIndex] selected, that reports the tab
+  /// chosen to [onSelected].
   const GlassTabBar({
     super.key,
     required this.items,
@@ -73,6 +75,7 @@ class GlassTabBar extends StatefulWidget {
   /// Height of the bar, as on iOS 26.
   static const double height = 62;
 
+  /// The tabs, in order from the leading end.
   final List<GlassTabItem> items;
 
   /// The selected tab, by its index in [items].
@@ -196,6 +199,8 @@ class GlassTabBar extends StatefulWidget {
 
   /// Called as the search text changes, and when it is submitted.
   final ValueChanged<String>? onSearchChanged;
+
+  /// Called when the search text is submitted from the keyboard.
   final ValueChanged<String>? onSearchSubmitted;
 
   /// Draws the glass as UIKit's with Reduce Transparency on: nearly opaque,
@@ -212,6 +217,8 @@ class GlassTabBar extends StatefulWidget {
 
   /// The height of the bottom accessory, and its gap above the bar.
   static const double accessoryHeight = 48;
+
+  /// The gap between the bottom accessory and the bar.
   static const double accessoryGap = 8;
 
   /// The bar's height with [padding] (UIKit's, 62pt, without), and an

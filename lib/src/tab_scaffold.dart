@@ -18,6 +18,8 @@ import 'tab_bar/tab_bar.dart';
 /// ```
 @immutable
 class GlassTab {
+  /// A tab showing [icon] (and [selectedIcon] while selected) over its
+  /// [label], with [page] as its first page.
   const GlassTab({
     required IconData icon,
     IconData? selectedIcon,
@@ -90,6 +92,7 @@ class GlassTab {
   final Widget? _icon;
   final Widget? _selectedIcon;
 
+  /// The tab's name, under its icon and read by screen readers.
   final String label;
 
   /// The tab's first page.
@@ -110,8 +113,14 @@ class GlassTab {
   /// The search tab's field: its text, the text shown while it is empty
   /// ("Search" by default), and its changes and submissions.
   final TextEditingController? searchController;
+
+  /// The search field's text while it is empty ("Search" by default).
   final String? placeholder;
+
+  /// Called as the search text changes.
   final ValueChanged<String>? onSearchChanged;
+
+  /// Called when the search text is submitted from the keyboard.
   final ValueChanged<String>? onSearchSubmitted;
 
   GlassTabItem get _item => GlassTabItem(
@@ -151,6 +160,8 @@ class GlassTab {
 ///
 /// To switch tabs from code: `GlassTabScaffold.of(context).index = 1`.
 class GlassTabScaffold extends StatefulWidget {
+  /// A scaffold of [tabs] under a glass tab bar, each tab with its page and
+  /// its own navigator.
   const GlassTabScaffold({
     super.key,
     required this.tabs,
@@ -177,6 +188,7 @@ class GlassTabScaffold extends StatefulWidget {
     this.controller,
   });
 
+  /// The tabs, in order from the leading end.
   final List<GlassTab> tabs;
 
   /// The selected tab's color. Defaults to the system blue.
@@ -279,8 +291,10 @@ class GlassTabScaffold extends StatefulWidget {
 /// Which tab of a [GlassTabScaffold] is selected. Setting [index] switches
 /// tabs.
 class GlassTabController extends ChangeNotifier {
+  /// A controller with tab [initialIndex] selected.
   GlassTabController({int initialIndex = 0}) : _index = initialIndex;
 
+  /// The selected tab. Setting it switches tabs.
   int get index => _index;
   int _index;
   set index(int value) {
