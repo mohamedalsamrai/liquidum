@@ -1,0 +1,111 @@
+# Rules for the Pull Request Labeler workflow.
+# Docs: https://github.com/actions/labeler/blob/main/README.md
+# To see what a pattern matches: git ls-files ':(glob)<pattern>'
+
+'a: tab bar':
+  - changed-files:
+      - any-glob-to-any-file:
+          - lib/src/tab_bar/**
+          - lib/src/tab_scaffold.dart
+
+'a: glass':
+  - changed-files:
+      - any-glob-to-any-file:
+          - lib/src/glass.dart
+          - lib/src/glass_render.dart
+          - lib/src/glass_backdrop.dart
+          - lib/src/frame_sampler.dart
+
+'a: lens':
+  - changed-files:
+      - any-glob-to-any-file:
+          - lib/src/lens/**
+          - lib/src/controls/lens_seam.dart
+
+'a: shaders':
+  - changed-files:
+      - any-glob-to-any-file:
+          - shaders/**
+          - lib/src/shader_program.dart
+
+'a: controls':
+  - changed-files:
+      - any-glob-to-any-file:
+          - lib/src/controls/**
+
+'a: buttons':
+  - changed-files:
+      - any-glob-to-any-file:
+          - lib/src/glass_button.dart
+          - lib/src/glass_press.dart
+
+'a: bars':
+  - changed-files:
+      - any-glob-to-any-file:
+          - lib/src/bars/**
+
+'a: menus':
+  - changed-files:
+      - any-glob-to-any-file:
+          - lib/src/glass_menu.dart
+          - lib/src/glass_context_menu.dart
+          - lib/src/glass_edit_menu.dart
+
+'a: alerts':
+  - changed-files:
+      - any-glob-to-any-file:
+          - lib/src/glass_alert.dart
+
+'a: sheets':
+  - changed-files:
+      - any-glob-to-any-file:
+          - lib/src/glass_sheet.dart
+
+'a: date picker':
+  - changed-files:
+      - any-glob-to-any-file:
+          - lib/src/glass_date_picker.dart
+
+'a: animation':
+  - changed-files:
+      - any-glob-to-any-file:
+          - lib/**/*physics*.dart
+          - lib/**/spring.dart
+          - lib/**/motion.dart
+          - lib/src/bars/transition.dart
+
+# Only when a PR changes tests and nothing else.
+'a: tests':
+  - changed-files:
+      - all-globs-to-all-files:
+          - test/**
+
+'a: infra':
+  - changed-files:
+      - any-glob-to-any-file:
+          - .github/**
+          - .coderabbit.yaml
+          - AGENTS.md
+          - analysis_options.yaml
+
+'d: examples':
+  - changed-files:
+      - any-glob-to-any-file:
+          - example/**
+
+'d: docs':
+  - changed-files:
+      - any-glob-to-any-file:
+          - README.md
+          - CONTRIBUTING.md
+          - doc/**
+
+'platform-ios':
+  - changed-files:
+      - any-glob-to-any-file:
+          - example/ios/**
+
+'platform-android':
+  - changed-files:
+      - any-glob-to-any-file:
+          - example/android/**

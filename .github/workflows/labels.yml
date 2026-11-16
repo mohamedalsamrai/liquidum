@@ -1,0 +1,51 @@
+name: Sync labels
+
+# Creates, updates or renames the labels listed in .github/labels.yml.
+# Labels that aren't in the file are left alone.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/labels.yml
+      - .github/workflows/labels.yml
+  workflow_dispatch:
+
+permissions:
+  issues: write
+
+jobs:
+  sync:
+    name: Sync labels
+    runs-on: ubuntu-latest
+    if: ${{ github.repository == 'mohamedalsamrai/liquidum' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/labels.yml
+          sparse-checkout-cone-mode: false
+
+      - name: Sync
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          existing="$(gh label list --limit 1000 --json name --jq '.[].name')"
+          has() { grep -Fxq -- "$1" <<< "$existing"; }
+
+          yq -o=json -I=0 '.[]' .github/labels.yml | while read -r label; do
+            name="$(jq -r '.name' <<< "$label")"
+            color="$(jq -r '.color' <<< "$label")"
+            description="$(jq -r '.description // ""' <<< "$label")"
+            from="$(jq -r '.from // ""' <<< "$label")"
+
+            if [ -n "$from" ] && ! has "$name" && has "$from"; then
+              echo "Renaming '$from' to '$name'"
+              gh label edit "$from" --name "$name" --color "$color" --description "$description"
+            else
+              echo "Syncing '$name'"
+              gh label create "$name" --color "$color" --description "$description" --force
+            fi
+          done

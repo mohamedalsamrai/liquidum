@@ -30,6 +30,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:ui' as ui;
 
+// ignore: deprecated_member_use
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/scheduler.dart';

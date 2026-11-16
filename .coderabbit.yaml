@@ -1,0 +1,35 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+#
+# CodeRabbit reviews every pull request here (free for public repositories).
+# The review rules are in AGENTS.md, which CodeRabbit picks up by itself.
+# Options: https://docs.coderabbit.ai/reference/configuration
+
+language: en-US
+tone_instructions: "Be brief and specific. Say why something is a problem and how to fix it. No praise, no filler."
+
+reviews:
+  profile: chill
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: true
+  sequence_diagrams: false
+  auto_review:
+    enabled: true
+    drafts: false
+    # PRs to main are reviewed by default. Also review PRs to release
+    # branches, like 0.2.3.
+    base_branches:
+      - '^\d+\.\d+\.\d+$'
+  path_filters:
+    # Research captures and images.
+    - "!doc/comparison/**"
+    - "!doc/images/**"
+    # Generated platform projects of the example app.
+    - "!example/ios/**"
+    - "!example/android/**"
+    - "!**/pubspec.lock"
+
+chat:
+  auto_reply: true

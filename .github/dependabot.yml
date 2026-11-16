@@ -1,0 +1,18 @@
+# Keeps the pinned versions in .github/workflows up to date.
+# Options: https://docs.github.com/en/code-security/dependabot/working-with-dependabot/dependabot-options-reference
+
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      github-actions:
+        patterns: ["*"]
+    labels:
+      - "a: infra"
+    # Patch releases of actions aren't worth a PR each.
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-patch"]

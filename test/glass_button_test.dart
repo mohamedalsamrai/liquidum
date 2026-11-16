@@ -1,12 +1,11 @@
+// ignore: deprecated_member_use
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liquidum/liquidum.dart';
 
 void main() {
-  Widget app(Widget child) => CupertinoApp(
-    home: Center(child: child),
-  );
+  Widget app(Widget child) => CupertinoApp(home: Center(child: child));
 
   testWidgets('glass buttons have UIKit sizes', (WidgetTester tester) async {
     await tester.pumpWidget(

@@ -1,0 +1,185 @@
+# Every label in this repository, named the way flutter/flutter names its own.
+#
+# The "Sync labels" workflow creates or updates these when this file changes on
+# main. It never deletes a label. `from` renames an existing label instead of
+# creating a new one, so issues that already had it keep it.
+#
+#   P0 to P3    priority
+#   c:          category, what kind of issue it is
+#   a:          area of the library
+#   d:          documentation
+#   platform-   where the issue shows up
+#   r:          resolution, why an issue was closed
+
+# Priority
+
+- name: "P0"
+  color: "b60205"
+  description: "Breaks apps on the current release (crash, build failure). Fixed before anything else"
+- name: "P1"
+  color: "d93f0b"
+  description: "High priority. Next in line to be worked on"
+- name: "P2"
+  color: "fbca04"
+  description: "Important but not at the top of the list. The default level after triage"
+- name: "P3"
+  color: "c2e0c6"
+  description: "Less important for now. Thumbs-up reactions help it move up"
+
+# Category
+
+- name: "c: bug"
+  from: "bug"
+  color: "d73a4a"
+  description: "Something doesn't work as documented"
+- name: "c: crash"
+  color: "e11d21"
+  description: "An exception, a red error screen or a native crash"
+- name: "c: regression"
+  color: "e99695"
+  description: "Worked in an earlier version of Liquidum"
+- name: "c: rendering"
+  color: "f9d0c4"
+  description: "Glitches in how the glass is drawn: artifacts, flicker, wrong colors"
+- name: "c: performance"
+  color: "fef2c0"
+  description: "Jank, high CPU or GPU use, memory"
+- name: "c: new feature"
+  from: "enhancement"
+  color: "a2eeef"
+  description: "A new capability. Nothing is broken"
+- name: "c: proposal"
+  color: "bfdadc"
+  description: "A detailed proposal for a change to the API or behavior"
+- name: "c: API break"
+  color: "5319e7"
+  description: "Breaks existing code. Needs a Breaking: line in the changelog"
+- name: "c: tech-debt"
+  color: "c5def5"
+  description: "Refactoring, cleanup or tooling with no change users can see"
+
+# Area
+
+- name: "a: tab bar"
+  color: "bfd4f2"
+  description: "GlassTabBar and GlassTabScaffold: tabs, search tab, accessory, minimizing"
+- name: "a: glass"
+  color: "bfd4f2"
+  description: "Glass, GlassGroup and GlassBackdrop: refraction, frost, tint, adaptive appearance"
+- name: "a: lens"
+  color: "bfd4f2"
+  description: "The liquid lens and its physics, in the tab bar and the controls"
+- name: "a: shaders"
+  color: "bfd4f2"
+  description: "The fragment shaders in shaders/ and how they are loaded"
+- name: "a: controls"
+  color: "bfd4f2"
+  description: "GlassSwitch, GlassSlider and GlassSegmentedControl"
+- name: "a: buttons"
+  color: "bfd4f2"
+  description: "GlassButton and press feedback"
+- name: "a: bars"
+  color: "bfd4f2"
+  description: "GlassPage and GlassBarItem: navigation bars, toolbars, scroll edge effect"
+- name: "a: menus"
+  color: "bfd4f2"
+  description: "GlassButton.menu, GlassContextMenu and GlassEditMenu"
+- name: "a: alerts"
+  color: "bfd4f2"
+  description: "showGlassAlert and showGlassActionSheet"
+- name: "a: sheets"
+  color: "bfd4f2"
+  description: "showGlassSheet and its detents"
+- name: "a: date picker"
+  color: "bfd4f2"
+  description: "GlassDatePicker"
+- name: "a: fidelity"
+  color: "bfd4f2"
+  description: "Looks or moves differently from UIKit on iOS 26"
+- name: "a: animation"
+  color: "bfd4f2"
+  description: "Springs, physics and transitions"
+- name: "a: accessibility"
+  from: "accessibility"
+  color: "bfd4f2"
+  description: "VoiceOver, TalkBack, Reduce Motion, Bold Text, contrast and text size"
+- name: "a: internationalization"
+  color: "bfd4f2"
+  description: "Right-to-left layouts and localized text"
+- name: "a: tests"
+  color: "bfd4f2"
+  description: "Tests and test helpers"
+- name: "a: infra"
+  color: "bfd4f2"
+  description: "CI, GitHub Actions, bots and repository settings"
+
+# Documentation
+
+- name: "d: api docs"
+  color: "0075ca"
+  description: "/// doc comments and the API reference on pub.dev"
+- name: "d: examples"
+  color: "0075ca"
+  description: "The example app"
+- name: "d: docs"
+  from: "documentation"
+  color: "0075ca"
+  description: "README, CONTRIBUTING and the files under doc/"
+
+# Platform
+
+- name: "platform-ios"
+  color: "d4c5f9"
+  description: "Shows up on iOS"
+- name: "platform-android"
+  color: "d4c5f9"
+  description: "Shows up on Android"
+
+# Triage
+
+- name: "in triage"
+  color: "e4e669"
+  description: "New. A maintainer hasn't looked at it yet"
+- name: "waiting for response"
+  from: "question"
+  color: "d876e3"
+  description: "Waiting on the author. Closed after 21 days without a reply"
+- name: "has reproducible steps"
+  color: "0e8a16"
+  description: "Reproduced with the steps in the issue"
+
+# Resolution
+
+- name: "r: duplicate"
+  from: "duplicate"
+  color: "cfd3d7"
+  description: "Closed as a duplicate of another issue"
+- name: "r: fixed"
+  color: "cfd3d7"
+  description: "Closed because it is already fixed in a newer version"
+- name: "r: invalid"
+  from: "invalid"
+  color: "cfd3d7"
+  description: "Closed because it isn't a Liquidum issue or can't be acted on"
+- name: "r: not planned"
+  from: "wontfix"
+  color: "cfd3d7"
+  description: "Closed because it won't be worked on"
+- name: "r: solved"
+  color: "cfd3d7"
+  description: "Closed because the question was answered or the problem solved"
+- name: "r: timeout"
+  color: "cfd3d7"
+  description: "Closed because the information asked for never came"
+- name: "r: works as intended"
+  color: "cfd3d7"
+  description: "Closed because it matches UIKit or is the intended behavior"
+
+# Contributions
+
+- name: "good first issue"
+  color: "7057ff"
+  description: "A small, well-defined task for a first contribution"
+- name: "help wanted"
+  color: "008672"
+  description: "Open for anyone to pick up"
