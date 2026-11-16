@@ -18,6 +18,7 @@ export 'src/glass.dart'
         GlassStyle,
         showGlassActionSheet,
         showGlassAlert,
+        showGlassPopover,
         showGlassSheet;
 export 'src/bars/item.dart' show GlassBarItem;
 export 'src/bars/page.dart' show GlassPage;

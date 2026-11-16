@@ -25,7 +25,10 @@
 // `show` seconds (0.5), a sheet with a "Sheet" headline at 24,24; `present
 // kind=alert [title=] [message=] [actions=Cancel:c,OK,Delete:d] [field=<n>]
 // [fieldtext=]` (as the catalog's: "_" for spaces, "none" for no text) an
-// alert instead. Writes
+// alert instead (kind=actionsheet: an action sheet; source=1 from the
+// anchor); `present kind=popover [size=w,h] [at=x,y]` a popover by the
+// anchor (100 x 44 at x,y; 170,400 by default) with a "Popover" label at
+// 20,20, as the catalog's. Writes
 // `<tmp>/ready.txt` 2s after the first frame.
 
 import 'dart:async';
@@ -616,6 +619,16 @@ class PresentComparison extends StatefulWidget {
 
 class _PresentComparisonState extends State<PresentComparison> {
   final GlobalKey<NavigatorState> _navigator = GlobalKey<NavigatorState>();
+  final GlobalKey _anchor = GlobalKey();
+
+  // The catalog's anchor button: 100 x 44 at `at`.
+  Offset get _anchorAt {
+    final List<double> xy = (widget.options['at'] ?? '170,400')
+        .split(',')
+        .map(double.parse)
+        .toList();
+    return Offset(xy[0], xy[1]);
+  }
 
   @override
   void initState() {
@@ -630,6 +643,51 @@ class _PresentComparisonState extends State<PresentComparison> {
       return;
     }
     final String kind = widget.options['kind'] ?? 'sheet';
+    if (kind == 'popover') {
+      final List<double> wh = (widget.options['size'] ?? '240,160')
+          .split(',')
+          .map(double.parse)
+          .toList();
+      showGlassPopover<void>(
+        context: _anchor.currentContext!,
+        size: Size(wh[0], wh[1]),
+        builder: (BuildContext context) => Align(
+          alignment: Alignment.topLeft,
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Text(
+              'Popover',
+              style: TextStyle(
+                fontSize: 17,
+                letterSpacing: -0.43,
+                color: CupertinoColors.label.resolveFrom(context),
+              ),
+            ),
+          ),
+        ),
+      );
+      return;
+    }
+    if (kind == 'actionsheet' && widget.options['source'] != null) {
+      showGlassActionSheet(
+        context: context,
+        source: _anchor.currentContext,
+        title: widget.options['title'] == 'none' ? null : 'Title',
+        message: widget.options['message'] == 'none' ? null : 'A message',
+        actions: <GlassAlertAction>[
+          for (final String spec
+              in (widget.options['actions'] ?? 'Cancel:c,OK,Delete:d').split(
+                ',',
+              ))
+            GlassAlertAction(
+              label: spec.split(':').first.replaceAll('_', ' '),
+              cancel: spec.endsWith(':c'),
+              destructive: spec.endsWith(':d'),
+            ),
+        ],
+      );
+      return;
+    }
     if (kind == 'alert' || kind == 'actionsheet') {
       String? text(String key, String fallback) {
         final String v = widget.options[key] ?? fallback;
@@ -728,10 +786,18 @@ class _PresentComparisonState extends State<PresentComparison> {
             top: 133,
             child: Text('Show', style: dimmed),
           ),
-          const Positioned(
-            left: 195,
-            top: 413,
-            child: Text('Anchor', style: dimmed),
+          Positioned(
+            left: _anchorAt.dx,
+            top: _anchorAt.dy,
+            width: 100,
+            height: 44,
+            child: SizedBox(
+              key: _anchor,
+              child: const Padding(
+                padding: EdgeInsets.only(left: 25, top: 13),
+                child: Text('Anchor', style: dimmed),
+              ),
+            ),
           ),
         ],
       ),

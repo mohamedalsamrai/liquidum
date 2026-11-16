@@ -56,6 +56,10 @@ uniform vec4 uBleed[4];
 // prominent glass buttons): the color times .x plus its luma times .y plus
 // .z, at opacity .w (none at 0).
 uniform vec4 uShapeMaterials[8];
+// A popover's arrow on the first shape: its tip (capture pixels: where
+// UIKit's path aims it, on the source's edge) and its direction, from the
+// shape out to the tip (none when zero).
+uniform vec4 uArrow;
 // The vibrant labels on the glass, drawn with it (UIKit draws a glass
 // button's title and image through a vibrantColorMatrix: see vibrant.frag),
 // uFrost.w of them: each one's box (capture pixels: left, top, width,
@@ -124,6 +128,48 @@ const vec2 kTintReach = vec2(1.1, 9.0);
 // to 30 (unions), and to its glass over color (refraction) (iOS 26.5).
 const float kGradientRound = 5.0 / 3.0;
 
+// UIKit's popover arrow (UIPopoverPresentationController's chrome mask,
+// iOS 26.5), in points out from its shape's edge: straight sides 5.5
+// across for every 6 out, a tip 13 out rounded by a 2.71 circle (the sides
+// would meet 14.18 out), and fillets to the edge (UIKit's: cubics from 18.5
+// either side of the middle to 6 out). Here a rounded cone, joined to the
+// shape by a quadratic smooth union 2.6 wide: within 0.2pt of UIKit's
+// outline (.research/arrowfit.py).
+const float kArrowLength = 13.0;
+const float kArrowTip = 2.713;
+const float kArrowCenter = 10.167;  // the tip circle's center, out
+const vec2 kArrowSide = vec2(0.73715, 0.67573);  // cos, sin of the half angle
+const float kArrowFillet = 2.6;
+
+bool hasArrow() {
+  return dot(uArrow.zw, uArrow.zw) > 0.5;
+}
+
+// The arrow's signed distance at p (pixels) and its outward direction g.
+float arrowAt(vec2 p, out vec2 g) {
+  float k = uPass.y;
+  vec2 u = uArrow.zw;
+  vec2 v = vec2(-u.y, u.x);
+  vec2 q = (p - uArrow.xy) / k;
+  float out_ = kArrowLength + dot(q, u);
+  float across = dot(q, v);
+  // The cone: its apex at the tip circle's center, opening toward the shape.
+  vec2 c = vec2(abs(across), kArrowCenter - out_);
+  float d;
+  vec2 gc;
+  if (c.x * kArrowSide.y + c.y * kArrowSide.x < 0.0) {
+    d = length(c);
+    gc = d > 1e-4 ? c / d : vec2(0.0, -1.0);
+  } else {
+    d = c.x * kArrowSide.x - c.y * kArrowSide.y;
+    gc = vec2(kArrowSide.x, -kArrowSide.y);
+  }
+  // Cut well inside the shape (the shape covers it there).
+  d = max(d - kArrowTip, -(out_ + 20.0));
+  g = (across < 0.0 ? -gc.x : gc.x) * v - gc.y * u;
+  return d * k;
+}
+
 // UIKit's fingertip glow (_UIFlexInteraction's little glow: a white disk's
 // shadow drawn through a vibrant color matrix): what is under it, 2.727
 // times itself less 0.909 times its luma (grays x1.82, colors deeper), by
@@ -176,6 +222,20 @@ float groupAt(vec2 p, out vec2 n, out vec2 slope, out float amount,
         p, uShapes[i],
         min(shapeRadius(uShapes[i], uShapeInfo[i], p) * kGradientRound, min(uShapes[i].z, uShapes[i].w)),
         uPass.w);
+    if (i == 0 && hasArrow()) {
+      // A popover's glass: UIKit draws its outline from a path's distance
+      // field (its SDF element's contents), so its direction is the
+      // outline's own, not a rounder box's nor ovalized. And its arrow
+      // melts into it (UIKit's fillets).
+      g[i] = roundOutward(p, uShapes[i], shapeRadius(uShapes[i], uShapeInfo[i], p), 0.0);
+      vec2 ga;
+      float da = arrowAt(p, ga);
+      float kf = kArrowFillet * uPass.y;
+      float h = max(kf - abs(d[i] - da), 0.0) / kf;
+      vec2 gm = da < d[i] ? mix(ga, g[i], 0.5 * h) : mix(g[i], ga, 0.5 * h);
+      d[i] = min(d[i], da) - h * h * kf * 0.25;
+      g[i] = length(gm) > 1e-4 ? normalize(gm) : g[i];
+    }
     if (d[i] < best) {
       best = d[i];
       n = g[i];

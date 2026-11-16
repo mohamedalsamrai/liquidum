@@ -174,3 +174,87 @@ Open
   - The 0.2s UIKit waits before its alert appears in the catalog is not
     copied (likely its first layout).
   - Liquidum's alert has not been compared on Android.
+
+Part 3: the popover (UIPopoverPresentationController) and the action sheet
+from a source view, 2026-11-16
+  showGlassPopover(context:, builder:, size:) points at the widget context
+  belongs to; showGlassActionSheet(source:) shows an action sheet as UIKit
+  does with a sourceView. 3-popover.jpg: UIKit above, Liquidum below; above
+  its source, dark, right of its source, over white, action sheet light and
+  dark.
+
+UIKit's laws (layer dumps with the chrome's mask path, archived SwiftUI
+glass, the shadow view's image and matrix, traced every frame; iPhone,
+popovers kept as popovers)
+  Glass: Stage 1's large regular glass with its bleed (0.5 light, 0.8
+    dark), its outline a path (continuous corners 34, and the arrow) drawn
+    as an SDF bitmap: refraction along the outline's own gradient (no
+    rounder box, no ovalization). The chrome is masked to the path, so the
+    glass casts no shadow of its own.
+  Arrow: 13pt from the glass's edge to its tip on the source's edge;
+    straight sides 5.5 across per 6 out; the tip a cubic (as a 2.71pt
+    circle); fillets from 18.5pt either side of its middle. Liquidum: a
+    rounded cone melted into the glass by a 2.6pt smooth union, within
+    0.2pt of the path (shaders/glass.frag).
+  Place: the content's size (preferredContentSize) by the source: above it
+    if it fits there centered on it, else below, else right, else left;
+    else the first side it fits on, moved along (10pt from the screen's
+    sides, 10pt inside the safe area), its arrow still at the source's
+    middle (40pt from a corner at the least); along the source's edge it
+    narrows to fit (440 -> 420 wide); fitting nowhere, from the source's
+    middle on the side with the most room. The origin on whole points.
+  Shadow: _UIRoundedRectShadowView under the glass, the glass grown by
+    150pt: a soft rounded box (all within 40pt inside the glass, half at
+    37pt out, none at 150 out) drawn through a vibrantColorMatrix: what is
+    under it becomes c + k a(c) (M c + o - c), M about 0.75 of c leaning
+    blue, a = 1 - (0.234 r + 0.453 g + 0.094 b). It darkens white by up to
+    9%, colors by up to a quarter, black not at all; the glass over it
+    reads it (7 levels darker over blocks). Liquidum:
+    shaders/popover_shadow.frag, the image's profile within 0.01 (0.04 in
+    its corners).
+  Motion: shown, it scales up from nothing about the glass's middle and
+    fades in (opacity with it) on omega 18.0, zeta 0.80, while the middle
+    comes from the arrow's tip on omega 17.0, zeta 0.735, 0.026s later;
+    dismissed (a tap outside), back into the tip: scale 17.6 / 0.90,
+    opacity 16.8 / 0.85, middle 21.7 / 0.95 (fits: RMS 0.001-0.008). No
+    dim. A finger on it does not swell it.
+  Action sheet from a source: this popover, 240 wide, holding the alert's
+    layout (the message 7.7pt below the title), its actions stacked,
+    without its cancel action; a tap outside chooses the cancel action.
+
+Liquidum
+  An overlay route (as the alert's): a tap-outside layer, then a layout
+  that measures the content (or takes size), places it, gives the glass its
+  arrow and moves it by the springs; UIKit's shadow is a backdrop filter
+  under the glass. The glass: Glass._popover (large glass with the arrow;
+  no shared backdrop read, no shadow of its own). The content is laid out
+  in the glass's box (UIKit's content view also spans the arrow).
+
+Results (screenshots, settled; mean levels: middle 12pt in / edge band /
+arrow / ring 40pt around / whole glass)
+  above, blocks: light 2.9 / 3.2 / 1.8 / 0.4 / 3.0; dark 3.5 / 4.4 / 3.0 /
+    0.4 / 3.7. Without the shadow: middle 8.4, ring 19.5 (light).
+  over white 2.7 / 2.5 / 1.4 / 0.5 / 2.6; over black 0.8 / 1.3 / 1.4 / 0.2
+    / 0.9; dark over white 2.0 / 2.1 / 1.6 / 0.5 / 2.0.
+  below its source 5.6 / 3.3 / 2.0 / 0.5 / 5.0 and right of it 4.9 / 3.9 /
+    1.9 / 0.3 / 4.7 (the label 13pt off: see above); 300 x 400 below 3.4 /
+    3.6 / 2.2 / 0.3 / 3.4.
+  action sheet from its source: light 3.6 / 4.2 / 3.6 / 0.4 / 3.7, dark 4.3
+    / 5.4 / 4.4 / 0.4 / 4.5.
+  Placement: every UIKit frame above within 0.01pt (widget tests,
+  test/glass_popover_test.dart: above, below, right, moved along, narrowed,
+  from the middle, sized to its content, the action sheet).
+  Other glass unchanged: the part 2 alert pixel-identical but for the
+  status bar's clock.
+
+Open
+  - The content is laid out within the glass; UIKit's content view spans the
+    arrow too (its safe area, not measured, likely keeps content off it).
+  - permittedArrowDirections (UIKit's arrow=) is not offered; the source is
+    a widget's box (no sourceRect within it), and a source that moves after
+    the popover shows is not followed.
+  - The shadow's corners are within 0.04 of UIKit's image, its sides 0.01.
+  - Without shader filters (not Impeller), no shadow is drawn.
+  - The page's tint graying under a popover, the first present's 0.2s
+    hitch, and a keyboard over a popover are not copied or measured.
+  - Not compared on Android.

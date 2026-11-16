@@ -92,11 +92,17 @@ Future<GlassAlertAction?> showGlassAlert({
 /// in the middle of the screen, as its alert ([showGlassAlert]): the same
 /// glass, layout and springs; but, unlike an alert, a tap outside it
 /// dismisses it.
+///
+/// With a [source] (the context of the widget it comes from, as UIKit's
+/// `popoverPresentationController.sourceView`), it shows as a popover by
+/// that widget ([showGlassPopover]): 240pt wide, its actions stacked,
+/// without its cancel action (a tap outside chooses it).
 Future<GlassAlertAction?> showGlassActionSheet({
   required BuildContext context,
   String? title,
   String? message,
   required List<GlassAlertAction> actions,
+  BuildContext? source,
 }) {
   assert(actions.isNotEmpty, 'An action sheet needs an action.');
   final NavigatorState navigator = Navigator.of(context, rootNavigator: true);
@@ -107,6 +113,7 @@ Future<GlassAlertAction?> showGlassActionSheet({
       actions: actions,
       textFields: const <GlassAlertTextField>[],
       sheet: true,
+      source: source == null ? null : _popoverSource(source, navigator),
       themes: InheritedTheme.capture(from: context, to: navigator.context),
     ),
   );
@@ -122,6 +129,8 @@ abstract final class _AlertMetrics {
   static const double textInset = 30;
   static const double textTop = 22;
   static const double textGap = 7.4;
+  // (In an action sheet's popover a pixel more.)
+  static const double popoverTextGap = 7.7;
   static const double textBottom = 4.3;
   // A title or message alone.
   static const double soloTop = 21.7;
@@ -223,6 +232,7 @@ class _GlassAlertRoute extends PopupRoute<GlassAlertAction> {
     required this.actions,
     required this.textFields,
     required this.sheet,
+    this.source,
     required this.themes,
   });
 
@@ -235,6 +245,10 @@ class _GlassAlertRoute extends PopupRoute<GlassAlertAction> {
 
   // An action sheet: a tap outside it dismisses it.
   final bool sheet;
+
+  // An action sheet's source, in the overlay's coordinates: it shows as a
+  // popover by it.
+  final Rect? source;
 
   @override
   Color? get barrierColor => null;
@@ -285,6 +299,12 @@ class _GlassAlertState extends State<_GlassAlert>
     value: 0,
   );
 
+  // Presented from a source: a popover's motion, and its arrow.
+  late final _PopoverMotion? _pop = widget.route.source == null
+      ? null
+      : _PopoverMotion();
+  final ValueNotifier<_GlassArrow?> _arrow = ValueNotifier<_GlassArrow?>(null);
+
   bool _dismissing = false;
   // The dim's easing: its value when it started, and the time since.
   double _dimFrom = 0;
@@ -308,6 +328,7 @@ class _GlassAlertState extends State<_GlassAlert>
     super.initState();
     widget.route.animation?.addStatusListener(_routeStatus);
     _shown.target = 1;
+    _pop?.show();
     _ticker.start();
   }
 
@@ -321,6 +342,7 @@ class _GlassAlertState extends State<_GlassAlert>
     widget.route.animation?.removeStatusListener(_routeStatus);
     _ticker.dispose();
     _presence.dispose();
+    _arrow.dispose();
     super.dispose();
   }
 
@@ -341,16 +363,26 @@ class _GlassAlertState extends State<_GlassAlert>
   void _tick(Duration elapsed) {
     final Duration? last = _last;
     _last = elapsed;
+    final _PopoverMotion? pop = _pop;
     if (last != null) {
       final double dt = (elapsed - last).inMicroseconds / 1e6;
       _shown.step(dt);
+      pop?.step(dt);
       _dimTime += dt;
     }
-    _presence.value = _shown.value.clamp(0.0, 1.0);
-    if (_shown.isSettled && _dimTime >= _AlertMetrics.dimSeconds) {
-      _shown.snap(_shown.target);
-      _presence.value = _shown.value;
-      _ticker.stop();
+    if (pop != null) {
+      if (pop.isSettled) {
+        pop.settle();
+        _ticker.stop();
+      }
+      _presence.value = pop.shown;
+    } else {
+      _presence.value = _shown.value.clamp(0.0, 1.0);
+      if (_shown.isSettled && _dimTime >= _AlertMetrics.dimSeconds) {
+        _shown.snap(_shown.target);
+        _presence.value = _shown.value;
+        _ticker.stop();
+      }
     }
     setState(() {});
   }
@@ -372,6 +404,7 @@ class _GlassAlertState extends State<_GlassAlert>
     _highlighted = null;
     _tracking = false;
     _shown.target = 0;
+    _pop?.hide();
     _wake();
     if (!popped) {
       final NavigatorState? navigator = widget.route.navigator;
@@ -462,6 +495,12 @@ class _GlassAlertState extends State<_GlassAlert>
       for (final GlassAlertAction a in actions)
         if (!identical(a, cancel)) a,
     ];
+    if (widget.route.source != null) {
+      // As a popover: stacked, without the cancel action.
+      _sideBySide = false;
+      _ordered = rest;
+      return;
+    }
     _sideBySide = actions.length == 2 && _fitsSideBySide(actions, scaler);
     _ordered = _sideBySide
         ? <GlassAlertAction>[?cancel, ...rest]
@@ -501,7 +540,8 @@ class _GlassAlertState extends State<_GlassAlert>
     final bool dark =
         MediaQuery.platformBrightnessOf(context) == Brightness.dark;
     _arrange(MediaQuery.textScalerOf(context));
-    final double shown = _shown.value.clamp(0.0, 1.0);
+    final _PopoverMotion? pop = _pop;
+    final double shown = pop?.shown ?? _shown.value.clamp(0.0, 1.0);
     // Growing in only as it is shown; it fades away at its size.
     final double scale = _dismissing
         ? 1
@@ -556,7 +596,11 @@ class _GlassAlertState extends State<_GlassAlert>
                         style: _AlertMetrics.titleStyle(titleColor),
                         textHeightBehavior: _AlertMetrics.lines,
                       ),
-                      const SizedBox(height: _AlertMetrics.textGap),
+                      SizedBox(
+                        height: pop != null
+                            ? _AlertMetrics.popoverTextGap
+                            : _AlertMetrics.textGap,
+                      ),
                       Text(
                         message!,
                         style: _AlertMetrics.messageStyle(
@@ -748,7 +792,9 @@ class _GlassAlertState extends State<_GlassAlert>
     final double room =
         screen.height - padding.top - bottom - 2 * _AlertMetrics.actionInset;
     final Widget alert = SizedBox(
-      width: math.min(_AlertMetrics.width, screen.width - 2 * 16),
+      width: pop != null
+          ? _PopoverMetrics.actionSheetWidth
+          : math.min(_AlertMetrics.width, screen.width - 2 * 16),
       child: ConstrainedBox(
         constraints: BoxConstraints(maxHeight: math.max(0, room)),
         child: Column(
@@ -766,6 +812,49 @@ class _GlassAlertState extends State<_GlassAlert>
         ),
       ),
     );
+
+    if (pop != null) {
+      // From a source: a popover by it, with no dim.
+      return Stack(
+        children: <Widget>[
+          Positioned.fill(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: _cancel,
+            ),
+          ),
+          Positioned.fill(
+            child: IgnorePointer(
+              ignoring: _dismissing,
+              child: _PopoverLayout(
+                source: widget.route.source!,
+                size: null,
+                insets: padding.copyWith(bottom: bottom),
+                arrow: _arrow,
+                scale: math.max(0, pop.scale.value),
+                travel: pop.travel.value,
+                shadow: pop.shown,
+                devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
+                child: Semantics(
+                  scopesRoute: true,
+                  namesRoute: true,
+                  explicitChildNodes: true,
+                  label: title ?? message,
+                  child: GlassPresence(
+                    amount: _presence,
+                    child: Glass._popover(
+                      _arrow,
+                      radius: _PopoverMetrics.radius,
+                      child: alert,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      );
+    }
 
     return Stack(
       children: <Widget>[

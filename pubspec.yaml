@@ -46,3 +46,4 @@ flutter:
     - shaders/vibrant.frag
     - shaders/lens.frag
     - shaders/scroll_edge.frag
+    - shaders/popover_shadow.frag

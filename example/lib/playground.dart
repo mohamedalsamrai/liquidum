@@ -870,6 +870,46 @@ class _GlassPageState extends State<_GlassPage> {
                   ),
                 ),
               ),
+              const SizedBox(height: 12),
+              // A popover by the button (its arrow points at it), and an
+              // action sheet from the button: a popover too.
+              Row(
+                children: <Widget>[
+                  Builder(
+                    builder: (BuildContext source) => GlassButton(
+                      label: 'Popover',
+                      onPressed: () => showGlassPopover<void>(
+                        context: source,
+                        builder: (BuildContext context) => const Padding(
+                          padding: EdgeInsets.all(20),
+                          child: SizedBox(
+                            width: 200,
+                            child: Text(
+                              'A popover points at what it came from. Tap '
+                              'outside to close it.',
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Builder(
+                    builder: (BuildContext source) => GlassButton(
+                      label: 'Share',
+                      onPressed: () => showGlassActionSheet(
+                        context: context,
+                        source: source,
+                        actions: <GlassAlertAction>[
+                          const GlassAlertAction(label: 'Copy'),
+                          const GlassAlertAction(label: 'Save'),
+                          const GlassAlertAction(label: 'Cancel', cancel: true),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ],
           ),
         ),

@@ -130,6 +130,10 @@ class _GlassOptics {
   static const double shadowCenter = 0.85;
   static const double shadowReach = 39.06;
 
+  // How far a popover's arrow reaches from its tip (points): to its base's
+  // fillets, 13 back and 18.5 to either side (shaders/glass.frag).
+  static const double arrowReach = 24;
+
   // The rim's curvature, as the bar's platter's.
   static const double rimCurvature = 0.7;
 
@@ -184,6 +188,7 @@ class _GlassShape {
     this.toShape,
     this.material,
     this.labels = const <_RenderGlassLabel>[],
+    this.arrow,
   });
 
   final Rect rect;
@@ -207,7 +212,14 @@ class _GlassShape {
 
   /// The vibrant labels on the glass, which its pass draws.
   final List<_RenderGlassLabel> labels;
+
+  /// A popover's arrow (the first shape's only).
+  final _GlassArrow? arrow;
 }
+
+/// A popover's arrow on its glass: its tip (in the shape's coordinates, as
+/// its rect) and the unit direction from the shape out to it.
+typedef _GlassArrow = ({Offset tip, Offset direction});
 
 /// A gray material over glass, as UIKit lays over some glass buttons: the
 /// glass's color times [gain] plus its luma times [lumaWeight] plus
@@ -268,6 +280,10 @@ class _GlassPasses {
   // The reads [owner] (at [rect], global) shares with the other glass over
   // its backdrop: not when it is on other glass.
   static GlassShare? _shareFor(RenderObject owner, Rect rect) {
+    // A popover's glass reads its own shadow under it.
+    if (owner is _RenderGlass && owner.arrow != null) {
+      return null;
+    }
     for (RenderObject? o = owner.parent; o != null; o = o.parent) {
       if (o is _RenderGlass || o is _RenderGlassGroup) {
         return null;
@@ -370,6 +386,12 @@ class _GlassPasses {
     for (final _GlassShape shape in shapes.skip(1)) {
       bounds = bounds.expandToInclude(shape.rect);
     }
+    final _GlassArrow? arrow = shapes.first.arrow;
+    if (arrow != null) {
+      bounds = bounds.expandToInclude(
+        Rect.fromCircle(center: arrow.tip, radius: _GlassOptics.arrowReach),
+      );
+    }
     bounds = bounds.shift(offset);
     if (!ui.ImageFilter.isShaderFilterSupported) {
       _paintPlain(context, offset, shapes, bounds, appearance);
@@ -463,7 +485,14 @@ class _GlassPasses {
         )
         ..frost.set(optics.frostDepth, optics.lightSigma, optics.frostRamp, 0)
         ..face.set(face.$1, face.$2, face.$3, face.$4)
-        ..rim.set(rim.$1, rim.$2, rim.$3, isClear ? 0 : appearance.shadow)
+        // (A popover's glass casts none: UIKit masks it to its outline;
+        // its own shadow view lies under it.)
+        ..rim.set(
+          rim.$1,
+          rim.$2,
+          rim.$3,
+          isClear || arrow != null ? 0 : appearance.shadow,
+        )
         ..shadow.set(
           _GlassOptics.shadowOffset,
           _GlassOptics.shadowSigma,
@@ -485,6 +514,17 @@ class _GlassPasses {
           appearance.isDark ? 1 : _GlassOptics.bleedLightCap,
           appearance.isDark ? _GlassOptics.bleedDarkCurve : 0,
         );
+      if (arrow == null) {
+        u.arrow.set(0, 0, 0, 0);
+      } else {
+        final Offset tip = MatrixUtils.transformPoint(toRoot, arrow.tip);
+        u.arrow.set(
+          tip.dx * devicePixelRatio,
+          tip.dy * devicePixelRatio,
+          arrow.direction.dx,
+          arrow.direction.dy,
+        );
+      }
       for (var i = 0; i < maxShapes; i++) {
         if (i >= shapes.length) {
           u.shapes[i].set(0, 0, 0, 0);
@@ -718,6 +758,7 @@ class _RenderGlass extends RenderProxyBox {
     required this._devicePixelRatio,
     this._hidden = false,
     this._presenceCurved = true,
+    this._arrow,
   });
 
   final GlassAppearance appearance;
@@ -868,6 +909,21 @@ class _RenderGlass extends RenderProxyBox {
     markNeedsPaint();
   }
 
+  /// A popover's arrow, which its popover sets as it lays out.
+  ValueListenable<_GlassArrow?>? get arrow => _arrow;
+  ValueListenable<_GlassArrow?>? _arrow;
+  set arrow(ValueListenable<_GlassArrow?>? value) {
+    if (value == _arrow) {
+      return;
+    }
+    if (attached) {
+      _arrow?.removeListener(markNeedsPaint);
+      value?.addListener(markNeedsPaint);
+    }
+    _arrow = value;
+    markNeedsPaint();
+  }
+
   Listenable get repaint => _repaint;
   Listenable _repaint;
   set repaint(Listenable value) {
@@ -908,6 +964,7 @@ class _RenderGlass extends RenderProxyBox {
   void attach(PipelineOwner owner) {
     super.attach(owner);
     _repaint.addListener(markNeedsPaint);
+    _arrow?.addListener(markNeedsPaint);
     _presence.addListener(_changed);
     _press?.addListener(_changed);
     _hub?.add(this);
@@ -916,6 +973,7 @@ class _RenderGlass extends RenderProxyBox {
   @override
   void detach() {
     _repaint.removeListener(markNeedsPaint);
+    _arrow?.removeListener(markNeedsPaint);
     _presence.removeListener(_changed);
     _press?.removeListener(_changed);
     _hub?.remove(this);
@@ -965,6 +1023,7 @@ class _RenderGlass extends RenderProxyBox {
               toShape: Matrix4.identity(),
               material: _material,
               labels: _labels.toList(),
+              arrow: _arrow?.value,
             ),
         ],
         style: _style,
@@ -1179,6 +1238,7 @@ class _GlassUniforms {
       more = shader.getUniformVec4('uMore'),
       frost = shader.getUniformVec4('uFrost'),
       glow = shader.getUniformVec4('uGlow'),
+      arrow = shader.getUniformVec4('uArrow'),
       shapes = shader.getUniformVec4Array('uShapes'),
       info = shader.getUniformVec4Array('uShapeInfo'),
       tints = shader.getUniformVec4Array('uShapeTints'),
@@ -1197,6 +1257,7 @@ class _GlassUniforms {
   final ui.UniformVec4Slot more;
   final ui.UniformVec4Slot frost;
   final ui.UniformVec4Slot glow;
+  final ui.UniformVec4Slot arrow;
   final ui.UniformArray<ui.UniformVec4Slot> shapes;
   final ui.UniformArray<ui.UniformVec4Slot> info;
   final ui.UniformArray<ui.UniformVec4Slot> tints;

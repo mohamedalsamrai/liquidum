@@ -10,6 +10,7 @@ import 'package:flutter/cupertino.dart'
         CupertinoPicker,
         CupertinoTextField,
         CupertinoTextSelectionToolbarButton;
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
@@ -30,6 +31,7 @@ part 'glass_context_menu.dart';
 part 'glass_date_picker.dart';
 part 'glass_edit_menu.dart';
 part 'glass_menu.dart';
+part 'glass_popover.dart';
 part 'glass_press.dart';
 part 'glass_render.dart';
 part 'glass_sheet.dart';
@@ -74,6 +76,7 @@ class Glass extends StatefulWidget {
        _feed = null,
        _fixedFace = false,
        _bottomRadius = null,
+       _arrow = null,
        _bleeds = true;
 
   // An edit menu's glass: small, yet with the system's appearance and large
@@ -90,6 +93,7 @@ class Glass extends StatefulWidget {
        _feed = null,
        _fixedFace = true,
        _bottomRadius = null,
+       _arrow = null,
        _bleeds = true;
 
   // A sheet's glass: large glass without its bleed, its bottom corners
@@ -106,6 +110,7 @@ class Glass extends StatefulWidget {
        _material = null,
        _feed = null,
        _fixedFace = false,
+       _arrow = null,
        _bleeds = false;
 
   // A glass button's glass, with UIKit's gray material over it.
@@ -121,6 +126,7 @@ class Glass extends StatefulWidget {
        _feed = null,
        _fixedFace = false,
        _bottomRadius = null,
+       _arrow = null,
        _bleeds = true;
 
   // A menu's glass: interactive, also pressed by a finger that went down
@@ -137,7 +143,22 @@ class Glass extends StatefulWidget {
        _material = null,
        _fixedFace = false,
        _bottomRadius = null,
+       _arrow = null,
        _bleeds = true;
+
+  // A popover's glass: large glass with UIKit's arrow, placed by its
+  // popover as it lays out. UIKit's does not swell under a finger.
+  const Glass._popover(this._arrow, {required this.radius, required this.child})
+    : style = GlassStyle.regular,
+      tint = null,
+      brightness = null,
+      visible = true,
+      interactive = false,
+      _material = null,
+      _feed = null,
+      _fixedFace = false,
+      _bottomRadius = null,
+      _bleeds = true;
 
   final GlassStyle style;
 
@@ -179,6 +200,7 @@ class Glass extends StatefulWidget {
   final bool _fixedFace;
   final double? _bottomRadius;
   final bool _bleeds;
+  final ValueListenable<_GlassArrow?>? _arrow;
 
   final Widget? child;
 
@@ -401,6 +423,7 @@ class _GlassState extends State<Glass> with TickerProviderStateMixin {
       radius: widget.radius,
       bottomRadius: widget._bottomRadius,
       bleeds: widget._bleeds,
+      arrow: widget._arrow,
       tint: widget.tint,
       visible: widget.visible,
       presence: presence ?? _presence,
@@ -676,6 +699,7 @@ class _GlassSurface extends SingleChildRenderObjectWidget {
     required this.radius,
     this.bottomRadius,
     this.bleeds = true,
+    this.arrow,
     required this.tint,
     required this.visible,
     required this.presence,
@@ -694,6 +718,7 @@ class _GlassSurface extends SingleChildRenderObjectWidget {
   final double? radius;
   final double? bottomRadius;
   final bool bleeds;
+  final ValueListenable<_GlassArrow?>? arrow;
   final Color? tint;
   final bool visible;
   final Animation<double> presence;
@@ -714,6 +739,7 @@ class _GlassSurface extends SingleChildRenderObjectWidget {
     radius: radius,
     bottomRadius: bottomRadius,
     bleeds: bleeds,
+    arrow: arrow,
     tint: tint,
     visible: visible,
     presence: presence,
@@ -734,6 +760,7 @@ class _GlassSurface extends SingleChildRenderObjectWidget {
       ..radius = radius
       ..bottomRadius = bottomRadius
       ..bleeds = bleeds
+      ..arrow = arrow
       ..tint = tint
       ..visible = visible
       ..presence = presence

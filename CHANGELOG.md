@@ -99,6 +99,16 @@
   is chosen; a finger can slide between the actions before letting go. An
   action sheet that no view presents from is shown the same way (as iOS
   26.5 does), and a tap outside it cancels it.
+* New: `showGlassPopover(context:, builder:, size:)`, UIKit's popover
+  (`UIPopoverPresentationController`) on iOS 26.5: large glass with
+  UIKit's rounded arrow pointing at the widget `context` belongs to,
+  placed on the side UIKit picks (above, below, right, left; centered if
+  it can be, 10pt inside the screen), sized to its content or `size`. It
+  grows out of its arrow as it fades in and goes back into it on UIKit's
+  springs; there is no dim, and a tap outside dismisses it.
+  `showGlassActionSheet(source:)` shows the action sheet as UIKit does
+  when it has a source view: a 240pt popover by it, its actions stacked,
+  without its cancel action (a tap outside chooses it).
 * Fix: large glass's bleed (alerts, menus, panels over 64pt) is refitted to
   UIKit's over grays as well as colors: it no longer tints glass over white
   (by up to 5 levels), and dark glass over dark or bright backdrops is
