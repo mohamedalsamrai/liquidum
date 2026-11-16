@@ -33,4 +33,8 @@ migrate_working_dir/
 /doc/comparison/
 /doc/images/*
 !/doc/images/hero.png
-!/doc/images/bar-features.png
+!/doc/images/showcase/
+/doc/images/showcase/*
+!/doc/images/showcase/showcase.webp
+!/doc/images/showcase/menus.webp
+!/doc/images/showcase/presentations.webp
