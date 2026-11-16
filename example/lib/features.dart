@@ -1,6 +1,7 @@
 // iOS 26's tab bar extras: a search tab that opens into a search field, a
 // bottom accessory, and minimizing as a page scrolls. Run with
 // `flutter run -t lib/features.dart`.
+// ignore: deprecated_member_use
 import 'package:flutter/cupertino.dart';
 import 'package:liquidum/liquidum.dart';
 

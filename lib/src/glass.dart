@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
+// ignore: deprecated_member_use
 import 'package:flutter/cupertino.dart'
     show
         CupertinoIcons,

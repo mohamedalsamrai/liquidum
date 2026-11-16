@@ -31,6 +31,7 @@
 import 'dart:async';
 import 'dart:io';
 
+// ignore: deprecated_member_use
 import 'package:flutter/cupertino.dart';
 import 'package:liquidum/liquidum.dart';
 

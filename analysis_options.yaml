@@ -3,5 +3,14 @@ analyzer:
     - build/**
 include: package:flutter_lints/flutter.yaml
 
+# Flutter 3.50 deprecates package:flutter/cupertino.dart and material.dart in
+# favor of the cupertino_ui and material_ui packages. Each of those imports
+# carries an `// ignore: deprecated_member_use` instead of switching, because
+# cupertino_ui's types are separate copies: in an app still built on the
+# framework's CupertinoApp, CupertinoLocalizations.of would throw, and
+# `is CupertinoDynamicColor` would miss the app's colors. An app on
+# cupertino_ui reaches this package through CupertinoUiCompatibilityBridge.
+# Switch the imports, and drop the ignores, once most apps have moved.
+
 # Additional information about this file can be found at
 # https://dart.dev/guides/language/analysis-options
